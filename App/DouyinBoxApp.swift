@@ -13,6 +13,7 @@ final class AppState: ObservableObject {
     @Published var selection: Tab = .parse
     @Published var coverVideo: VideoItem?
     @Published var revealUI = false
+    @Published var autoAdvance = true
 
     var immersive: Bool { selection == .play && !revealUI }
 

@@ -4,6 +4,18 @@ import AVFoundation
 @MainActor
 final class PlayerController: ObservableObject {
     let player = AVPlayer()
+    private var obs: NSObjectProtocol?
+
+    func observeEnd(_ onEnd: @escaping @MainActor () -> Void) {
+        removeObs()
+        obs = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime, object: nil, queue: .main) { _ in
+                Task { @MainActor in onEnd() }
+            }
+    }
+    func removeObs() {
+        if let o = obs { NotificationCenter.default.removeObserver(o); obs = nil }
+    }
     func stop() {
         player.pause()
         player.replaceCurrentItem(with: nil)
@@ -80,11 +92,12 @@ struct PlayerView: View {
             app.revealUI = false
             app.refresh()
             if app.current == nil && !app.videos.isEmpty { app.startShuffle() }
+            pc.observeEnd { if app.autoAdvance { app.advance() } }
         }
         .onChange(of: app.selection) { sel in
             if sel == .play { pc.player.play() } else { pc.player.pause() }
         }
-        .onDisappear { pc.player.pause() }
+        .onDisappear { pc.player.pause(); pc.removeObs() }
         .background(TabBarAccessor(hidden: app.immersive))
         .statusBarHidden(app.immersive)
     }
@@ -108,6 +121,11 @@ struct PlayerView: View {
                     .font(.title2).foregroundStyle(.white).shadow(radius: 3)
             }
             Spacer()
+            Button { app.autoAdvance.toggle() } label: {
+                Text(app.autoAdvance ? "自动" : "手动").font(.subheadline).foregroundStyle(.white)
+                    .padding(.horizontal, 14).padding(.vertical, 7)
+                    .background(Capsule().fill(.black.opacity(0.45)))
+            }
             Button { app.aspectFill.toggle() } label: {
                 Text(app.aspectFill ? "拉伸" : "适配").font(.subheadline).foregroundStyle(.white)
                     .padding(.horizontal, 14).padding(.vertical, 7)
