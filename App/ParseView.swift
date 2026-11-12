@@ -10,6 +10,7 @@ struct ParseView: View {
     @State private var progress = 0.0
     @State private var speedText = ""
     @State private var showProgress = false
+    @State private var showSettings = false
     @FocusState private var linkFocused: Bool
 
     var body: some View {
@@ -49,6 +50,9 @@ struct ParseView: View {
                 ToolbarItem(placement: .keyboard) {
                     HStack { Spacer(); Button("收起键盘") { linkFocused = false } }
                 }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button { showSettings = true } label: { Image(systemName: "gearshape") }
+                }
             }
             .navigationTitle("抖音解析")
             .sheet(item: $result) { res in
@@ -57,6 +61,7 @@ struct ParseView: View {
                              onPick: { opt in Task { await pick(res, opt) } })
             }
             .onAppear { autoFillAndParse() }
+            .sheet(isPresented: $showSettings) { SettingsView() }
         }
     }
 
@@ -83,6 +88,15 @@ struct ParseView: View {
 
     @MainActor
     private func doParse(link: String) async {
+        if KeyStore.value.isEmpty {
+            status = "请先在右上角 ⚙ 设置里填写接口 Key"
+            showSettings = true
+            return
+        }
+        if let r = CallStats.blockReason() {
+            status = "已达限制：\(r)"
+            return
+        }
         busy = true; defer { busy = false }
         do {
             status = "解析中…"

@@ -32,7 +32,6 @@ enum GError: LocalizedError {
 
 enum DouyinAPI {
     static let endpoint = "https://api-new.ifphp.com/api/dyjx"
-    static let key = "bp_live_5c7f4981cc4b27d09b57821cf98e1d270b0a812c9607b4f559d14d14df39122a"
     static let ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15"
 
     static func extractURL(_ text: String) -> String? {
@@ -42,11 +41,14 @@ enum DouyinAPI {
 
     static func parse(link: String) async throws -> ParseResult {
         guard let u = extractURL(link) else { throw GError.noURL }
+        let key = KeyStore.value
+        guard !key.isEmpty else { throw GError.failed("请先在「设置」填写接口 Key") }
         guard var comp = URLComponents(string: endpoint) else { throw GError.noData }
         comp.queryItems = [URLQueryItem(name: "key", value: key), URLQueryItem(name: "url", value: u)]
         guard let reqURL = comp.url else { throw GError.noData }
         var req = URLRequest(url: reqURL)
         req.setValue(ua, forHTTPHeaderField: "User-Agent")
+        CallStats.record()
         let (data, resp) = try await URLSession.shared.data(for: req)
         if let h = resp as? HTTPURLResponse, !(200...299).contains(h.statusCode) { throw GError.http(h.statusCode) }
         guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw GError.noData }

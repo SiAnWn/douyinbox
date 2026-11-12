@@ -2,6 +2,18 @@ import SwiftUI
 
 struct DramaView: View {
     @EnvironmentObject var app: AppState
+    @State private var search = ""
+    @State private var sort = 0   // 0 名称 1 集数
+
+    private var shown: [Series] {
+        var list = app.dramaSeries
+        if !search.isEmpty { list = list.filter { $0.name.localizedCaseInsensitiveContains(search) } }
+        switch sort {
+        case 1: list.sort { $0.count > $1.count }
+        default: list.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        }
+        return list
+    }
 
     var body: some View {
         NavigationStack {
@@ -10,13 +22,24 @@ struct DramaView: View {
                     ContentUnavailableView("短剧为空",
                                            systemImage: "film",
                                            description: Text("在 文件 › DouyinBox › 短剧 下，\n每部短剧建一个文件夹，里面放各集"))
+                } else if shown.isEmpty {
+                    ContentUnavailableView("没有匹配", systemImage: "magnifyingglass", description: Text("换个关键词"))
                 } else {
-                    List(app.dramaSeries) { s in
+                    List(shown) { s in
                         NavigationLink(value: s) { SeriesRow(series: s) }
                     }
                 }
             }
             .navigationTitle("短剧 · \(app.dramaSeries.count)")
+            .searchable(text: $search, prompt: "搜索短剧")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Button("名称") { sort = 0 }
+                        Button("集数") { sort = 1 }
+                    } label: { Image(systemName: "arrow.up.arrow.down") }
+                }
+            }
             .navigationDestination(for: Series.self) { s in DramaEpisodes(series: s) }
             .refreshable { app.refreshDramaSeries() }
         }

@@ -3,6 +3,18 @@ import LocalAuthentication
 
 struct PrivateView: View {
     @EnvironmentObject var app: AppState
+    @State private var search = ""
+    @State private var sort = 0   // 0 名称 1 数量
+
+    private var shown: [Series] {
+        var list = app.privateSeries
+        if !search.isEmpty { list = list.filter { $0.name.localizedCaseInsensitiveContains(search) } }
+        switch sort {
+        case 1: list.sort { $0.count > $1.count }
+        default: list.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        }
+        return list
+    }
 
     var body: some View {
         NavigationStack {
@@ -13,9 +25,20 @@ struct PrivateView: View {
                     ContentUnavailableView("私密为空",
                                            systemImage: "lock",
                                            description: Text("在 文件 › DouyinBox › 私密 下，\n每个合集建一个文件夹，里面放视频"))
+                } else if shown.isEmpty {
+                    ContentUnavailableView("没有匹配", systemImage: "magnifyingglass", description: Text("换个关键词"))
                 } else {
-                    List(app.privateSeries) { s in
+                    List(shown) { s in
                         NavigationLink(value: s) { SeriesRow(series: s) }
+                    }
+                    .searchable(text: $search, prompt: "搜索私密")
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Menu {
+                                Button("名称") { sort = 0 }
+                                Button("数量") { sort = 1 }
+                            } label: { Image(systemName: "arrow.up.arrow.down") }
+                        }
                     }
                 }
             }
