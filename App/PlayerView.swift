@@ -57,7 +57,7 @@ struct PlayerView: View {
                     Spacer()
                     bottom(cur)
                 }
-                .ignoresSafeArea()
+                .padding(.horizontal, 4)
             } else {
                 empty
             }
@@ -66,6 +66,10 @@ struct PlayerView: View {
             app.refresh()
             if app.current == nil && !app.videos.isEmpty { app.startShuffle() }
         }
+        .onChange(of: app.selection) { sel in
+            if sel == .play { pc.player.play() } else { pc.player.pause() }
+        }
+        .onDisappear { pc.player.pause() }
     }
 
     @ViewBuilder private func controls(_ cur: VideoItem) -> some View {
