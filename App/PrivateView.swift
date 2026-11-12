@@ -61,7 +61,6 @@ struct PrivateEpisodes: View {
     let series: Series
     @EnvironmentObject var app: AppState
     @State private var vids: [VideoItem] = []
-    @State private var showClean = false
     @State private var cleanVideo: VideoItem?
     private let cols = [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())]
 
@@ -75,7 +74,7 @@ struct PrivateEpisodes: View {
                 ScrollView {
                     LazyVGrid(columns: cols, spacing: 10) {
                         ForEach(vids) { v in
-                            Button { cleanVideo = v; showClean = true } label: {
+                            Button { cleanVideo = v } label: {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Thumb(url: v.url).frame(height: 160).clipShape(RoundedRectangle(cornerRadius: 8))
                                     Text(v.title).font(.caption).lineLimit(1).foregroundStyle(.primary)
@@ -91,8 +90,8 @@ struct PrivateEpisodes: View {
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { load() }
         .refreshable { load() }
-        .fullScreenCover(isPresented: $showClean) {
-            if let v = cleanVideo { CleanPlayer(video: v) }
+        .fullScreenCover(item: $cleanVideo) { v in
+            CleanPlayer(video: v)
         }
     }
 }
