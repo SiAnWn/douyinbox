@@ -80,6 +80,7 @@ struct PlayerView: View {
         }
         .onDisappear { pc.player.pause() }
         .background(TabBarAccessor(hidden: app.immersive))
+        .statusBarHidden(app.immersive)
     }
 
     private var nav: some Gesture {
@@ -203,9 +204,6 @@ struct TabBarAccessor: UIViewControllerRepresentable {
     func updateUIViewController(_ vc: UIViewController, context: Context) {
         DispatchQueue.main.async {
             vc.tabBarController?.tabBar.isHidden = hidden
-            if let scene = vc.view.window?.windowScene {
-                scene.statusBarManager?.isHidden = hidden
-            }
         }
     }
 }
