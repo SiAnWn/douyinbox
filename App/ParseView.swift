@@ -35,10 +35,7 @@ struct ParseView: View {
                 Section {
                     Button {
                         linkFocused = false
-                        Task {
-                            if input.isEmpty { await pasteAndParse() }
-                            else { await doParse(link: input) }
-                        }
+                        Task { await parseWithFreshClip() }
                     } label: {
                         HStack {
                             if busy { ProgressView() }
@@ -93,6 +90,20 @@ struct ParseView: View {
         }
         input = url
         await doParse(link: url)
+    }
+
+    // 主按钮：永远先读剪贴板最新链接替换旧链接再解析；剪贴板没有就用框内的
+    private func parseWithFreshClip() async {
+        guard !busy else { return }
+        if let url = Self.clipDouyinURL() {
+            input = url
+            await doParse(link: url)
+        } else if !input.isEmpty {
+            status = "剪贴板没有抖音链接，改用框内链接解析"
+            await doParse(link: input)
+        } else {
+            status = "剪贴板没有抖音链接，输入框也是空"
+        }
     }
 
     private static func clipDouyinURL() -> String? {
