@@ -62,7 +62,10 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var keyInput = ""
     @State private var quota = Quota.zero
-    @State private var qMin = "", qHour = "", qDay = "", qMonth = ""
+    @State private var qMin = ""
+    @State private var qHour = ""
+    @State private var qDay = ""
+    @State private var qMonth = ""
     @State private var saved = false
 
     var body: some View {
