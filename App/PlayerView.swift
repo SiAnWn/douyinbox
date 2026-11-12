@@ -111,6 +111,12 @@ struct PlayerScrubber: View {
     @ObservedObject var pc: PlayerController
     @State private var dragging = false
     @State private var dragFrac: CGFloat = 0
+    private let rates: [Float] = [1.0, 1.25, 1.5, 2.0, 0.5, 0.75]
+
+    private func cycleRate() {
+        let i = rates.firstIndex(of: pc.rate) ?? -1
+        pc.setRate(rates[((i + 1) + rates.count) % rates.count])
+    }
 
     var body: some View {
         HStack(spacing: 10) {
@@ -147,13 +153,11 @@ struct PlayerScrubber: View {
             .frame(height: 22)
             Text(Self.fmt(pc.duration))
                 .font(.caption2.monospacedDigit()).foregroundStyle(.white)
-            Menu {
-                ForEach([0.5, 0.75, 1.0, 1.25, 1.5, 2.0], id: \.self) { r in
-                    Button("\(Self.rateText(r))x") { pc.setRate(Float(r)) }
-                }
-            } label: {
-                Image(systemName: "gauge.with.dots.needle.67percent")
-                    .font(.footnote).foregroundStyle(.white)
+            Button { cycleRate() } label: {
+                Text("\(Self.rateText(Double(pc.rate)))x")
+                    .font(.footnote.monospacedDigit()).foregroundStyle(.white)
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(Capsule().fill(.black.opacity(0.45)))
             }
         }
         .padding(.horizontal)
