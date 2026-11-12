@@ -79,6 +79,7 @@ struct PlayerView: View {
             if sel == .play { pc.player.play() } else { pc.player.pause() }
         }
         .onDisappear { pc.player.pause() }
+        .background(TabBarAccessor(hidden: app.immersive))
     }
 
     private var nav: some Gesture {
@@ -187,5 +188,24 @@ struct InlinePlayer: View {
             }
         }
         .statusBarHidden()
+    }
+}
+
+// 用 UIKit 直接控制标签栏/状态栏显隐（比 SwiftUI .toolbar 更可靠）
+struct TabBarAccessor: UIViewControllerRepresentable {
+    let hidden: Bool
+    func makeUIViewController(context: Context) -> UIViewController {
+        let vc = UIViewController()
+        vc.view = UIView(frame: .zero)
+        vc.view.backgroundColor = .clear
+        return vc
+    }
+    func updateUIViewController(_ vc: UIViewController, context: Context) {
+        DispatchQueue.main.async {
+            vc.tabBarController?.tabBar.isHidden = hidden
+            if let scene = vc.view.window?.windowScene {
+                scene.statusBarManager?.isHidden = hidden
+            }
+        }
     }
 }

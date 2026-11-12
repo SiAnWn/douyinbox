@@ -80,8 +80,6 @@ struct RootView: View {
             LibraryView()
                 .tabItem { Label("库", systemImage: "square.grid.3x3.fill") }.tag(Tab.library)
         }
-        .toolbar(app.immersive ? .hidden : .visible, for: .tabBar)
-        .statusBarHidden(app.immersive)
         .fullScreenCover(item: $app.coverVideo) { v in
             InlinePlayer(video: v).environmentObject(app)
         }
