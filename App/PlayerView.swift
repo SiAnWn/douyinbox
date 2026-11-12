@@ -24,6 +24,7 @@ struct PlayerSurface: UIViewRepresentable {
     let fill: Bool
     func makeUIView(context: Context) -> PlayerContainerView {
         let v = PlayerContainerView()
+        v.isUserInteractionEnabled = false          // 不吞掉上层控件/手势的触摸
         v.player = player
         v.videoLayer.videoGravity = fill ? .resizeAspectFill : .resizeAspect
         return v
@@ -34,9 +35,12 @@ struct PlayerSurface: UIViewRepresentable {
     }
 }
 
+// MARK: - 播放标签页（沉浸：右滑调出 UI，左滑隐藏，上滑/下滑切换）
+
 struct PlayerView: View {
     @EnvironmentObject var app: AppState
     @StateObject private var pc = PlayerController()
+    @State private var showUI = false
     @State private var showTabs = false
 
     var body: some View {
@@ -47,24 +51,25 @@ struct PlayerView: View {
                     .ignoresSafeArea()
                     .onAppear { pc.set(cur.url) }
                     .onChange(of: cur.id) { _ in pc.set(cur.url) }
-                    .gesture(
-                        DragGesture().onEnded { g in
-                            if g.translation.height < -60 { app.advance() }
-                            else if g.translation.height > 60 { app.back() }
-                        }
-                    )
-                VStack {
-                    controls(cur)
-                    Spacer()
-                    bottom(cur)
+
+                Color.clear.contentShape(Rectangle())
+                    .ignoresSafeArea()
+                    .gesture(nav)
+
+                if showUI {
+                    VStack {
+                        topBar(cur)
+                        Spacer()
+                        bottomBar(cur)
+                    }
+                    .transition(.opacity)
                 }
-                .padding(.horizontal, 4)
             } else {
                 empty
             }
         }
         .onAppear {
-            showTabs = false
+            showUI = false; showTabs = false
             app.refresh()
             if app.current == nil && !app.videos.isEmpty { app.startShuffle() }
         }
@@ -76,21 +81,31 @@ struct PlayerView: View {
         .statusBarHidden(!showTabs)
     }
 
-    @ViewBuilder private func controls(_ cur: VideoItem) -> some View {
+    private var nav: some Gesture {
+        DragGesture().onEnded { g in
+            let dx = g.translation.width, dy = g.translation.height
+            if abs(dx) > abs(dy) {
+                if dx > 60 { withAnimation { showUI = true } }
+                else if dx < -60 { withAnimation { showUI = false } }
+            } else {
+                if dy < -60 { app.advance() }
+                else if dy > 60 { app.back() }
+            }
+        }
+    }
+
+    @ViewBuilder private func topBar(_ cur: VideoItem) -> some View {
         HStack {
             Button { showTabs = true } label: {
-                Image(systemName: "line.3.horizontal")
-                    .font(.title2).foregroundStyle(.white).shadow(radius: 3)
+                Image(systemName: "line.3.horizontal").font(.title2).foregroundStyle(.white).shadow(radius: 3)
             }
             Button { app.toggleFav(cur.id) } label: {
                 Image(systemName: app.favorites.contains(cur.id) ? "star.fill" : "star")
-                    .font(.title2).foregroundStyle(.white)
-                    .shadow(radius: 3)
+                    .font(.title2).foregroundStyle(.white).shadow(radius: 3)
             }
             Spacer()
             Button { app.aspectFill.toggle() } label: {
-                Text(app.aspectFill ? "拉伸" : "适配")
-                    .font(.subheadline).foregroundStyle(.white)
+                Text(app.aspectFill ? "拉伸" : "适配").font(.subheadline).foregroundStyle(.white)
                     .padding(.horizontal, 14).padding(.vertical, 7)
                     .background(Capsule().fill(.black.opacity(0.45)))
             }
@@ -98,23 +113,23 @@ struct PlayerView: View {
         .padding()
     }
 
-    @ViewBuilder private func bottom(_ cur: VideoItem) -> some View {
+    @ViewBuilder private func bottomBar(_ cur: VideoItem) -> some View {
         VStack(spacing: 10) {
             Text(cur.title).font(.headline).foregroundStyle(.white).lineLimit(2).multilineTextAlignment(.center)
             HStack(spacing: 18) {
+                Text("→ 右滑 显示/隐藏 UI").font(.caption).foregroundStyle(.white.opacity(0.85))
                 Text("↑ 上滑 下一个").font(.caption).foregroundStyle(.white.opacity(0.85))
-                Text("↓ 下滑 返回上一个").font(.caption).foregroundStyle(.white.opacity(0.85))
+                Text("↓ 下滑 返回").font(.caption).foregroundStyle(.white.opacity(0.85))
             }
             if app.exhausted {
                 Button { app.startShuffle() } label: {
-                    Text("已随机完，点此重新随机")
-                        .font(.subheadline).foregroundStyle(.white)
+                    Text("已随机完，点此重新随机").font(.subheadline).foregroundStyle(.white)
                         .padding(.horizontal, 18).padding(.vertical, 10)
                         .background(Capsule().fill(Color(red: 254.0 / 255, green: 44.0 / 255, blue: 85.0 / 255)))
                 }
             }
         }
-        .padding(.bottom, 40)
+        .padding(.bottom, 24)
     }
 
     private var empty: some View {
@@ -132,6 +147,8 @@ struct PlayerView: View {
     }
 }
 
+// MARK: - 就地全屏播放器（库/收藏点开，关闭回原页）
+
 struct InlinePlayer: View {
     let video: VideoItem
     @EnvironmentObject var app: AppState
@@ -146,10 +163,17 @@ struct InlinePlayer: View {
                 .ignoresSafeArea()
                 .onAppear { pc.set(video.url) }
                 .onDisappear { pc.player.pause() }
+
+            Color.clear.contentShape(Rectangle())
+                .ignoresSafeArea()
+                .gesture(DragGesture().onEnded { g in
+                    if g.translation.height > 80 { dismiss() }
+                })
+
             VStack {
                 HStack {
                     Button { dismiss() } label: {
-                        Image(systemName: "xmark").font(.title2).foregroundStyle(.white).shadow(radius: 3)
+                        Image(systemName: "chevron.down").font(.title2).foregroundStyle(.white).shadow(radius: 3)
                     }
                     Spacer()
                     Button { app.toggleFav(video.id) } label: {

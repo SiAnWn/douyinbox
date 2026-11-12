@@ -15,13 +15,19 @@ struct FavoritesView: View {
                 } else {
                     List {
                         ForEach(favs) { v in
-                            HStack {
+                            HStack(spacing: 10) {
                                 Button { app.playInPlace(v) } label: {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(v.title).font(.callout).lineLimit(2).foregroundStyle(.primary)
-                                        Text(Naming.fmtSize(v.size)).font(.caption).foregroundStyle(.secondary)
+                                    HStack(spacing: 10) {
+                                        Thumb(url: v.url)
+                                            .frame(width: 56, height: 76)
+                                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(v.title).font(.callout).lineLimit(2).foregroundStyle(.primary)
+                                            Text(Naming.fmtSize(v.size)).font(.caption).foregroundStyle(.secondary)
+                                        }
                                     }
                                 }
+                                .buttonStyle(.plain)
                                 Spacer()
                                 Button { app.toggleFav(v.id) } label: {
                                     Image(systemName: "star.fill").foregroundStyle(.pink)
