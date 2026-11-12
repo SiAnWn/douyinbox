@@ -61,11 +61,6 @@ enum CallStats {
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var keyInput = ""
-    @State private var quota = Quota.zero
-    @State private var qMin = ""
-    @State private var qHour = ""
-    @State private var qDay = ""
-    @State private var qMonth = ""
     @State private var saved = false
 
     var body: some View {
@@ -81,39 +76,11 @@ struct SettingsView: View {
                     Text("Key 只存本机、不写进代码；别人拉仓库构建不会消耗你的额度。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                Section("接口配额（可手动校正，自动累加本机调用）") {
-                    quotaRow("本分钟", $qMin, .minute, CallStats.limits.minute)
-                    quotaRow("本小时", $qHour, .hour, CallStats.limits.hour)
-                    quotaRow("今日", $qDay, .day, CallStats.limits.day)
-                    quotaRow("本月", $qMonth, .month, CallStats.limits.month)
-                    Text("上限：15/分 · 600/时 · 8000/日 · 150000/月。到下一个周期自动归零。")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
             }
             .navigationTitle("设置")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
-            .onAppear { keyInput = KeyStore.value; refreshQuota() }
-        }
-    }
-
-    private func refreshQuota() {
-        let q = CallStats.current(); quota = q
-        qMin = "\(q.minute)"; qHour = "\(q.hour)"; qDay = "\(q.day)"; qMonth = "\(q.month)"
-    }
-
-    @ViewBuilder
-    private func quotaRow(_ label: String, _ text: Binding<String>, _ w: CallStats.Window, _ limit: Int) -> some View {
-        HStack {
-            Text(label)
-            Spacer()
-            TextField("0", text: text)
-                .keyboardType(.numberPad).multilineTextAlignment(.trailing)
-                .frame(width: 72).border(Color.secondary.opacity(0.35), width: 1)
-            Text("/\(limit)").font(.footnote).foregroundStyle(.secondary)
-        }
-        .onChange(of: text.wrappedValue) { nv in
-            if let v = Int(nv) { CallStats.set(w, v); quota = CallStats.current() }
+            .onAppear { keyInput = KeyStore.value }
         }
     }
 }

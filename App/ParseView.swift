@@ -11,6 +11,7 @@ struct ParseView: View {
     @State private var speedText = ""
     @State private var showProgress = false
     @State private var showSettings = false
+    @State private var quota = Quota.zero
     @FocusState private var linkFocused: Bool
 
     var body: some View {
@@ -44,6 +45,10 @@ struct ParseView: View {
                         Text("\(Int(progress * 100))% · \(speedText)").font(.footnote).foregroundStyle(.secondary)
                     }
                 }
+                Section("接口用量") {
+                    Text("今日 \(quota.day)/\(CallStats.limits.day)　本月 \(quota.month)/\(CallStats.limits.month)")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
             }
             .scrollDismissesKeyboard(.interactively)
             .toolbar {
@@ -60,7 +65,7 @@ struct ParseView: View {
                              downloaded: { opt in isDownloaded(res, opt) },
                              onPick: { opt in Task { await pick(res, opt) } })
             }
-            .onAppear { autoFillAndParse() }
+            .onAppear { refreshQuota(); autoFillAndParse() }
             .sheet(isPresented: $showSettings) { SettingsView() }
         }
     }
@@ -97,7 +102,7 @@ struct ParseView: View {
             status = "已达限制：\(r)"
             return
         }
-        busy = true; defer { busy = false }
+        busy = true; defer { busy = false; refreshQuota() }
         do {
             status = "解析中…"
             result = try await DouyinAPI.parse(link: link)
@@ -137,6 +142,8 @@ struct ParseView: View {
         guard let fn = DownloadStore.map()["\(res.videoID)|\(opt.label)"] else { return false }
         return SavePaths.exists(fn)
     }
+
+    private func refreshQuota() { quota = CallStats.current() }
 }
 
 struct QualitySheet: View {
