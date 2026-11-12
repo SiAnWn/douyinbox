@@ -50,9 +50,9 @@ struct PlayerView: View {
             Color.black.ignoresSafeArea()
             if let cur = app.current {
                 PlayerSurface(player: pc.player, fill: app.aspectFill)
+                    .id(cur.id)
                     .ignoresSafeArea()
                     .onAppear { pc.set(cur.url) }
-                    .onChange(of: cur.id) { _ in pc.set(cur.url) }
 
                 Color.clear.contentShape(Rectangle())
                     .ignoresSafeArea()
@@ -112,13 +112,8 @@ struct PlayerView: View {
     }
 
     @ViewBuilder private func bottomBar(_ cur: VideoItem) -> some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 12) {
             Text(cur.title).font(.headline).foregroundStyle(.white).lineLimit(2).multilineTextAlignment(.center)
-            HStack(spacing: 16) {
-                Text("→ 右滑 显示/隐藏 UI").font(.caption).foregroundStyle(.white.opacity(0.85))
-                Text("↑ 上滑 下一个").font(.caption).foregroundStyle(.white.opacity(0.85))
-                Text("↓ 下滑 返回").font(.caption).foregroundStyle(.white.opacity(0.85))
-            }
             if app.exhausted {
                 Button { app.startShuffle() } label: {
                     Text("已随机完，点此重新随机").font(.subheadline).foregroundStyle(.white)
@@ -127,7 +122,8 @@ struct PlayerView: View {
                 }
             }
         }
-        .padding(.bottom, 24)
+        .padding(.horizontal)
+        .padding(.bottom, 56)
     }
 
     private var empty: some View {
