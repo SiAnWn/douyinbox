@@ -4,10 +4,6 @@ import AVFoundation
 @MainActor
 final class PlayerController: ObservableObject {
     let player = AVPlayer()
-    func set(_ url: URL) {
-        player.replaceCurrentItem(with: AVPlayerItem(url: url))
-        player.play()
-    }
     func stop() {
         player.pause()
         player.replaceCurrentItem(with: nil)
@@ -23,9 +19,15 @@ final class PlayerContainerView: UIView {
     }
 }
 
+// 把要播的 url 交给播放层；updateUIView 里检测 url 变化即切换，保证画面与标题同步
 struct PlayerSurface: UIViewRepresentable {
     let player: AVPlayer
+    let url: URL
     let fill: Bool
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+    final class Coordinator { var lastURL: URL? }
+
     func makeUIView(context: Context) -> PlayerContainerView {
         let v = PlayerContainerView()
         v.isUserInteractionEnabled = false
@@ -33,9 +35,15 @@ struct PlayerSurface: UIViewRepresentable {
         v.videoLayer.videoGravity = fill ? .resizeAspectFill : .resizeAspect
         return v
     }
+
     func updateUIView(_ uiView: PlayerContainerView, context: Context) {
         uiView.player = player
         uiView.videoLayer.videoGravity = fill ? .resizeAspectFill : .resizeAspect
+        if context.coordinator.lastURL != url {
+            context.coordinator.lastURL = url
+            player.replaceCurrentItem(with: AVPlayerItem(url: url))
+            player.play()
+        }
     }
 }
 
@@ -49,10 +57,8 @@ struct PlayerView: View {
         ZStack {
             Color.black.ignoresSafeArea()
             if let cur = app.current {
-                PlayerSurface(player: pc.player, fill: app.aspectFill)
-                    .id(cur.id)
+                PlayerSurface(player: pc.player, url: cur.url, fill: app.aspectFill)
                     .ignoresSafeArea()
-                    .onAppear { pc.set(cur.url) }
 
                 Color.clear.contentShape(Rectangle())
                     .ignoresSafeArea()
@@ -146,9 +152,8 @@ struct InlinePlayer: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            PlayerSurface(player: pc.player, fill: fill)
+            PlayerSurface(player: pc.player, url: video.url, fill: fill)
                 .ignoresSafeArea()
-                .onAppear { pc.set(video.url) }
                 .onDisappear { pc.stop() }
 
             Color.clear.contentShape(Rectangle())
