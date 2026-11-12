@@ -13,6 +13,14 @@ struct VideoItem: Identifiable, Hashable {
     func hash(into h: inout Hasher) { h.combine(id) }
 }
 
+struct Series: Identifiable, Hashable {
+    let id: String      // 文件夹路径
+    let name: String    // 文件夹名（剧名/合集名）
+    let count: Int
+    let url: URL
+    let cover: URL?
+}
+
 enum Library {
     static func root() -> URL { FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0] }
 
@@ -62,6 +70,35 @@ enum Library {
             return Int(s[r]) ?? Int.max
         }
         return Int.max
+    }
+
+    // 列出某根目录下的子文件夹（每个=一部短剧/一个合集）
+    static func series(in root: URL) -> [Series] {
+        let subs = (try? FileManager.default.contentsOfDirectory(
+            at: root, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+        var out: [Series] = []
+        for d in subs {
+            var isDir: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: d.path, isDirectory: &isDir), isDir.boolValue else { continue }
+            let vids = scan(in: d)
+            guard !vids.isEmpty else { continue }
+            let cover = vids.max(by: { $0.modDate < $1.modDate })?.url
+            out.append(Series(id: d.path, name: d.lastPathComponent, count: vids.count, url: d, cover: cover))
+        }
+        return out.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    // 读取某文件夹里的视频；numeric=true 按数字升序（短剧），false 按时间（私密）
+    static func videos(in dir: URL, numeric: Bool) -> [VideoItem] {
+        let v = scan(in: dir)
+        if numeric {
+            return v.sorted { a, b in
+                let na = numKey(a.title), nb = numKey(b.title)
+                if na != nb { return na < nb }
+                return a.title < b.title
+            }
+        }
+        return v.sorted { $0.modDate > $1.modDate }
     }
 }
 

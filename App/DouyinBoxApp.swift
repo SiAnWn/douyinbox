@@ -5,8 +5,8 @@ enum Tab: Hashable { case parse, play, fav, drama, privacy, library }
 @MainActor
 final class AppState: ObservableObject {
     @Published var videos: [VideoItem] = []
-    @Published var dramas: [VideoItem] = []
-    @Published var privates: [VideoItem] = []
+    @Published var dramaSeries: [Series] = []
+    @Published var privateSeries: [Series] = []
     @Published var privateUnlocked = false
     @Published var favorites: Set<String> = []
     @Published var current: VideoItem?
@@ -23,8 +23,8 @@ final class AppState: ObservableObject {
     private let favKey = "favorites"
 
     func refresh() { videos = Library.scanRootByDate() }
-    func refreshDramas() { dramas = Library.scanNumeric(Library.sub("短剧")) }
-    func refreshPrivates() { privates = Library.scan(in: Library.sub("私密")) }
+    func refreshDramaSeries() { dramaSeries = Library.series(in: Library.sub("短剧")) }
+    func refreshPrivateSeries() { privateSeries = Library.series(in: Library.sub("私密")) }
 
     func loadFav() { favorites = Set(UserDefaults.standard.stringArray(forKey: favKey) ?? []) }
     private func saveFav() { UserDefaults.standard.set(Array(favorites), forKey: favKey) }
@@ -66,7 +66,7 @@ struct DouyinBoxApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(app)
-                .onAppear { app.loadFav(); app.refresh(); app.refreshDramas(); app.refreshPrivates() }
+                .onAppear { app.loadFav(); app.refresh(); app.refreshDramaSeries(); app.refreshPrivateSeries() }
         }
     }
 }

@@ -2,41 +2,81 @@ import SwiftUI
 
 struct DramaView: View {
     @EnvironmentObject var app: AppState
-    @State private var showEp = false
-    @State private var epStart = 0
-    private let cols = [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())]
 
     var body: some View {
         NavigationStack {
             Group {
-                if app.dramas.isEmpty {
+                if app.dramaSeries.isEmpty {
                     ContentUnavailableView("短剧为空",
                                            systemImage: "film",
-                                           description: Text("把短剧放进 文件 › DouyinBox › 短剧 文件夹\n按文件名数字升序排列"))
+                                           description: Text("在 文件 › DouyinBox › 短剧 下，\n每部短剧建一个文件夹，里面放各集"))
                 } else {
-                    ScrollView {
-                        LazyVGrid(columns: cols, spacing: 10) {
-                            ForEach(Array(app.dramas.enumerated()), id: \.element.id) { i, v in
-                                Button { epStart = i; showEp = true } label: {
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Thumb(url: v.url)
-                                            .frame(height: 160)
-                                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                                        Text(v.title).font(.caption).lineLimit(1).foregroundStyle(.primary)
-                                    }
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                        .padding()
+                    List(app.dramaSeries) { s in
+                        NavigationLink(value: s) { SeriesRow(series: s) }
                     }
                 }
             }
-            .navigationTitle("短剧 · \(app.dramas.count)")
-            .refreshable { app.refreshDramas() }
-            .fullScreenCover(isPresented: $showEp) {
-                EpisodePlayer(items: app.dramas, start: epStart)
+            .navigationTitle("短剧 · \(app.dramaSeries.count)")
+            .navigationDestination(for: Series.self) { s in DramaEpisodes(series: s) }
+            .refreshable { app.refreshDramaSeries() }
+        }
+    }
+}
+
+struct SeriesRow: View {
+    let series: Series
+    var body: some View {
+        HStack(spacing: 12) {
+            if let c = series.cover {
+                Thumb(url: c).frame(width: 60, height: 80).clipShape(RoundedRectangle(cornerRadius: 6))
+            } else {
+                Rectangle().fill(Color(white: 0.15)).frame(width: 60, height: 80)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
             }
+            VStack(alignment: .leading, spacing: 3) {
+                Text(series.name).font(.headline).lineLimit(2)
+                Text("\(series.count) 集").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+struct DramaEpisodes: View {
+    let series: Series
+    @State private var eps: [VideoItem] = []
+    @State private var showEp = false
+    @State private var epStart = 0
+    private let cols = [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())]
+
+    private func load() { eps = Library.videos(in: series.url, numeric: true) }
+
+    var body: some View {
+        Group {
+            if eps.isEmpty {
+                ContentUnavailableView("没有视频", systemImage: "film", description: Text("该文件夹为空"))
+            } else {
+                ScrollView {
+                    LazyVGrid(columns: cols, spacing: 10) {
+                        ForEach(Array(eps.enumerated()), id: \.element.id) { i, v in
+                            Button { epStart = i; showEp = true } label: {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Thumb(url: v.url).frame(height: 160).clipShape(RoundedRectangle(cornerRadius: 8))
+                                    Text(v.title).font(.caption).lineLimit(1).foregroundStyle(.primary)
+                                }
+                            }.buttonStyle(.plain)
+                        }
+                    }
+                    .padding()
+                }
+            }
+        }
+        .navigationTitle(series.name)
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear { load() }
+        .refreshable { load() }
+        .fullScreenCover(isPresented: $showEp) {
+            EpisodePlayer(items: eps, start: epStart)
         }
     }
 }
