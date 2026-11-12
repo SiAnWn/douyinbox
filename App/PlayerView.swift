@@ -8,6 +8,10 @@ final class PlayerController: ObservableObject {
         player.replaceCurrentItem(with: AVPlayerItem(url: url))
         player.play()
     }
+    func stop() {
+        player.pause()
+        player.replaceCurrentItem(with: nil)
+    }
 }
 
 final class PlayerContainerView: UIView {
@@ -24,7 +28,7 @@ struct PlayerSurface: UIViewRepresentable {
     let fill: Bool
     func makeUIView(context: Context) -> PlayerContainerView {
         let v = PlayerContainerView()
-        v.isUserInteractionEnabled = false          // 不吞掉上层控件/手势的触摸
+        v.isUserInteractionEnabled = false
         v.player = player
         v.videoLayer.videoGravity = fill ? .resizeAspectFill : .resizeAspect
         return v
@@ -35,13 +39,11 @@ struct PlayerSurface: UIViewRepresentable {
     }
 }
 
-// MARK: - 播放标签页（沉浸：右滑调出 UI，左滑隐藏，上滑/下滑切换）
+// MARK: - 播放标签页（沉浸：右滑显示全部 UI，左滑隐藏，上滑/下滑切换）
 
 struct PlayerView: View {
     @EnvironmentObject var app: AppState
     @StateObject private var pc = PlayerController()
-    @State private var showUI = false
-    @State private var showTabs = false
 
     var body: some View {
         ZStack {
@@ -56,7 +58,7 @@ struct PlayerView: View {
                     .ignoresSafeArea()
                     .gesture(nav)
 
-                if showUI {
+                if app.revealUI {
                     VStack {
                         topBar(cur)
                         Spacer()
@@ -69,7 +71,7 @@ struct PlayerView: View {
             }
         }
         .onAppear {
-            showUI = false; showTabs = false
+            app.revealUI = false
             app.refresh()
             if app.current == nil && !app.videos.isEmpty { app.startShuffle() }
         }
@@ -77,16 +79,13 @@ struct PlayerView: View {
             if sel == .play { pc.player.play() } else { pc.player.pause() }
         }
         .onDisappear { pc.player.pause() }
-        .toolbar(showTabs ? .visible : .hidden, for: .tabBar)
-        .statusBarHidden(!showTabs)
     }
 
     private var nav: some Gesture {
         DragGesture().onEnded { g in
             let dx = g.translation.width, dy = g.translation.height
             if abs(dx) > abs(dy) {
-                if dx > 60 { withAnimation { showUI = true } }
-                else if dx < -60 { withAnimation { showUI = false } }
+                withAnimation { app.revealUI = (dx > 0) }
             } else {
                 if dy < -60 { app.advance() }
                 else if dy > 60 { app.back() }
@@ -96,9 +95,6 @@ struct PlayerView: View {
 
     @ViewBuilder private func topBar(_ cur: VideoItem) -> some View {
         HStack {
-            Button { showTabs = true } label: {
-                Image(systemName: "line.3.horizontal").font(.title2).foregroundStyle(.white).shadow(radius: 3)
-            }
             Button { app.toggleFav(cur.id) } label: {
                 Image(systemName: app.favorites.contains(cur.id) ? "star.fill" : "star")
                     .font(.title2).foregroundStyle(.white).shadow(radius: 3)
@@ -116,7 +112,7 @@ struct PlayerView: View {
     @ViewBuilder private func bottomBar(_ cur: VideoItem) -> some View {
         VStack(spacing: 10) {
             Text(cur.title).font(.headline).foregroundStyle(.white).lineLimit(2).multilineTextAlignment(.center)
-            HStack(spacing: 18) {
+            HStack(spacing: 16) {
                 Text("→ 右滑 显示/隐藏 UI").font(.caption).foregroundStyle(.white.opacity(0.85))
                 Text("↑ 上滑 下一个").font(.caption).foregroundStyle(.white.opacity(0.85))
                 Text("↓ 下滑 返回").font(.caption).foregroundStyle(.white.opacity(0.85))
@@ -162,7 +158,7 @@ struct InlinePlayer: View {
             PlayerSurface(player: pc.player, fill: fill)
                 .ignoresSafeArea()
                 .onAppear { pc.set(video.url) }
-                .onDisappear { pc.player.pause() }
+                .onDisappear { pc.stop() }
 
             Color.clear.contentShape(Rectangle())
                 .ignoresSafeArea()

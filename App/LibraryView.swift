@@ -31,11 +31,7 @@ struct LibraryView: View {
                 }
             }
             .navigationTitle("视频库 · \(app.videos.count)")
-            .onAppear { app.refresh() }
             .refreshable { app.refresh() }
-            .fullScreenCover(item: $app.coverVideo) { v in
-                InlinePlayer(video: v).environmentObject(app)
-            }
         }
     }
 }

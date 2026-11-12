@@ -13,6 +13,9 @@ final class AppState: ObservableObject {
     @Published var exhausted = false
     @Published var selection: Tab = .parse
     @Published var coverVideo: VideoItem?
+    @Published var revealUI = false
+
+    var immersive: Bool { selection == .play && !revealUI }
 
     private let favKey = "favorites"
 
@@ -76,6 +79,11 @@ struct RootView: View {
                 .tabItem { Label("收藏", systemImage: "star") }.tag(Tab.fav)
             LibraryView()
                 .tabItem { Label("库", systemImage: "square.grid.3x3.fill") }.tag(Tab.library)
+        }
+        .toolbar(app.immersive ? .hidden : .visible, for: .tabBar)
+        .statusBarHidden(app.immersive)
+        .fullScreenCover(item: $app.coverVideo) { v in
+            InlinePlayer(video: v).environmentObject(app)
         }
     }
 }

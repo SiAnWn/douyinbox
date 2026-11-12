@@ -38,10 +38,6 @@ struct FavoritesView: View {
                 }
             }
             .navigationTitle("我的收藏")
-            .onAppear { app.refresh() }
-            .fullScreenCover(item: $app.coverVideo) { v in
-                InlinePlayer(video: v).environmentObject(app)
-            }
         }
     }
 }
