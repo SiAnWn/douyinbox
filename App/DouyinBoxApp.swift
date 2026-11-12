@@ -10,7 +10,6 @@ final class AppState: ObservableObject {
     @Published var aspectFill = true
     @Published var order: [String] = []
     @Published var idx = -1
-    @Published var exhausted = false
     @Published var selection: Tab = .parse
     @Published var coverVideo: VideoItem?
     @Published var revealUI = false
@@ -32,7 +31,6 @@ final class AppState: ObservableObject {
     func startShuffle() {
         order = videos.map { $0.id }.shuffled()
         idx = -1
-        exhausted = false
         advance()
     }
 
@@ -42,7 +40,7 @@ final class AppState: ObservableObject {
             idx += 1
             current = videos.first { $0.id == order[idx] }
         } else {
-            exhausted = true
+            startShuffle()
         }
     }
 

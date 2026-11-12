@@ -114,13 +114,6 @@ struct PlayerView: View {
     @ViewBuilder private func bottomBar(_ cur: VideoItem) -> some View {
         VStack(spacing: 12) {
             Text(cur.title).font(.headline).foregroundStyle(.white).lineLimit(2).multilineTextAlignment(.center)
-            if app.exhausted {
-                Button { app.startShuffle() } label: {
-                    Text("已随机完，点此重新随机").font(.subheadline).foregroundStyle(.white)
-                        .padding(.horizontal, 18).padding(.vertical, 10)
-                        .background(Capsule().fill(Color(red: 254.0 / 255, green: 44.0 / 255, blue: 85.0 / 255)))
-                }
-            }
         }
         .padding(.horizontal)
         .padding(.bottom, 56)
