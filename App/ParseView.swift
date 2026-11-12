@@ -25,6 +25,9 @@ struct ParseView: View {
                                 Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                             }.buttonStyle(.borderless)
                         }
+                        Button { pasteFromClipboard() } label: {
+                            Image(systemName: "doc.on.clipboard").foregroundStyle(.tint)
+                        }.buttonStyle(.borderless)
                     }
                 }
                 Section {
@@ -53,17 +56,18 @@ struct ParseView: View {
                              downloaded: { opt in isDownloaded(res, opt) },
                              onPick: { opt in Task { await pick(res, opt) } })
             }
-            .onAppear { autoFillFromPasteboard() }
         }
     }
 
-    private func autoFillFromPasteboard() {
-        guard input.isEmpty else { return }
+    private func pasteFromClipboard() {
         guard let clip = UIPasteboard.general.string,
               let url = DouyinAPI.extractURL(clip),
-              url.contains("douyin.com") else { return }
+              url.contains("douyin.com") else {
+            status = "剪贴板里没有抖音链接"
+            return
+        }
         input = url
-        status = "已从剪贴板填入链接，点「解析 / 选清晰度」"
+        status = "已粘贴链接，点「解析 / 选清晰度」"
     }
 
     @MainActor
