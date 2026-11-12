@@ -6,6 +6,13 @@ final class PlayerController: ObservableObject {
     let player = AVPlayer()
     private var obs: NSObjectProtocol?
 
+    func load(_ url: URL) {
+        player.replaceCurrentItem(with: AVPlayerItem(url: url))
+        player.play()
+    }
+    func replayCurrent() {
+        if let it = player.currentItem { it.seek(to: .zero); player.play() }
+    }
     func observeEnd(_ onEnd: @escaping @MainActor () -> Void) {
         removeObs()
         obs = NotificationCenter.default.addObserver(
@@ -16,10 +23,8 @@ final class PlayerController: ObservableObject {
     func removeObs() {
         if let o = obs { NotificationCenter.default.removeObserver(o); obs = nil }
     }
-    func stop() {
-        player.pause()
-        player.replaceCurrentItem(with: nil)
-    }
+    func pause() { player.pause() }
+    func stop() { player.pause(); player.replaceCurrentItem(with: nil) }
 }
 
 final class PlayerContainerView: UIView {
@@ -31,15 +36,10 @@ final class PlayerContainerView: UIView {
     }
 }
 
-// 把要播的 url 交给播放层；updateUIView 里检测 url 变化即切换，保证画面与标题同步
+// 只显示播放器；切换由外部调用 load() 完成
 struct PlayerSurface: UIViewRepresentable {
     let player: AVPlayer
-    let url: URL
     let fill: Bool
-
-    func makeCoordinator() -> Coordinator { Coordinator() }
-    final class Coordinator { var lastURL: URL? }
-
     func makeUIView(context: Context) -> PlayerContainerView {
         let v = PlayerContainerView()
         v.isUserInteractionEnabled = false
@@ -47,19 +47,13 @@ struct PlayerSurface: UIViewRepresentable {
         v.videoLayer.videoGravity = fill ? .resizeAspectFill : .resizeAspect
         return v
     }
-
     func updateUIView(_ uiView: PlayerContainerView, context: Context) {
         uiView.player = player
         uiView.videoLayer.videoGravity = fill ? .resizeAspectFill : .resizeAspect
-        if context.coordinator.lastURL != url {
-            context.coordinator.lastURL = url
-            player.replaceCurrentItem(with: AVPlayerItem(url: url))
-            player.play()
-        }
     }
 }
 
-// MARK: - 播放标签页（沉浸：右滑显示全部 UI，左滑隐藏，上滑/下滑切换）
+// MARK: - 播放标签页（随机；自动=播完切下一个，手动=当前循环；右滑出 UI，左滑隐藏）
 
 struct PlayerView: View {
     @EnvironmentObject var app: AppState
@@ -69,7 +63,7 @@ struct PlayerView: View {
         ZStack {
             Color.black.ignoresSafeArea()
             if let cur = app.current {
-                PlayerSurface(player: pc.player, url: cur.url, fill: app.aspectFill)
+                PlayerSurface(player: pc.player, fill: app.aspectFill)
                     .ignoresSafeArea()
 
                 Color.clear.contentShape(Rectangle())
@@ -92,7 +86,10 @@ struct PlayerView: View {
             app.revealUI = false
             app.refresh()
             if app.current == nil && !app.videos.isEmpty { app.startShuffle() }
-            pc.observeEnd { if app.autoAdvance { app.advance() } }
+            if let c = app.current { pc.load(c.url) }
+            pc.observeEnd {
+                if app.autoAdvance { goNext() } else { pc.replayCurrent() }
+            }
         }
         .onChange(of: app.selection) { sel in
             if sel == .play { pc.player.play() } else { pc.player.pause() }
@@ -102,14 +99,23 @@ struct PlayerView: View {
         .statusBarHidden(app.immersive)
     }
 
+    private func goNext() {
+        app.advance()
+        if let c = app.current { pc.load(c.url) }
+    }
+    private func goPrev() {
+        app.back()
+        if let c = app.current { pc.load(c.url) }
+    }
+
     private var nav: some Gesture {
         DragGesture().onEnded { g in
             let dx = g.translation.width, dy = g.translation.height
             if abs(dx) > abs(dy) {
                 withAnimation { app.revealUI = (dx > 0) }
             } else {
-                if dy < -60 { app.advance() }
-                else if dy > 60 { app.back() }
+                if dy < -60 { goNext() }
+                else if dy > 60 { goPrev() }
             }
         }
     }
@@ -136,11 +142,10 @@ struct PlayerView: View {
     }
 
     @ViewBuilder private func bottomBar(_ cur: VideoItem) -> some View {
-        VStack(spacing: 12) {
-            Text(cur.title).font(.headline).foregroundStyle(.white).lineLimit(2).multilineTextAlignment(.center)
-        }
-        .padding(.horizontal)
-        .padding(.bottom, 56)
+        Text(cur.title).font(.headline).foregroundStyle(.white).lineLimit(2)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal)
+            .padding(.bottom, 56)
     }
 
     private var empty: some View {
@@ -158,7 +163,7 @@ struct PlayerView: View {
     }
 }
 
-// MARK: - 就地全屏播放器（库/收藏点开，关闭回原页）
+// MARK: - 就地全屏播放器（库/收藏/私密点开，关闭回原页）
 
 struct InlinePlayer: View {
     let video: VideoItem
@@ -170,8 +175,9 @@ struct InlinePlayer: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            PlayerSurface(player: pc.player, url: video.url, fill: fill)
+            PlayerSurface(player: pc.player, fill: fill)
                 .ignoresSafeArea()
+                .onAppear { pc.load(video.url) }
                 .onDisappear { pc.stop() }
 
             Color.clear.contentShape(Rectangle())
@@ -201,6 +207,80 @@ struct InlinePlayer: View {
             }
         }
         .statusBarHidden()
+    }
+}
+
+// MARK: - 按序播放器（短剧：自动播下一集，可上下滑切换）
+
+struct EpisodePlayer: View {
+    let items: [VideoItem]
+    @Environment(\.dismiss) private var dismiss
+    @StateObject private var pc = PlayerController()
+    @State private var index: Int
+    @State private var fill = true
+
+    init(items: [VideoItem], start: Int) {
+        self.items = items
+        _index = State(initialValue: max(0, min(start, max(0, items.count - 1))))
+    }
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            if index < items.count {
+                PlayerSurface(player: pc.player, fill: fill)
+                    .ignoresSafeArea()
+
+                Color.clear.contentShape(Rectangle())
+                    .ignoresSafeArea()
+                    .gesture(DragGesture().onEnded { g in
+                        if abs(g.translation.height) > abs(g.translation.width) {
+                            if g.translation.height < -60 { next() }
+                            else if g.translation.height > 60 { prev() }
+                        }
+                    })
+
+                VStack {
+                    HStack {
+                        Button { dismiss() } label: {
+                            Image(systemName: "chevron.down").font(.title2).foregroundStyle(.white).shadow(radius: 3)
+                        }
+                        Spacer()
+                        Text("第 \(index + 1)/\(items.count) 集").font(.subheadline).foregroundStyle(.white)
+                            .padding(.horizontal, 12).padding(.vertical, 6)
+                            .background(Capsule().fill(.black.opacity(0.45)))
+                        Button { fill.toggle() } label: {
+                            Text(fill ? "拉伸" : "适配").font(.subheadline).foregroundStyle(.white)
+                                .padding(.horizontal, 14).padding(.vertical, 7)
+                                .background(Capsule().fill(.black.opacity(0.45)))
+                        }
+                    }.padding()
+                    Spacer()
+                    Text(items[index].title).font(.headline).foregroundStyle(.white).lineLimit(2).padding()
+                }
+            }
+        }
+        .statusBarHidden()
+        .onAppear {
+            if index < items.count { pc.load(items[index].url) }
+            pc.observeEnd { next() }
+        }
+        .onDisappear { pc.stop(); pc.removeObs() }
+    }
+
+    private func next() {
+        if index + 1 < items.count {
+            index += 1
+            pc.load(items[index].url)
+        } else {
+            pc.pause()   // 最后一集：停住
+        }
+    }
+    private func prev() {
+        if index - 1 >= 0 {
+            index -= 1
+            pc.load(items[index].url)
+        }
     }
 }
 

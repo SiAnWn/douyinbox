@@ -14,11 +14,22 @@ struct VideoItem: Identifiable, Hashable {
 }
 
 enum Library {
-    static func dir() -> URL { FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0] }
+    static func root() -> URL { FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0] }
 
-    static func scan() -> [VideoItem] {
-        let keys: [URLResourceKey] = [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey, .contentTypeKey]
-        let urls = (try? FileManager.default.contentsOfDirectory(at: dir(), includingPropertiesForKeys: keys, options: [.skipsHiddenFiles])) ?? []
+    // 子文件夹（短剧 / 私密），不存在则创建
+    static func sub(_ name: String) -> URL {
+        let d = root().appendingPathComponent(name, isDirectory: true)
+        try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+        return d
+    }
+
+    private static let keys: [URLResourceKey] = [
+        .contentModificationDateKey, .fileSizeKey, .isRegularFileKey, .contentTypeKey
+    ]
+
+    static func scan(in dir: URL) -> [VideoItem] {
+        let urls = (try? FileManager.default.contentsOfDirectory(
+            at: dir, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles])) ?? []
         var items: [VideoItem] = []
         for u in urls {
             guard let v = try? u.resourceValues(forKeys: Set(keys)), v.isRegularFile == true else { continue }
@@ -30,10 +41,28 @@ enum Library {
                                    modDate: v.contentModificationDate ?? .distantPast,
                                    size: v.fileSize ?? 0))
         }
-        return items.sorted { $0.modDate > $1.modDate }
+        return items
     }
 
-    static func exists(_ id: String) -> Bool { FileManager.default.fileExists(atPath: id) }
+    static func scanRootByDate() -> [VideoItem] {
+        scan(in: root()).sorted { $0.modDate > $1.modDate }
+    }
+
+    // 按文件名中的数字升序（无数字排最后）
+    static func scanNumeric(_ dir: URL) -> [VideoItem] {
+        scan(in: dir).sorted { a, b in
+            let na = numKey(a.title), nb = numKey(b.title)
+            if na != nb { return na < nb }
+            return a.title < b.title
+        }
+    }
+
+    static func numKey(_ s: String) -> Int {
+        if let r = s.range(of: "[0-9]+", options: .regularExpression) {
+            return Int(s[r]) ?? Int.max
+        }
+        return Int.max
+    }
 }
 
 actor ThumbCache {
