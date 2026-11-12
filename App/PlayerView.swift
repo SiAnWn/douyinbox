@@ -210,37 +210,71 @@ struct InlinePlayer: View {
     }
 }
 
-// MARK: - 纯净全屏播放器（私密：无任何 UI，下滑退出，无收藏）
+// MARK: - 私密全屏播放器（默认纯画面；右滑出 UI：标题/拉伸/关闭，左滑隐藏；下滑退出；无收藏）
 
 struct CleanPlayer: View {
     let video: VideoItem
     @Environment(\.dismiss) private var dismiss
     @StateObject private var pc = PlayerController()
+    @State private var showUI = false
+    @State private var fill = true
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            PlayerSurface(player: pc.player, fill: true)
+            PlayerSurface(player: pc.player, fill: fill)
                 .ignoresSafeArea()
                 .onAppear { pc.load(video.url) }
                 .onDisappear { pc.stop() }
+
             Color.clear.contentShape(Rectangle())
                 .ignoresSafeArea()
-                .gesture(DragGesture().onEnded { g in
-                    if g.translation.height > 80 { dismiss() }
-                })
+                .gesture(nav)
+
+            if showUI {
+                VStack {
+                    HStack {
+                        Button { dismiss() } label: {
+                            Image(systemName: "chevron.down").font(.title2).foregroundStyle(.white).shadow(radius: 3)
+                        }
+                        Spacer()
+                        Button { fill.toggle() } label: {
+                            Text(fill ? "拉伸" : "适配").font(.subheadline).foregroundStyle(.white)
+                                .padding(.horizontal, 14).padding(.vertical, 7)
+                                .background(Capsule().fill(.black.opacity(0.45)))
+                        }
+                    }.padding()
+                    Spacer()
+                    Text(video.title).font(.headline).foregroundStyle(.white).lineLimit(2)
+                        .multilineTextAlignment(.center).padding(.horizontal)
+                }
+                .transition(.opacity)
+            }
         }
-        .statusBarHidden()
+        .statusBarHidden(!showUI)
+    }
+
+    private var nav: some Gesture {
+        DragGesture().onEnded { g in
+            let dx = g.translation.width, dy = g.translation.height
+            if abs(dx) > abs(dy) {
+                withAnimation { showUI = (dx > 0) }
+            } else {
+                if dy > 60 { dismiss() }
+            }
+        }
     }
 }
 
-// MARK: - 按序播放器（短剧：纯画面，上滑下一集，下滑退出，自动播下一集，无收藏）
+// MARK: - 短剧按序播放器（默认纯画面；右滑出 UI：标题/集数/拉伸/关闭，左滑隐藏；上滑下一集，下滑退出；自动播下一集；无收藏）
 
 struct EpisodePlayer: View {
     let items: [VideoItem]
     @Environment(\.dismiss) private var dismiss
     @StateObject private var pc = PlayerController()
     @State private var index: Int
+    @State private var showUI = false
+    @State private var fill = true
 
     init(items: [VideoItem], start: Int) {
         self.items = items
@@ -251,26 +285,55 @@ struct EpisodePlayer: View {
         ZStack {
             Color.black.ignoresSafeArea()
             if index < items.count {
-                PlayerSurface(player: pc.player, fill: true)
+                PlayerSurface(player: pc.player, fill: fill)
                     .ignoresSafeArea()
 
                 Color.clear.contentShape(Rectangle())
                     .ignoresSafeArea()
-                    .gesture(DragGesture().onEnded { g in
-                        let dx = g.translation.width, dy = g.translation.height
-                        if abs(dy) > abs(dx) {
-                            if dy < -60 { next() }
-                            else if dy > 60 { dismiss() }   // 下滑退出
-                        }
-                    })
+                    .gesture(nav)
+
+                if showUI {
+                    VStack {
+                        HStack {
+                            Button { dismiss() } label: {
+                                Image(systemName: "chevron.down").font(.title2).foregroundStyle(.white).shadow(radius: 3)
+                            }
+                            Spacer()
+                            Text("第 \(index + 1)/\(items.count) 集").font(.subheadline).foregroundStyle(.white)
+                                .padding(.horizontal, 12).padding(.vertical, 6)
+                                .background(Capsule().fill(.black.opacity(0.45)))
+                            Button { fill.toggle() } label: {
+                                Text(fill ? "拉伸" : "适配").font(.subheadline).foregroundStyle(.white)
+                                    .padding(.horizontal, 14).padding(.vertical, 7)
+                                    .background(Capsule().fill(.black.opacity(0.45)))
+                            }
+                        }.padding()
+                        Spacer()
+                        Text(items[index].title).font(.headline).foregroundStyle(.white).lineLimit(2)
+                            .multilineTextAlignment(.center).padding(.horizontal)
+                    }
+                    .transition(.opacity)
+                }
             }
         }
-        .statusBarHidden()
+        .statusBarHidden(!showUI)
         .onAppear {
             if index < items.count { pc.load(items[index].url) }
             pc.observeEnd { next() }
         }
         .onDisappear { pc.stop(); pc.removeObs() }
+    }
+
+    private var nav: some Gesture {
+        DragGesture().onEnded { g in
+            let dx = g.translation.width, dy = g.translation.height
+            if abs(dx) > abs(dy) {
+                withAnimation { showUI = (dx > 0) }
+            } else {
+                if dy < -60 { next() }
+                else if dy > 60 { dismiss() }
+            }
+        }
     }
 
     private func next() {
