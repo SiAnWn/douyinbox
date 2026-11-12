@@ -12,6 +12,7 @@ final class AppState: ObservableObject {
     @Published var idx = -1
     @Published var exhausted = false
     @Published var selection: Tab = .parse
+    @Published var coverVideo: VideoItem?
 
     private let favKey = "favorites"
 
@@ -48,7 +49,7 @@ final class AppState: ObservableObject {
         current = videos.first { $0.id == order[idx] }
     }
 
-    func play(_ v: VideoItem) { current = v; selection = .play }
+    func playInPlace(_ v: VideoItem) { coverVideo = v }
 }
 
 @main

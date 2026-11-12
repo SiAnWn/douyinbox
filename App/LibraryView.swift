@@ -15,7 +15,7 @@ struct LibraryView: View {
                     ScrollView {
                         LazyVGrid(columns: cols, spacing: 10) {
                             ForEach(app.videos) { v in
-                                Button { app.play(v) } label: {
+                                Button { app.playInPlace(v) } label: {
                                     VStack(alignment: .leading, spacing: 4) {
                                         Thumb(url: v.url)
                                             .frame(height: 160)
@@ -33,6 +33,9 @@ struct LibraryView: View {
             .navigationTitle("视频库 · \(app.videos.count)")
             .onAppear { app.refresh() }
             .refreshable { app.refresh() }
+            .fullScreenCover(item: $app.coverVideo) { v in
+                InlinePlayer(video: v).environmentObject(app)
+            }
         }
     }
 }

@@ -37,6 +37,7 @@ struct PlayerSurface: UIViewRepresentable {
 struct PlayerView: View {
     @EnvironmentObject var app: AppState
     @StateObject private var pc = PlayerController()
+    @State private var showTabs = false
 
     var body: some View {
         ZStack {
@@ -63,6 +64,7 @@ struct PlayerView: View {
             }
         }
         .onAppear {
+            showTabs = false
             app.refresh()
             if app.current == nil && !app.videos.isEmpty { app.startShuffle() }
         }
@@ -70,10 +72,16 @@ struct PlayerView: View {
             if sel == .play { pc.player.play() } else { pc.player.pause() }
         }
         .onDisappear { pc.player.pause() }
+        .toolbar(showTabs ? .visible : .hidden, for: .tabBar)
+        .statusBarHidden(!showTabs)
     }
 
     @ViewBuilder private func controls(_ cur: VideoItem) -> some View {
         HStack {
+            Button { showTabs = true } label: {
+                Image(systemName: "line.3.horizontal")
+                    .font(.title2).foregroundStyle(.white).shadow(radius: 3)
+            }
             Button { app.toggleFav(cur.id) } label: {
                 Image(systemName: app.favorites.contains(cur.id) ? "star.fill" : "star")
                     .font(.title2).foregroundStyle(.white)
@@ -121,5 +129,43 @@ struct PlayerView: View {
             }
         }
         .padding()
+    }
+}
+
+struct InlinePlayer: View {
+    let video: VideoItem
+    @EnvironmentObject var app: AppState
+    @Environment(\.dismiss) private var dismiss
+    @StateObject private var pc = PlayerController()
+    @State private var fill = true
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            PlayerSurface(player: pc.player, fill: fill)
+                .ignoresSafeArea()
+                .onAppear { pc.set(video.url) }
+                .onDisappear { pc.player.pause() }
+            VStack {
+                HStack {
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark").font(.title2).foregroundStyle(.white).shadow(radius: 3)
+                    }
+                    Spacer()
+                    Button { app.toggleFav(video.id) } label: {
+                        Image(systemName: app.favorites.contains(video.id) ? "star.fill" : "star")
+                            .font(.title2).foregroundStyle(.white).shadow(radius: 3)
+                    }
+                    Button { fill.toggle() } label: {
+                        Text(fill ? "拉伸" : "适配").font(.subheadline).foregroundStyle(.white)
+                            .padding(.horizontal, 14).padding(.vertical, 7)
+                            .background(Capsule().fill(.black.opacity(0.45)))
+                    }
+                }.padding()
+                Spacer()
+                Text(video.title).font(.headline).foregroundStyle(.white).lineLimit(2).padding()
+            }
+        }
+        .statusBarHidden()
     }
 }
