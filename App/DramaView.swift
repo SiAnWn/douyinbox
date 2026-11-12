@@ -44,6 +44,7 @@ struct SeriesRow: View {
 
 struct DramaEpisodes: View {
     let series: Series
+    @EnvironmentObject var app: AppState
     @State private var eps: [VideoItem] = []
     @State private var showEp = false
     @State private var epStart = 0
@@ -65,6 +66,10 @@ struct DramaEpisodes: View {
                                     Text(v.title).font(.caption).lineLimit(1).foregroundStyle(.primary)
                                 }
                             }.buttonStyle(.plain)
+                                .contextMenu {
+                                    Button { app.beginRename(v) } label: { Label("改名", systemImage: "pencil") }
+                                    Button(role: .destructive) { app.deleteVideo(v) } label: { Label("删除", systemImage: "trash") }
+                                }
                         }
                     }
                     .padding()

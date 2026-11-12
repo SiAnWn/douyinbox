@@ -80,6 +80,10 @@ struct PrivateEpisodes: View {
                                     Text(v.title).font(.caption).lineLimit(1).foregroundStyle(.primary)
                                 }
                             }.buttonStyle(.plain)
+                                .contextMenu {
+                                    Button { app.beginRename(v) } label: { Label("改名", systemImage: "pencil") }
+                                    Button(role: .destructive) { app.deleteVideo(v) } label: { Label("删除", systemImage: "trash") }
+                                }
                         }
                     }
                     .padding()

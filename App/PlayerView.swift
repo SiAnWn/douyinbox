@@ -1,30 +1,84 @@
 import SwiftUI
 import AVFoundation
 
+// 每个视频（按路径）记住播放进度，下次续播
+enum ProgressStore {
+    static func get(_ id: String) -> Double { UserDefaults.standard.double(forKey: "prog_" + id) }
+    static func set(_ id: String, _ t: Double) { UserDefaults.standard.set(t, forKey: "prog_" + id) }
+    static func clear(_ id: String) { UserDefaults.standard.removeObject(forKey: "prog_" + id) }
+}
+
 @MainActor
 final class PlayerController: ObservableObject {
     let player = AVPlayer()
-    private var obs: NSObjectProtocol?
+    @Published var currentTime: Double = 0
+    @Published var duration: Double = 0
+    @Published var rate: Float = 1
 
-    func load(_ url: URL) {
-        player.replaceCurrentItem(with: AVPlayerItem(url: url))
-        player.play()
+    private var endObs: NSObjectProtocol?
+    private var timeObs: Any?
+    private var statusObs: NSKeyValueObservation?
+    private var currentID: String?
+
+    func load(_ url: URL, id: String? = nil) {
+        saveProgress()
+        currentID = id
+        currentTime = 0; duration = 0
+        let item = AVPlayerItem(url: url)
+        player.replaceCurrentItem(with: item)
+        if let id {
+            let t = ProgressStore.get(id)
+            if t > 2 {
+                statusObs = item.observe(\.status, options: [.new]) { it, _ in
+                    if it.status == .readyToPlay {
+                        it.seek(to: CMTime(seconds: t, preferredTimescale: 600))
+                    }
+                }
+            }
+        }
+        player.playImmediately(atRate: rate)
+        timeObs = player.addPeriodicTimeObserver(
+            forInterval: CMTime(seconds: 0.5, preferredTimescale: 600), queue: .main) { [weak self] _ in
+            guard let self = self, let it = self.player.currentItem else { return }
+            let t = CMTimeGetSeconds(it.currentTime())
+            let d = CMTimeGetSeconds(it.duration)
+            Task { @MainActor in
+                if t.isFinite { self.currentTime = t }
+                if d.isFinite { self.duration = d }
+            }
+        }
     }
-    func replayCurrent() {
-        if let it = player.currentItem { it.seek(to: .zero); player.play() }
+
+    func seek(_ t: Double) {
+        player.seek(to: CMTime(seconds: max(0, t), preferredTimescale: 600))
+        currentTime = t
     }
+    func setRate(_ r: Float) { rate = r; player.rate = r }
+
+    func saveProgress() {
+        guard let id = currentID, let it = player.currentItem else { return }
+        let t = CMTimeGetSeconds(it.currentTime())
+        let d = CMTimeGetSeconds(it.duration)
+        guard t.isFinite, d.isFinite, d > 3 else { return }
+        ProgressStore.set(id, t >= d - 1.5 ? 0 : t)
+    }
+
     func observeEnd(_ onEnd: @escaping @MainActor () -> Void) {
-        removeObs()
-        obs = NotificationCenter.default.addObserver(
+        removeEnd()
+        endObs = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime, object: nil, queue: .main) { _ in
                 Task { @MainActor in onEnd() }
             }
     }
-    func removeObs() {
-        if let o = obs { NotificationCenter.default.removeObserver(o); obs = nil }
+    private func removeEnd() { if let o = endObs { NotificationCenter.default.removeObserver(o); endObs = nil } }
+    private func removeTime() {
+        if let t = timeObs { player.removeTimeObserver(t); timeObs = nil }
+        statusObs?.invalidate(); statusObs = nil
     }
-    func pause() { player.pause() }
-    func stop() { player.pause(); player.replaceCurrentItem(with: nil) }
+
+    func pause() { saveProgress(); player.pause() }
+    func stop() { saveProgress(); player.pause(); player.replaceCurrentItem(with: nil); removeTime() }
+    func removeObs() { removeEnd(); removeTime() }
 }
 
 final class PlayerContainerView: UIView {
@@ -36,7 +90,6 @@ final class PlayerContainerView: UIView {
     }
 }
 
-// 只显示播放器；切换由外部调用 load() 完成
 struct PlayerSurface: UIViewRepresentable {
     let player: AVPlayer
     let fill: Bool
@@ -53,7 +106,43 @@ struct PlayerSurface: UIViewRepresentable {
     }
 }
 
-// MARK: - 播放标签页（随机；自动=播完切下一个，手动=当前循环；右滑出 UI，左滑隐藏）
+// 进度条 + 倍速（放在调出的 UI 里）
+struct PlayerScrubber: View {
+    @ObservedObject var pc: PlayerController
+    @State private var scrubbing = false
+    @State private var scrubVal: Double = 0
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(Self.fmt(scrubbing ? scrubVal : pc.currentTime))
+                .font(.caption.monospacedDigit()).foregroundStyle(.white)
+            Slider(value: $scrubVal, in: 0...max(pc.duration, 0.1),
+                   onEditingChanged: { e in scrubbing = e; if !e { pc.seek(scrubVal) } })
+                .tint(.white)
+            Text(Self.fmt(pc.duration))
+                .font(.caption.monospacedDigit()).foregroundStyle(.white)
+            Menu {
+                ForEach([0.5, 0.75, 1.0, 1.25, 1.5, 2.0], id: \.self) { r in
+                    Button("\(Self.rateText(r))x") { pc.setRate(Float(r)) }
+                }
+            } label: {
+                Image(systemName: "gauge.with.dots.needle.67percent").foregroundStyle(.white)
+            }
+        }
+        .padding(.horizontal)
+        .onChange(of: pc.currentTime) { nv in if !scrubbing { scrubVal = nv } }
+    }
+
+    static func fmt(_ t: Double) -> String {
+        guard t.isFinite, t >= 0 else { return "0:00" }
+        let s = Int(t); return String(format: "%d:%02d", s / 60, s % 60)
+    }
+    static func rateText(_ r: Double) -> String {
+        r == r.rounded() ? String(Int(r)) : String(format: "%g", r)
+    }
+}
+
+// MARK: - 播放标签页
 
 struct PlayerView: View {
     @EnvironmentObject var app: AppState
@@ -86,26 +175,24 @@ struct PlayerView: View {
             app.revealUI = false
             app.refresh()
             if app.current == nil && !app.videos.isEmpty { app.startShuffle() }
-            if let c = app.current { pc.load(c.url) }
-            pc.observeEnd {
-                if app.autoAdvance { goNext() } else { pc.replayCurrent() }
-            }
+            if let c = app.current { pc.load(c.url, id: c.id) }
+            pc.observeEnd { if app.autoAdvance { goNext() } else { pc.seek(pc.currentTime) } }
         }
         .onChange(of: app.selection) { sel in
-            if sel == .play { pc.player.play() } else { pc.player.pause() }
+            if sel == .play { pc.player.playImmediately(atRate: pc.rate) } else { pc.pause() }
         }
-        .onDisappear { pc.player.pause(); pc.removeObs() }
+        .onDisappear { pc.pause(); pc.removeObs() }
         .background(TabBarAccessor(hidden: app.immersive))
         .statusBarHidden(app.immersive)
     }
 
     private func goNext() {
         app.advance()
-        if let c = app.current { pc.load(c.url) }
+        if let c = app.current { pc.load(c.url, id: c.id) }
     }
     private func goPrev() {
         app.back()
-        if let c = app.current { pc.load(c.url) }
+        if let c = app.current { pc.load(c.url, id: c.id) }
     }
 
     private var nav: some Gesture {
@@ -142,10 +229,12 @@ struct PlayerView: View {
     }
 
     @ViewBuilder private func bottomBar(_ cur: VideoItem) -> some View {
-        Text(cur.title).font(.headline).foregroundStyle(.white).lineLimit(2)
-            .multilineTextAlignment(.center)
-            .padding(.horizontal)
-            .padding(.bottom, 56)
+        VStack(spacing: 10) {
+            PlayerScrubber(pc: pc)
+            Text(cur.title).font(.headline).foregroundStyle(.white).lineLimit(2)
+                .multilineTextAlignment(.center).padding(.horizontal)
+        }
+        .padding(.bottom, 56)
     }
 
     private var empty: some View {
@@ -163,7 +252,7 @@ struct PlayerView: View {
     }
 }
 
-// MARK: - 就地全屏播放器（库/收藏/私密点开，关闭回原页）
+// MARK: - 就地全屏播放器（库/收藏）
 
 struct InlinePlayer: View {
     let video: VideoItem
@@ -177,7 +266,7 @@ struct InlinePlayer: View {
             Color.black.ignoresSafeArea()
             PlayerSurface(player: pc.player, fill: fill)
                 .ignoresSafeArea()
-                .onAppear { pc.load(video.url) }
+                .onAppear { pc.load(video.url, id: video.id) }
                 .onDisappear { pc.stop() }
 
             Color.clear.contentShape(Rectangle())
@@ -203,6 +292,7 @@ struct InlinePlayer: View {
                     }
                 }.padding()
                 Spacer()
+                PlayerScrubber(pc: pc)
                 Text(video.title).font(.headline).foregroundStyle(.white).lineLimit(2).padding()
             }
         }
@@ -210,7 +300,7 @@ struct InlinePlayer: View {
     }
 }
 
-// MARK: - 私密全屏播放器（默认纯画面；右滑出 UI：标题/拉伸/关闭，左滑隐藏；下滑退出；无收藏）
+// MARK: - 私密全屏播放器（右滑出 UI）
 
 struct CleanPlayer: View {
     let video: VideoItem
@@ -224,7 +314,7 @@ struct CleanPlayer: View {
             Color.black.ignoresSafeArea()
             PlayerSurface(player: pc.player, fill: fill)
                 .ignoresSafeArea()
-                .onAppear { pc.load(video.url) }
+                .onAppear { pc.load(video.url, id: video.id) }
                 .onDisappear { pc.stop() }
 
             Color.clear.contentShape(Rectangle())
@@ -245,6 +335,7 @@ struct CleanPlayer: View {
                         }
                     }.padding()
                     Spacer()
+                    PlayerScrubber(pc: pc)
                     Text(video.title).font(.headline).foregroundStyle(.white).lineLimit(2)
                         .multilineTextAlignment(.center).padding(.horizontal)
                 }
@@ -266,7 +357,7 @@ struct CleanPlayer: View {
     }
 }
 
-// MARK: - 短剧按序播放器（默认纯画面；右滑出 UI：标题/集数/拉伸/关闭，左滑隐藏；上滑下一集，下滑退出；自动播下一集；无收藏）
+// MARK: - 短剧按序播放器（右滑出 UI；上滑下一集，下滑退出；自动下一集）
 
 struct EpisodePlayer: View {
     let items: [VideoItem]
@@ -309,6 +400,7 @@ struct EpisodePlayer: View {
                             }
                         }.padding()
                         Spacer()
+                        PlayerScrubber(pc: pc)
                         Text(items[index].title).font(.headline).foregroundStyle(.white).lineLimit(2)
                             .multilineTextAlignment(.center).padding(.horizontal)
                     }
@@ -318,7 +410,7 @@ struct EpisodePlayer: View {
         }
         .statusBarHidden(!showUI)
         .onAppear {
-            if index < items.count { pc.load(items[index].url) }
+            if index < items.count { pc.load(items[index].url, id: items[index].id) }
             pc.observeEnd { next() }
         }
         .onDisappear { pc.stop(); pc.removeObs() }
@@ -339,14 +431,14 @@ struct EpisodePlayer: View {
     private func next() {
         if index + 1 < items.count {
             index += 1
-            pc.load(items[index].url)
+            pc.load(items[index].url, id: items[index].id)
         } else {
-            pc.pause()   // 最后一集：停住
+            pc.pause()
         }
     }
 }
 
-// 用 UIKit 直接控制标签栏/状态栏显隐（比 SwiftUI .toolbar 更可靠）
+// 用 UIKit 直接控制标签栏/状态栏显隐
 struct TabBarAccessor: UIViewControllerRepresentable {
     let hidden: Bool
     func makeUIViewController(context: Context) -> UIViewController {

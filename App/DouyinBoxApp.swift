@@ -17,6 +17,8 @@ final class AppState: ObservableObject {
     @Published var coverVideo: VideoItem?
     @Published var revealUI = false
     @Published var autoAdvance = true
+    @Published var renameTarget: VideoItem?
+    @Published var renameText = ""
 
     var immersive: Bool { selection == .play && !revealUI }
 
@@ -57,6 +59,32 @@ final class AppState: ObservableObject {
     }
 
     func playInPlace(_ v: VideoItem) { coverVideo = v }
+
+    func deleteVideo(_ v: VideoItem) {
+        try? FileManager.default.removeItem(at: v.url)
+        ProgressStore.clear(v.id)
+        if favorites.contains(v.id) { favorites.remove(v.id); saveFav() }
+        if current?.id == v.id { current = nil }
+        refresh(); refreshDramaSeries(); refreshPrivateSeries()
+    }
+
+    func beginRename(_ v: VideoItem) { renameTarget = v; renameText = v.title }
+
+    func commitRename() {
+        guard let v = renameTarget else { return }
+        renameTarget = nil
+        let base = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !base.isEmpty else { return }
+        let illegal = CharacterSet(charactersIn: "\\/:*?\"<>|\n\r\t")
+        let safe = base.components(separatedBy: illegal).joined(separator: " ")
+        guard !safe.isEmpty else { return }
+        let dest = v.url.deletingLastPathComponent()
+            .appendingPathComponent(safe)
+            .appendingPathExtension(v.url.pathExtension)
+        guard dest.path != v.url.path, !FileManager.default.fileExists(atPath: dest.path) else { return }
+        try? FileManager.default.moveItem(at: v.url, to: dest)
+        refresh(); refreshDramaSeries(); refreshPrivateSeries()
+    }
 }
 
 @main
@@ -93,6 +121,16 @@ struct RootView: View {
         }
         .onChange(of: app.selection) { sel in
             if sel != .privacy { app.privateUnlocked = false }
+        }
+        .alert("重命名",
+               isPresented: Binding(get: { app.renameTarget != nil },
+                                   set: { if !$0 { app.renameTarget = nil } }),
+               presenting: app.renameTarget) { v in
+            TextField("新名称", text: Binding(get: { app.renameText }, set: { app.renameText = $0 }))
+            Button("取消", role: .cancel) {}
+            Button("确定") { app.commitRename() }
+        } message: { v in
+            Text("当前：\(v.title)")
         }
     }
 }

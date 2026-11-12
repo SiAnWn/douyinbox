@@ -24,6 +24,10 @@ struct LibraryView: View {
                                     }
                                 }
                                 .buttonStyle(.plain)
+                                .contextMenu {
+                                    Button { app.beginRename(v) } label: { Label("改名", systemImage: "pencil") }
+                                    Button(role: .destructive) { app.deleteVideo(v) } label: { Label("删除", systemImage: "trash") }
+                                }
                             }
                         }
                         .padding()
