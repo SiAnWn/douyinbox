@@ -210,14 +210,37 @@ struct InlinePlayer: View {
     }
 }
 
-// MARK: - 按序播放器（短剧：自动播下一集，可上下滑切换）
+// MARK: - 纯净全屏播放器（私密：无任何 UI，下滑退出，无收藏）
+
+struct CleanPlayer: View {
+    let video: VideoItem
+    @Environment(\.dismiss) private var dismiss
+    @StateObject private var pc = PlayerController()
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            PlayerSurface(player: pc.player, fill: true)
+                .ignoresSafeArea()
+                .onAppear { pc.load(video.url) }
+                .onDisappear { pc.stop() }
+            Color.clear.contentShape(Rectangle())
+                .ignoresSafeArea()
+                .gesture(DragGesture().onEnded { g in
+                    if g.translation.height > 80 { dismiss() }
+                })
+        }
+        .statusBarHidden()
+    }
+}
+
+// MARK: - 按序播放器（短剧：纯画面，上滑下一集，下滑退出，自动播下一集，无收藏）
 
 struct EpisodePlayer: View {
     let items: [VideoItem]
     @Environment(\.dismiss) private var dismiss
     @StateObject private var pc = PlayerController()
     @State private var index: Int
-    @State private var fill = true
 
     init(items: [VideoItem], start: Int) {
         self.items = items
@@ -228,36 +251,18 @@ struct EpisodePlayer: View {
         ZStack {
             Color.black.ignoresSafeArea()
             if index < items.count {
-                PlayerSurface(player: pc.player, fill: fill)
+                PlayerSurface(player: pc.player, fill: true)
                     .ignoresSafeArea()
 
                 Color.clear.contentShape(Rectangle())
                     .ignoresSafeArea()
                     .gesture(DragGesture().onEnded { g in
-                        if abs(g.translation.height) > abs(g.translation.width) {
-                            if g.translation.height < -60 { next() }
-                            else if g.translation.height > 60 { prev() }
+                        let dx = g.translation.width, dy = g.translation.height
+                        if abs(dy) > abs(dx) {
+                            if dy < -60 { next() }
+                            else if dy > 60 { dismiss() }   // 下滑退出
                         }
                     })
-
-                VStack {
-                    HStack {
-                        Button { dismiss() } label: {
-                            Image(systemName: "chevron.down").font(.title2).foregroundStyle(.white).shadow(radius: 3)
-                        }
-                        Spacer()
-                        Text("第 \(index + 1)/\(items.count) 集").font(.subheadline).foregroundStyle(.white)
-                            .padding(.horizontal, 12).padding(.vertical, 6)
-                            .background(Capsule().fill(.black.opacity(0.45)))
-                        Button { fill.toggle() } label: {
-                            Text(fill ? "拉伸" : "适配").font(.subheadline).foregroundStyle(.white)
-                                .padding(.horizontal, 14).padding(.vertical, 7)
-                                .background(Capsule().fill(.black.opacity(0.45)))
-                        }
-                    }.padding()
-                    Spacer()
-                    Text(items[index].title).font(.headline).foregroundStyle(.white).lineLimit(2).padding()
-                }
             }
         }
         .statusBarHidden()
@@ -274,12 +279,6 @@ struct EpisodePlayer: View {
             pc.load(items[index].url)
         } else {
             pc.pause()   // 最后一集：停住
-        }
-    }
-    private func prev() {
-        if index - 1 >= 0 {
-            index -= 1
-            pc.load(items[index].url)
         }
     }
 }
