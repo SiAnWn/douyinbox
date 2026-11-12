@@ -47,7 +47,7 @@ actor ThumbCache {
         gen.appliesPreferredTrackTransform = true
         gen.maximumSize = CGSize(width: 480, height: 480)
         if let res = try? await gen.image(at: .zero) {
-            let img = res.image
+            let img = UIImage(cgImage: res.image)
             mem.setObject(img, forKey: k)
             return img
         }
