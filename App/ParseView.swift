@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct ParseView: View {
     @EnvironmentObject var app: AppState
@@ -52,7 +53,17 @@ struct ParseView: View {
                              downloaded: { opt in isDownloaded(res, opt) },
                              onPick: { opt in Task { await pick(res, opt) } })
             }
+            .onAppear { autoFillFromPasteboard() }
         }
+    }
+
+    private func autoFillFromPasteboard() {
+        guard input.isEmpty else { return }
+        guard let clip = UIPasteboard.general.string,
+              let url = DouyinAPI.extractURL(clip),
+              url.contains("douyin.com") else { return }
+        input = url
+        status = "已从剪贴板填入链接，点「解析 / 选清晰度」"
     }
 
     @MainActor
