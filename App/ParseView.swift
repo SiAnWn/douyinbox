@@ -56,7 +56,18 @@ struct ParseView: View {
                              downloaded: { opt in isDownloaded(res, opt) },
                              onPick: { opt in Task { await pick(res, opt) } })
             }
+            .onAppear { autoFillAndParse() }
         }
+    }
+
+    private func autoFillAndParse() {
+        guard input.isEmpty, !busy else { return }
+        guard let clip = UIPasteboard.general.string,
+              let url = DouyinAPI.extractURL(clip),
+              url.contains("douyin.com") else { return }
+        input = url
+        status = "已自动填入，正在解析…"
+        Task { await doParse(link: url) }
     }
 
     private func pasteFromClipboard() {
