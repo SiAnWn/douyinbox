@@ -106,31 +106,57 @@ struct PlayerSurface: UIViewRepresentable {
     }
 }
 
-// 进度条 + 倍速（放在调出的 UI 里）
+// 细进度条（连续拖动）+ 倍速
 struct PlayerScrubber: View {
     @ObservedObject var pc: PlayerController
-    @State private var scrubbing = false
-    @State private var scrubVal: Double = 0
+    @State private var dragging = false
+    @State private var dragFrac: CGFloat = 0
 
     var body: some View {
-        HStack(spacing: 8) {
-            Text(Self.fmt(scrubbing ? scrubVal : pc.currentTime))
-                .font(.caption.monospacedDigit()).foregroundStyle(.white)
-            Slider(value: $scrubVal, in: 0...max(pc.duration, 0.1),
-                   onEditingChanged: { e in scrubbing = e; if !e { pc.seek(scrubVal) } })
-                .tint(.white)
+        HStack(spacing: 10) {
+            Text(Self.fmt(dragging ? Double(dragFrac) * pc.duration : pc.currentTime))
+                .font(.caption2.monospacedDigit()).foregroundStyle(.white)
+            GeometryReader { geo in
+                let w = max(geo.size.width, 1)
+                let frac = CGFloat(pc.duration > 0
+                    ? (dragging ? Double(dragFrac) : min(max(pc.currentTime / pc.duration, 0), 1))
+                    : 0)
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.white.opacity(0.28)).frame(height: 3)
+                    Capsule().fill(Color.white).frame(width: max(0, w * frac), height: 3)
+                    Circle().fill(.white)
+                        .frame(width: dragging ? 13 : 9, height: dragging ? 13 : 9)
+                        .offset(x: w * frac - (dragging ? 6.5 : 4.5))
+                        .shadow(radius: 2)
+                }
+                .frame(height: 22)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { g in
+                            dragging = true
+                            dragFrac = min(max(g.location.x / w, 0), 1)
+                        }
+                        .onEnded { g in
+                            let f = min(max(g.location.x / w, 0), 1)
+                            pc.seek(Double(f) * pc.duration)
+                            dragging = false
+                        }
+                )
+            }
+            .frame(height: 22)
             Text(Self.fmt(pc.duration))
-                .font(.caption.monospacedDigit()).foregroundStyle(.white)
+                .font(.caption2.monospacedDigit()).foregroundStyle(.white)
             Menu {
                 ForEach([0.5, 0.75, 1.0, 1.25, 1.5, 2.0], id: \.self) { r in
                     Button("\(Self.rateText(r))x") { pc.setRate(Float(r)) }
                 }
             } label: {
-                Image(systemName: "gauge.with.dots.needle.67percent").foregroundStyle(.white)
+                Image(systemName: "gauge.with.dots.needle.67percent")
+                    .font(.footnote).foregroundStyle(.white)
             }
         }
         .padding(.horizontal)
-        .onChange(of: pc.currentTime) { nv in if !scrubbing { scrubVal = nv } }
     }
 
     static func fmt(_ t: Double) -> String {
