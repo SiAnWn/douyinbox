@@ -27,7 +27,7 @@ struct ParseView: View {
                                 Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                             }.buttonStyle(.borderless)
                         }
-                        Button { pasteFromClipboard() } label: {
+                        Button { Task { await pasteAndParse() } } label: {
                             Image(systemName: "doc.on.clipboard").foregroundStyle(.tint)
                         }.buttonStyle(.borderless)
                     }
@@ -35,9 +35,15 @@ struct ParseView: View {
                 Section {
                     Button {
                         linkFocused = false
-                        Task { await doParse(link: input) }
+                        Task {
+                            if input.isEmpty { await pasteAndParse() }
+                            else { await doParse(link: input) }
+                        }
                     } label: {
-                        HStack { if busy { ProgressView() }; Text(busy ? "处理中…" : "解析 / 选清晰度") }
+                        HStack {
+                            if busy { ProgressView() }
+                            Text(busy ? "处理中…" : (input.isEmpty ? "一键粘贴并选清晰度" : "解析并选清晰度"))
+                        }
                     }.disabled(busy)
                     Text(status).font(.footnote).foregroundStyle(.secondary)
                     if showProgress {
@@ -72,23 +78,28 @@ struct ParseView: View {
 
     private func autoFillAndParse() {
         guard input.isEmpty, !busy else { return }
-        guard let clip = UIPasteboard.general.string,
-              let url = DouyinAPI.extractURL(clip),
-              url.contains("douyin.com") else { return }
+        guard let url = Self.clipDouyinURL() else { return }
         input = url
         status = "已自动填入，正在解析…"
         Task { await doParse(link: url) }
     }
 
-    private func pasteFromClipboard() {
-        guard let clip = UIPasteboard.general.string,
-              let url = DouyinAPI.extractURL(clip),
-              url.contains("douyin.com") else {
+    // 📋 按钮 / 空输入时的一键动作：读取剪贴板 → 填入 → 直接拉清晰度
+    private func pasteAndParse() async {
+        guard !busy else { return }
+        guard let url = Self.clipDouyinURL() else {
             status = "剪贴板里没有抖音链接"
             return
         }
         input = url
-        status = "已粘贴链接，点「解析 / 选清晰度」"
+        await doParse(link: url)
+    }
+
+    private static func clipDouyinURL() -> String? {
+        guard let clip = UIPasteboard.general.string,
+              let url = DouyinAPI.extractURL(clip),
+              url.contains("douyin.com") else { return nil }
+        return url
     }
 
     @MainActor

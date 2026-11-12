@@ -4,3 +4,4 @@ Generated/
 *.xcworkspace
 xcuserdata/
 .DS_Store
+IPA-BUILD.md
