@@ -22,8 +22,14 @@ enum BoxIsland {
         Activity<BoxActivity>.activities.first
     }
 
-    static func update(_ mutate: (inout BoxActivity.State) -> Void) {
-        guard let act = current() else { return }
+    static func update(_ mutate: (inout BoxActivity.ContentState) -> Void) {
+        var act = current()
+        if act == nil {                       // 岛被收回了？先复活再写，保证按钮永远有反馈
+            ensureStandby()
+            Thread.sleep(forTimeInterval: 0.35)
+            act = current()
+        }
+        guard let act else { return }
         var s = act.contentState
         mutate(&s)
         s.stamp = Date().timeIntervalSince1970
@@ -104,7 +110,7 @@ enum BoxIsland {
             EngineStore.current = .web
         }
         do {
-            let r = try await ParseRouter.parse(link: url)
+            let r = try await withTimeout(14) { try await ParseRouter.parse(link: url) }
             let q = r.options.first
             update {
                 $0.phase = "parsed"; $0.link = url
@@ -117,10 +123,28 @@ enum BoxIsland {
                 $0.note = n
             }
         } catch {
+            var timedOut = false
+            if case GError.timeout = error { timedOut = true }
             update {
                 $0.phase = "fail"; $0.link = url
-                $0.note = "解析失败（合集/特殊链接请回App）"
+                $0.note = timedOut ? "解析超时(14s)：再按一次或回App解析"
+                                   : "解析失败（合集/特殊链接请回App）"
             }
+        }
+    }
+
+    private static func withTimeout<T>(_ secs: Double,
+                                       _ op: @escaping @Sendable () async throws -> T) async throws -> T {
+        try await withThrowingTaskGroup(of: T.self) { g in
+            g.addTask { try await op() }
+            g.addTask {
+                try await Task.sleep(nanoseconds: UInt64(secs * 1_000_000_000))
+                throw GError.timeout
+            }
+            let v: T
+            if let first = try await g.next() { v = first } else { throw GError.timeout }
+            g.cancelAll()
+            return v
         }
     }
 }
