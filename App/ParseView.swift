@@ -238,17 +238,6 @@ struct ParseView: View {
         busy = true; savedLink = link; lastAutoClip = link
         defer { busy = false; refreshQuota() }
         defer { autoPickAfterParse = false }
-        var handed = false
-        defer { if !handed { app.keepAlive.stop() } }   // 没走到下载就把音轨撤了
-        if autoPickAfterParse {
-            app.keepAlive.start()                        // 续命提前开，覆盖整个解析期
-            if app.autoReturn {
-                Task { @MainActor in
-                    try? await Task.sleep(nanoseconds: 600_000_000)
-                    Self.launchDouyin()                  // 实验：进App 0.6 秒立刻切回
-                }
-            }
-        }
         do {
             // 站点规则·boat 系小站（实测过，直连 playback API，不开浏览器不耗配额）
             if let vid = BoatSite.videoID(from: link) {
@@ -288,17 +277,22 @@ struct ParseView: View {
             if autoPickAfterParse, let r = result, let o = r.options.first {
                 status = "一键下载：\(o.label)"
                 islandFrac = 0
-                handed = true
-                app.keepAlive.rearm()                    // 下载开跑：刷新音轨+后台时限
-                BoxIsland.update(force: true) {
+                app.keepAlive.start()          // 静音续命：被抖音顶到后台也不冻结搬运
+                BoxIsland.update {
                     $0.phase = "parsing"; $0.link = link; $0.pct = 0
                     $0.title = String(r.title.prefix(40)); $0.author = String(r.author.prefix(16))
                     $0.quality = o.label; $0.note = "已开始下载"
                 }
+                if app.autoReturn {
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 1_500_000_000)
+                        Self.launchDouyin()
+                    }
+                }
                 await pick(r, o, idx: 0)
                 app.keepAlive.stop()
                 let fin = status
-                BoxIsland.update(force: true) {
+                BoxIsland.update {
                     $0.phase = fin.hasPrefix("已保存") ? "parsed" : "fail"
                     $0.pct = 0
                     $0.note = fin.hasPrefix("已保存") ? "✓ 已存入视频库" : String(fin.prefix(60))
@@ -311,12 +305,12 @@ struct ParseView: View {
         }
     }
 
-    // 进度中继：页内进度条 + 灵动岛（8% 节流）
+    // 进度中继：页内进度条 + 灵动岛（2% 节流，时序与1.3.41完全一致）
     private func reportFrac(_ frac: Double, _ sps: Double) {
         Task { @MainActor in
             self.progress = frac
             self.speedText = Naming.fmtSpeed(sps)
-            if frac - self.islandFrac > 0.08 || (frac >= 0.999 && self.islandFrac < 0.999) {
+            if frac - self.islandFrac > 0.02 || (frac >= 0.999 && self.islandFrac < 0.999) {
                 self.islandFrac = frac
                 let pct = Int(frac * 100)
                 let sp = Naming.fmtSpeed(sps)
