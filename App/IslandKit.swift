@@ -56,6 +56,26 @@ enum BoxIsland {
         }
     }
 
+    // 后台多通道读剪贴板：string 通道被 iOS 后台限制卡掉时，试 url/原始数据通道
+    nonisolated static func clipText() -> String? {
+        let pb = UIPasteboard.general
+        if pb.hasStrings, let s = pb.string, !s.isEmpty { return s }
+        if let u = pb.url { return u.absoluteString }
+        let types = ["public.url", "public.utf8-plain-text", "public.plain-text",
+                     "net.daringfireball.markdown", "public.text"]
+        for t in types {
+            if let d = pb.data(forPasteboardType: t),
+               let s = String(data: d, encoding: .utf8), !s.isEmpty { return s }
+        }
+        for it in pb.items {
+            for k in it.registeredTypeIdentifiers {
+                if let d = it.data(forType: k),
+                   let s = String(data: d, encoding: .utf8), s.contains("http") { return s }
+            }
+        }
+        return nil
+    }
+
     // 实际解析：读剪贴板 → 解析 → 回写岛状态（全程不打开 App）
     @MainActor
     static func runParse() async {
@@ -63,9 +83,9 @@ enum BoxIsland {
             $0.phase = "parsing"; $0.note = ""
             $0.title = ""; $0.author = ""; $0.quality = ""; $0.link = ""
         }
-        let clip = UIPasteboard.general.string ?? ""
+        let clip = clipText() ?? ""
         guard let url = DouyinAPI.extractURL(clip) else {
-            update { $0.phase = "fail"; $0.note = "剪贴板里没有视频链接，先去复制" }
+            update { $0.phase = "fail"; $0.note = "剪贴板读不到链接（iOS后台限制），点胶囊体回App自动解析" }
             return
         }
         // 扩展进程的默认值与 App 独立：没填 Key 就用免费内置引擎，绝不硬抛 Key 错
