@@ -5,8 +5,27 @@ import AppIntents
 
 @main
 struct IslandBundle: WidgetBundle {
+    @WidgetBundleBuilder
     var body: some Widget {
         BoxLiveActivity()
+        if #available(iOS 18.0, *) {
+            BoxControl()
+        }
+    }
+}
+
+// 控制中心磁贴：一按=后台解析剪贴板并上岛（iOS18+）
+@available(iOS 18.0, *)
+struct BoxControl: ControlWidget {
+    static let kind = "com.sian.DouyinBox.parse-clip"
+    var body: some ControlWidgetConfiguration {
+        StaticControlConfiguration(kind: Self.kind) {
+            ControlWidgetButton(action: ParseClipIntent()) {
+                Label("解析剪贴板", systemImage: "doc.on.clipboard")
+            }
+        }
+        .displayName("盒子：解析剪贴板")
+        .description("读取剪贴板里的抖音链接，后台解析并送上灵动岛，无需打开App")
     }
 }
 
