@@ -24,7 +24,7 @@ targets:
       - path: App/Engines.swift
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.sian.douyinbox.island
+        PRODUCT_BUNDLE_IDENTIFIER: com.sian.DouyinBox.island
         PRODUCT_NAME: DouyinBoxIsland
         SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) ISLANDAPP
         SKIP_INSTALL: YES
