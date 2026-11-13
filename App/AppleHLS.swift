@@ -161,7 +161,7 @@ final class HLSResLoader: NSObject, AVAssetResourceLoaderDelegate {
             if let d = data, !d.isEmpty {
                 loadingRequest.contentInformationRequest?.contentType =
                     Self.mime(for: url.pathExtension.lowercased())
-                loadingRequest.dataRequest?.appendData(d)
+                loadingRequest.dataRequest?.respond(with: d)
                 loadingRequest.finishLoading()
             } else {
                 loadingRequest.finishLoading(with: err ?? GError.http(404))
