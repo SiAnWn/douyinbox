@@ -133,44 +133,28 @@ struct BoxLiveActivity: Widget {
                     .frame(maxWidth: .infinity)
                 }
             } compactLeading: {
-                // 全部贴胶囊左端布置：右端黑珠区域留给系统，永不遮挡
-                HStack(spacing: 0) {
-                    ZStack {
-                        if s.phase == "parsing" && s.pct > 0 {
-                            Circle()
-                                .stroke(Color.white.opacity(0.25), lineWidth: 1.4)
-                                .frame(width: 17, height: 17)
-                            Circle()
-                                .trim(from: 0, to: CGFloat(s.pct) / 100.0)
-                                .stroke(Color.orange,
-                                        style: StrokeStyle(lineWidth: 1.4, lineCap: .round))
-                                .rotationEffect(.degrees(-90))
-                                .frame(width: 17, height: 17)
-                            Image(systemName: "arrow.down")
-                                .font(.system(size: 7.5, weight: .bold))
-                                .foregroundStyle(.orange)
-                        } else {
-                            switch s.phase {
-                            case "parsed":
-                                Image(systemName: "checkmark")
-                                    .font(.system(size: 12, weight: .bold)).foregroundStyle(.green)
-                            case "fail":
-                                Image(systemName: "exclamationmark")
-                                    .font(.system(size: 12, weight: .bold)).foregroundStyle(.red)
-                            case "parsing":
-                                Image(systemName: "arrow.triangle.2.circlepath")
-                                    .font(.system(size: 11, weight: .semibold)).foregroundStyle(.orange)
-                            default:
-                                Image(systemName: "arrow.down")
-                                    .font(.system(size: 13, weight: .bold)).foregroundStyle(.orange)
-                            }
-                        }
-                    }
-                    .frame(width: 20)
-                    Spacer(minLength: 0)
-                }
+                Image(systemName: islandIcon(s.phase, s.pct))
+                    .font(.system(size: 14))
+                    .foregroundStyle(s.phase == "parsed" ? Color.green
+                                       : s.phase == "fail" ? Color.red : Color.orange)
             } compactTrailing: {
-                Text("")
+                if s.phase == "parsing" && s.pct > 0 {
+                    ZStack {
+                        Circle()
+                            .stroke(Color.white.opacity(0.25), lineWidth: 1.5)
+                            .frame(width: 18, height: 18)
+                        Circle()
+                            .trim(from: 0, to: CGFloat(s.pct) / 100.0)
+                            .stroke(Color.orange,
+                                    style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+                            .rotationEffect(.degrees(-90))
+                            .frame(width: 18, height: 18)
+                        Text("\(s.pct)")
+                            .font(.system(size: 6.5, weight: .bold))
+                            .monospacedDigit()
+                            .foregroundStyle(.orange)
+                    }
+                }
             } minimal: {
                 Image(systemName: "square.stack.3d.down.right.fill")
             }
