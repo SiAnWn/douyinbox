@@ -105,8 +105,7 @@ final class AppleHLS: NSObject, AVAssetDownloadDelegate {
         var rel = p.destRel
         if !rel.lowercased().hasSuffix(".mov") { rel += ".mov" }
         let size = Self.extractPackage(at: location, rel: rel)
-        let expected = assetDownloadTask.totalBytesExpectedToWrite
-        let hollow = size < 512 * 1024 && expected > 2_000_000
+        let hollow = size < 200 * 1024     // 空壳(系统没真下成) → 判失败走兜底
         lock.lock(); if var q = table[tid] { q.finished = true; table[tid] = q }; lock.unlock()
         keepLoaders.removeValue(forKey: tid)
         if size == 0 { p.cont.resume(throwing: GError.failed("原生下载完成但保存失败")) }
