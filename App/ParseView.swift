@@ -93,8 +93,16 @@ struct ParseView: View {
             }
             .onAppear { refreshQuota(); autoFillAndParse() }
             .onChange(of: scenePhase) { _ in
-                // 从别的 App 切回前台：重新读剪贴板，新链接自动开解
                 if scenePhase == .active { autoFillAndParse() }
+            }
+            // scenePhase 在"从别的 App 切回"时经常漏报；UIKit 的激活通知每次都必发
+            .onReceive(NotificationCenter.default.publisher(
+                for: UIApplication.didBecomeActiveNotification)) { _ in
+                // 稍等半秒：部分场景剪贴板内容落地比激活通知还晚一点点
+                Task {
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                    autoFillAndParse()
+                }
             }
         }
     }
@@ -114,10 +122,10 @@ struct ParseView: View {
 
     private func autoFillAndParse() {
         guard !busy else { return }
-        guard app.selection == .parse else { return }
         guard let url = clipURL() else { return }
         if url == lastAutoClip { return }   // 这条已经自动解析过，不再浪费配额
         lastAutoClip = url
+        if app.selection != .parse { app.selection = .parse }   // 在别的页切回也直接跳到解析开干
         input = url
         status = "已自动填入，正在解析…"
         Task { await doParse(link: url) }
