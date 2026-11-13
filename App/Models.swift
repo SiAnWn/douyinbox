@@ -255,6 +255,7 @@ extension VideoItem {
 
 enum TagStore {
     private static let key = "videoTags"
+    private static let regKey = "tagRegistryV1"
     static let suggestions = ["跳舞", "搞笑", "知识", "音乐", "游戏", "生活", "影视", "其他"]
 
     private static func dict() -> [String: [String]] {
@@ -262,11 +263,41 @@ enum TagStore {
     }
     private static func save(_ d: [String: [String]]) { UserDefaults.standard.set(d, forKey: key) }
 
+    // 独立标签登记簿（建了没用上也保留）
+    private static func registry() -> Set<String> {
+        Set(UserDefaults.standard.stringArray(forKey: regKey) ?? [])
+    }
+    private static func setRegistry(_ s: Set<String>) {
+        UserDefaults.standard.set(Array(s), forKey: regKey)
+    }
+
+    @discardableResult
+    static func createTag(_ name: String) -> String {
+        var t = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if t.count > 12 { t = String(t.prefix(12)) }
+        guard !t.isEmpty else { return "" }
+        var r = registry(); r.insert(t); setRegistry(r)
+        return t
+    }
+
+    static func removeTag(_ name: String) {
+        var r = registry(); r.remove(name); setRegistry(r)
+        var d = dict()
+        for (k, ts) in d {
+            let nt = ts.filter { $0 != name }
+            if nt.isEmpty { d.removeValue(forKey: k) } else if nt != ts { d[k] = nt }
+        }
+        save(d)
+    }
+
     static func tags(_ id: String) -> [String] { dict()[id] ?? [] }
 
     static func toggle(_ id: String, _ tag: String) {
         var d = dict(); var t = d[id] ?? []
-        if let i = t.firstIndex(of: tag) { t.remove(at: i) } else { t.append(tag) }
+        if let i = t.firstIndex(of: tag) { t.remove(at: i) } else {
+            t.append(tag)
+            var r = registry(); r.insert(tag); setRegistry(r)
+        }
         if t.isEmpty { d.removeValue(forKey: id) } else { d[id] = t }
         save(d)
     }
@@ -290,12 +321,13 @@ enum TagStore {
         let t = Array(Set(tags)).sorted()
         if t.isEmpty { d.removeValue(forKey: id) } else { d[id] = t }
         save(d)
+        var r = registry(); r.formUnion(t); setRegistry(r)
     }
 
-    // 只回显"现有文件真正在用"的标签，按字母排序
+    // 库页顶部筛选：登记过的 + 实际在用的，全部可见
     static func chips(ids: Set<String>) -> [String] {
-        var set = Set<String>()
+        var set = registry()
         for (id, ts) in dict() where ids.contains(id) { set.formUnion(ts) }
-        return Array(set).sorted()
+        return Array(set).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
 }

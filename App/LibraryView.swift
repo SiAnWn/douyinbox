@@ -16,6 +16,9 @@ struct LibraryView: View {
     @State private var seg = 0    // 0视频 1图集 2音频 3收藏
     @State private var filterTags: Set<String> = []   // 多选筛选，任一命中
     @State private var shownLimit = 180   // 分批渲染，几万条也丝滑
+    @State private var showNewTag = false
+    @State private var newTagName = ""
+    @State private var delTagCandidate: String?
     private let cols = [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())]
 
     private func pool(_ kind: Int) -> [VideoItem] {
@@ -71,7 +74,15 @@ struct LibraryView: View {
                     chip(t, on: filterTags.contains(t)) {
                         if filterTags.contains(t) { filterTags.remove(t) } else { filterTags.insert(t) }
                     }
+                    .contextMenu {
+                        if !TagStore.suggestions.contains(t) {
+                            Button(role: .destructive) {
+                                delTagCandidate = t
+                            } label: { Label("删除这个标签", systemImage: "tag") }
+                        }
+                    }
                 }
+                chip("＋ 新建标签", on: false) { showNewTag = true }
                 if filterTags.count > 1 {
                     Text("（任一命中）").font(.caption2).foregroundStyle(.secondary)
                 }
@@ -134,6 +145,30 @@ struct LibraryView: View {
             .onChange(of: seg) { _ in shownLimit = 180 }
             .onChange(of: search) { _ in shownLimit = 180 }
             .onChange(of: filterTags) { _ in shownLimit = 180 }
+            .alert("新建标签", isPresented: $showNewTag) {
+                TextField("标签名（12 字内）", text: $newTagName)
+                Button("取消", role: .cancel) { newTagName = "" }
+                Button("创建") {
+                    let t = TagStore.createTag(newTagName)
+                    newTagName = ""
+                    if !t.isEmpty { filterTags.insert(t) }
+                }
+            } message: {
+                Text("建好立刻出现在这一行；长按视频→标签里即可勾选")
+            }
+            .alert("删除标签",
+                   isPresented: Binding(get: { delTagCandidate != nil },
+                                        set: { if !$0 { delTagCandidate = nil } }),
+                   presenting: delTagCandidate) { t in
+                Button("取消", role: .cancel) {}
+                Button("删除", role: .destructive) {
+                    TagStore.removeTag(t)
+                    filterTags.remove(t)
+                    delTagCandidate = nil
+                }
+            } message: { t in
+                Text("「\(t)」将从标签库和所有视频上一起移除")
+            }
         }
     }
 
