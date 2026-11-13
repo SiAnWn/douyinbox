@@ -12,6 +12,7 @@ struct BoxActivity: ActivityAttributes {
         var quality = ""
         var note = ""
         var link = ""
+        var pct = 0            // 下载中：小胶囊直接显示百分比
         var stamp = Date().timeIntervalSince1970
     }
     typealias State = ContentState   // 协议要求嵌套名必须为 ContentState，别名保旧写法
@@ -101,7 +102,7 @@ enum BoxIsland {
         ensureStandby()
         try? await Task.sleep(nanoseconds: 300_000_000)
         update {
-            $0.phase = "parsing"; $0.note = ""
+            $0.phase = "parsing"; $0.note = ""; $0.pct = 0
             $0.title = ""; $0.author = ""; $0.quality = ""; $0.link = ""
         }
         // 扩展进程的默认值与 App 独立：没填 Key 就用免费内置引擎，绝不硬抛 Key 错
@@ -187,7 +188,7 @@ struct IslandStandbyIntent: LiveActivityIntent {
     static var openAppWhenRunning = false
     func perform() async throws -> some IntentResult {
         BoxIsland.update {
-            $0.phase = "standby"; $0.note = ""
+            $0.phase = "standby"; $0.note = ""; $0.pct = 0
             $0.title = ""; $0.author = ""; $0.quality = ""; $0.link = ""
         }
         return .result()

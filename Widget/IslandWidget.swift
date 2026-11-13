@@ -38,9 +38,9 @@ private func islandIcon(_ phase: String) -> String {
     }
 }
 
-private func islandMark(_ s: BoxActivity.State) -> String {
+private func islandMark(_ s: BoxActivity.ContentState) -> String {
     switch s.phase {
-    case "parsing": return "…"
+    case "parsing": return s.pct > 0 ? "\(s.pct)%" : "…"
     case "parsed":  return "✓"
     case "fail":    return "!"
     default:        return "待"

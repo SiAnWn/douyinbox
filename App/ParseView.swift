@@ -279,7 +279,7 @@ struct ParseView: View {
                 islandFrac = 0
                 app.keepAlive.start()          // 静音续命：被抖音顶到后台也不冻结搬运
                 BoxIsland.update {
-                    $0.phase = "parsing"; $0.link = link
+                    $0.phase = "parsing"; $0.link = link; $0.pct = 0
                     $0.title = String(r.title.prefix(40)); $0.author = String(r.author.prefix(16))
                     $0.quality = o.label; $0.note = "已开始下载"
                 }
@@ -294,6 +294,7 @@ struct ParseView: View {
                 let fin = status
                 BoxIsland.update {
                     $0.phase = fin.hasPrefix("已保存") ? "parsed" : "fail"
+                    $0.pct = 0
                     $0.note = fin.hasPrefix("已保存") ? "✓ 已存入视频库" : String(fin.prefix(60))
                 }
                 return
@@ -313,7 +314,7 @@ struct ParseView: View {
                 self.islandFrac = frac
                 let pct = Int(frac * 100)
                 let sp = Naming.fmtSpeed(sps)
-                BoxIsland.update { $0.phase = "parsing"; $0.note = "下载 \(pct)% · \(sp)" }
+                BoxIsland.update { $0.phase = "parsing"; $0.pct = pct; $0.note = "下载 \(pct)% · \(sp)" }
             }
         }
     }
