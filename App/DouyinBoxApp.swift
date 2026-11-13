@@ -28,6 +28,9 @@ final class AppState: ObservableObject {
     @Published var subsChecking = false
     @Published var tagEditor: VideoItem?
     @Published var islandPending: String?
+    @Published var autoReturn = (UserDefaults.standard.object(forKey: "autoReturnV1") as? Bool) ?? true {
+        didSet { UserDefaults.standard.set(autoReturn, forKey: "autoReturnV1") }
+    }
     @Published var islandOn = (UserDefaults.standard.object(forKey: "islandOn") as? Bool) ?? true {
         didSet {
             UserDefaults.standard.set(islandOn, forKey: "islandOn")

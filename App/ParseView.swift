@@ -7,6 +7,7 @@ struct ParseView: View {
     @State private var input = ""
     @State private var lastAutoClip = ""   // 最近一次已自动解析的剪贴板链接
     @State private var autoPickAfterParse = false   // 灵动岛“开始下载”：解析完直接下最优档
+    @State private var islandFrac = 0.0             // 岛下载进度节流
     @State private var status = "粘贴抖音（或B站/快手）链接 → 选清晰度或自动批量"
     @State private var busy = false
     @State private var result: ParseResult?
@@ -135,8 +136,9 @@ struct ParseView: View {
         if url == lastAutoClip { return }   // 这条已经自动解析过，不再浪费配额
         lastAutoClip = url
         if app.selection != .parse { app.selection = .parse }   // 在别的页切回也直接跳到解析开干
+        autoPickAfterParse = true           // 一键流：解析完自动下最高画质，随后自动回抖音
         input = url
-        status = "已自动填入，正在解析…"
+        status = "已自动填入，正在解析（完成后自动下载）…"
         Task { await doParse(link: url) }
     }
 
@@ -273,13 +275,54 @@ struct ParseView: View {
             status = "解析中（\(engine == .web ? "浏览器引擎较慢…" : "API 直连…")）"
             result = try await ParseRouter.parse(link: link)
             if autoPickAfterParse, let r = result, let o = r.options.first {
-                status = "灵动岛下单：直接下载 \(o.label)"
+                status = "一键下载：\(o.label)"
+                islandFrac = 0
+                BoxIsland.update {
+                    $0.phase = "parsing"; $0.link = link
+                    $0.title = String(r.title.prefix(40)); $0.author = String(r.author.prefix(16))
+                    $0.quality = o.label; $0.note = "已开始下载"
+                }
+                if app.autoReturn {
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 1_500_000_000)
+                        Self.launchDouyin()
+                    }
+                }
                 await pick(r, o, idx: 0)
+                let fin = status
+                BoxIsland.update {
+                    $0.phase = fin.hasPrefix("已保存") ? "parsed" : "fail"
+                    $0.note = fin.hasPrefix("已保存") ? "✓ 已存入视频库" : String(fin.prefix(60))
+                }
                 return
             }
             status = "选一个清晰度下载"
         } catch {
             status = "失败：\(error.localizedDescription)"
+        }
+    }
+
+    // 进度中继：页内进度条 + 灵动岛（8% 节流）
+    private func reportFrac(_ frac: Double, _ sps: Double) {
+        Task { @MainActor in
+            self.progress = frac
+            self.speedText = Naming.fmtSpeed(sps)
+            if frac - self.islandFrac > 0.08 || (frac >= 0.999 && self.islandFrac < 0.999) {
+                self.islandFrac = frac
+                let pct = Int(frac * 100)
+                let sp = Naming.fmtSpeed(sps)
+                BoxIsland.update { $0.phase = "parsing"; $0.note = "下载 \(pct)% · \(sp)" }
+            }
+        }
+    }
+
+    // 一键流完成动作：跳回抖音，盒子退居后台继续传输
+    static func launchDouyin() {
+        guard let u = URL(string: "douyin://") else { return }
+        UIApplication.shared.open(u) { ok in
+            if !ok, let u2 = URL(string: "snssdk1128://") {
+                UIApplication.shared.open(u2)
+            }
         }
     }
 
@@ -305,9 +348,7 @@ struct ParseView: View {
                 let saved = try await HLSSmart.download(
                     baseName: baseName, m3u8Str: m3u8,
                     tok: HLSToken(referer: savedLink.isEmpty ? m3u8 : savedLink, cookie: "", headers: [:]),
-                    preferApple: false) { frac, sps in
-                        Task { @MainActor in self.progress = frac; self.speedText = Naming.fmtSpeed(sps) }
-                    }
+                    preferApple: false) { frac, sps in self.reportFrac(frac, sps) }
                 let savedSize = (try? FileManager.default.attributesOfItem(atPath: SavePaths.docs.appendingPathComponent(saved).path))?[.size] as? Int ?? 0
                 guard savedSize >= 30_000 else {
                     try? FileManager.default.removeItem(at: SavePaths.docs.appendingPathComponent(saved))
@@ -343,9 +384,7 @@ struct ParseView: View {
         do {
             status = "下载 \(opt.label)…"
             showProgress = true; progress = 0; speedText = ""
-            let file = try await DouyinAPI.download(opt.url) { frac, sps in
-                Task { @MainActor in self.progress = frac; self.speedText = Naming.fmtSpeed(sps) }
-            }
+            let file = try await DouyinAPI.download(opt.url) { frac, sps in self.reportFrac(frac, sps) }
             showProgress = false
             let sz = (try? FileManager.default.attributesOfItem(atPath: file.path))?[.size] as? Int ?? 0
             guard sz >= 30_000 else {

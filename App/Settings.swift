@@ -27,7 +27,8 @@ struct SettingsView: View {
                 }
                 Section("灵动岛") {
                     Toggle("切到后台时常驻待命", isOn: $app.islandOn)
-                    Text("退到后台后点岛上按钮=直接解析剪贴板，不用回 App；解析成功可一键跳回下载。iPhone 灵动岛设置里若关了实时活动则不显示。")
+                    Toggle("一键下载后自动跳回抖音", isOn: $app.autoReturn)
+                    Text("复制链接→点一下岛→盒子自动解析、自动下最高画质、1.5秒后把你送回抖音，下载在后台继续。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("接口 Key（各产品独立，只存本机）") {
