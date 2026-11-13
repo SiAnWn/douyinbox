@@ -118,12 +118,26 @@ struct BoxLiveActivity: Widget {
                     .frame(maxWidth: .infinity)
                 }
             } compactLeading: {
-                Image(systemName: "arrow.down.circle.fill")
-                    .foregroundStyle(s.phase == "parsed" ? Color.green : Color.orange)
+                ZStack {
+                    Image(systemName: (s.phase == "parsing" && s.pct > 0)
+                                        ? "arrow.down.circle.fill" : islandIcon(s.phase))
+                        .font(.system(size: 15))
+                        .foregroundStyle(s.phase == "parsed" ? Color.green
+                                           : s.phase == "fail" ? Color.red : Color.orange)
+                    if s.phase == "parsing" {
+                        Circle()
+                            .stroke(Color.gray.opacity(0.22), lineWidth: 1.6)
+                            .frame(width: 21, height: 21)
+                        Circle()
+                            .trim(from: 0, to: s.pct > 0 ? CGFloat(s.pct) / 100.0 : 0.08)
+                            .stroke(Color.orange,
+                                    style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
+                            .rotationEffect(.degrees(-90))
+                            .frame(width: 21, height: 21)
+                    }
+                }
             } compactTrailing: {
-                Text(islandMark(s))
-                    .foregroundStyle(s.phase == "parsed" ? Color.green
-                                       : s.phase == "fail" ? Color.red : Color.secondary)
+                Text("")
             } minimal: {
                 Image(systemName: "square.stack.3d.down.right.fill")
             }
