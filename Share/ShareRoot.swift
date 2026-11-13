@@ -51,8 +51,7 @@ final class ShareRootViewController: UIViewController {
             guard let atts = item.attachments else { continue }
             for prov in atts {
                 // 1) URL 对象通道（分享面板的“链接”多数走这条）
-                if prov.canLoadObject(ofClass: URL.self),
-                   let u = try? await prov.loadObject(ofClass: URL.self) {
+                if let u = await loadURL(prov) {
                     let s = u.absoluteString
                     if s.hasPrefix("http") { return DouyinAPI.extractURL(s) ?? s }
                 }
@@ -66,6 +65,15 @@ final class ShareRootViewController: UIViewController {
             }
         }
         return ""
+    }
+
+    static func loadURL(_ prov: NSItemProvider) async -> URL? {
+        guard prov.canLoadObject(ofClass: URL.self) else { return nil }
+        return await withCheckedContinuation { c in
+            _ = prov.loadObject(ofClass: URL.self) { obj, _ in
+                c.resume(returning: obj)
+            }
+        }
     }
 
     static func loadString(_ prov: NSItemProvider, _ type: String) async -> String? {
