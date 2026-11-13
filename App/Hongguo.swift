@@ -21,8 +21,8 @@ enum Hongguo {
         req.setValue(DouyinAPI.ua, forHTTPHeaderField: "User-Agent")
         let cfg = URLSessionConfiguration.ephemeral
         cfg.timeoutIntervalForResource = 15
-        let (_, resp) = try? await URLSession(configuration: cfg).data(for: req)
-        guard let final = (resp as? HTTPURLResponse)?.url?.absoluteString else { return nil }
+        let r = try? await URLSession(configuration: cfg).data(for: req)
+        guard let final = r?.1.url?.absoluteString else { return nil }
         return queryValue(final, "video_series_id")
     }
 
@@ -78,14 +78,14 @@ enum Hongguo {
     }
 
     // 挑一集的可播流：优先 definition 一致，退而求其次最高档
-    static func chooseStream(_ pb: Playback, def: String) -> Stream? {
+    static func chooseStream(_ pb: Playback, def: String) -> Openhongguo.Stream? {
         let usable = pb.streams.filter { !$0.url.isEmpty && !$0.hls && !$0.dash }
         if let m = usable.first(where: { $0.definition.lowercased() == def.lowercased() }) { return m }
         return usable.max { a, b in (a.height * a.bitrate) < (b.height * b.bitrate) }
     }
 
     // 选流兜底：主地址空时用备份
-    static func streamURL(_ st: Stream) -> URL? {
+    static func streamURL(_ st: Openhongguo.Stream) -> URL? {
         if !st.url.isEmpty, let x = URL(string: st.url) { return x }
         if !st.backupUrl.isEmpty, let x = URL(string: st.backupUrl) { return x }
         return nil
@@ -129,7 +129,6 @@ enum CencMP4 {
             out.append(BoxRef(start: i, size: sz, type: tp))
             i += sz
         }
-        _ = hdr
         return out
     }
 

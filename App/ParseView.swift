@@ -430,7 +430,7 @@ struct ParseView: View {
         guard !sid.isEmpty else { status = "红果剧集ID缺失"; return }
         do {
             status = "红果列全集…"
-            let all = await Hongguo.episodes(sid)
+            let all = try await Hongguo.episodes(sid)
             let play = all.filter { $0.playable }
             let list = play.isEmpty ? all : play
             guard !list.isEmpty else { status = "红果没有可播分集"; return }
