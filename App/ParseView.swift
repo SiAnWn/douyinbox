@@ -288,21 +288,25 @@ struct ParseView: View {
             status = "解析中（\(engine == .web ? "浏览器引擎较慢…" : "API 直连…")）"
             result = try await ParseRouter.parse(link: link)
             // 一键流防糊保险：API“原画”有时只是 720p，顺手免费探一把浏览器流，谁大用谁
-            if autoPickAfterParse, engine.isIfphp, var apiR = result, let apiOpt = apiR.options.first {
+            if autoPickAfterParse, engine.isIfphp, let apiR = result, let apiOpt = apiR.options.first {
                 status = "画质对比探测…"
                 let old = EngineStore.current
                 EngineStore.current = .web
                 let webR = try? await ParseRouter.parse(link: link)
                 EngineStore.current = old
-                if var wOpt = webR?.options.first, wOpt.url != apiOpt.url {
+                if let wi = webR?.options.first, wi.url != apiOpt.url {
                     let sA = await Self.headSize(apiOpt.url)
-                    wOpt.sizeBytes = await Self.headSize(wOpt.url)
-                    if wOpt.sizeBytes > sA {
-                        if var wr = webR {
-                            wr.options = [wOpt] + (wr.options.count > 1 ? Array(wr.options.dropFirst()) : [])
-                            result = wr
-                            status = "浏览器流更大(\(Naming.fmtSize(wOpt.sizeBytes)))，用它"
-                        }
+                    let sW = await Self.headSize(wi.url)
+                    if sW > sA, let wr = webR {
+                        let better = QualityOption(label: wi.label, url: wi.url,
+                                                   width: wi.width, height: wi.height,
+                                                   sizeBytes: sW,
+                                                   isOriginal: wi.isOriginal, isHLS: wi.isHLS)
+                        result = ParseResult(videoID: wr.videoID, title: wr.title,
+                                             author: wr.author,
+                                             options: [better] + Array(wr.options.dropFirst()),
+                                             images: wr.images)
+                        status = "浏览器流更大(\(Naming.fmtSize(sW)))，用它"
                     }
                 }
             }
