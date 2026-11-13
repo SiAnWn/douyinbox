@@ -177,11 +177,22 @@ struct LibraryView: View {
                             Button { app.beginRename(v) } label: { Label("改名", systemImage: "pencil") }
                             Button(role: .destructive) { app.deleteVideo(v) } label: { Label("删除", systemImage: "trash") }
                             Menu {
+                                Button { app.beginTag(v) } label: { Label("新建标签…", systemImage: "plus.circle") }
+                                Divider()
                                 ForEach(TagStore.suggestions, id: \.self) { t in
                                     Button { TagStore.toggle(v.id, t) } label: {
                                         if TagStore.tags(v.id).contains(t) {
                                             Label(t, systemImage: "checkmark")
                                         } else { Text(t) }
+                                    }
+                                }
+                                let customs = TagStore.tags(v.id).filter { !TagStore.suggestions.contains($0) }
+                                if !customs.isEmpty {
+                                    Divider()
+                                    ForEach(customs, id: \.self) { t in
+                                        Button { TagStore.toggle(v.id, t) } label: {
+                                            Label(t + "（再点取消）", systemImage: "checkmark.circle.fill")
+                                        }
                                     }
                                 }
                             } label: { Label("标签", systemImage: "tag") }
