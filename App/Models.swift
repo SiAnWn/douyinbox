@@ -9,6 +9,7 @@ struct VideoItem: Identifiable, Hashable {
     let title: String
     let modDate: Date
     let size: Int
+    var isAudio = false
     static func == (l: VideoItem, r: VideoItem) -> Bool { l.id == r.id }
     func hash(into h: inout Hasher) { h.combine(id) }
 }
@@ -58,13 +59,22 @@ enum Library {
         var items: [VideoItem] = []
         for u in urls {
             guard let v = try? u.resourceValues(forKeys: Set(keys)), v.isRegularFile == true else { continue }
-            let ok = v.contentType.map { $0.conforms(to: .movie) || $0.conforms(to: .video) }
-                ?? ["mp4", "mov", "m4v", "ts", "tsv", "video"].contains(u.pathExtension.lowercased())
+            let ext = u.pathExtension.lowercased()
+            let audExt = ["m4a", "mp3", "aac", "wav", "m4b", "flac"].contains(ext)
+            var isAud = false, ok = false
+            if let ct = v.contentType {
+                if ct.conforms(to: .movie) || ct.conforms(to: .video) { ok = true }
+                else if ct.conforms(to: .audio) || audExt { ok = true; isAud = true }
+            } else {
+                if ["mp4", "mov", "m4v", "ts", "tsv", "video"].contains(ext) { ok = true }
+                else if audExt { ok = true; isAud = true }
+            }
             guard ok else { continue }
             items.append(VideoItem(id: u.path, url: u,
                                    title: u.deletingPathExtension().lastPathComponent,
                                    modDate: v.contentModificationDate ?? .distantPast,
-                                   size: v.fileSize ?? 0))
+                                   size: v.fileSize ?? 0,
+                                   isAudio: isAud))
         }
         return items
     }

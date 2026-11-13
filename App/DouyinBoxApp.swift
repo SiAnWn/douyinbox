@@ -1,4 +1,5 @@
 import SwiftUI
+import AVFoundation
 
 enum Tab: Hashable { case parse, play, drama, privacy, library }
 
@@ -21,6 +22,8 @@ final class AppState: ObservableObject {
     @Published var autoAdvance = true
     @Published var renameTarget: VideoItem?
     @Published var renameText = ""
+    @Published var exportingID: String?      // 正在提取音频的文件 id
+    @Published var extractNote: String?      // 提取结果提示
 
     var immersive: Bool { selection == .play && !revealUI }
 
@@ -71,6 +74,37 @@ final class AppState: ObservableObject {
     }
 
     func beginRename(_ v: VideoItem) { renameTarget = v; renameText = v.title }
+
+    // 提取音频：原视频旁生成 "标题 音频.m4a"（纯音轨复制/转码，不改动源文件）
+    func extractAudio(_ v: VideoItem) {
+        guard exportingID == nil, !v.isAudio else { return }
+        exportingID = v.id
+        Task { @MainActor in
+            defer { exportingID = nil; refresh(); refreshDramaSeries(); refreshPrivateSeries() }
+            let safe = Naming.sanitize(v.title)
+            guard !safe.isEmpty else { return }
+            let dest = v.url.deletingLastPathComponent()
+                .appendingPathComponent(safe + " 音频.m4a")
+            try? FileManager.default.removeItem(at: dest)
+            let asset = AVURLAsset(url: v.url)
+            guard !asset.tracks(withMediaType: .audio).isEmpty else {
+                extractNote = "该视频没有音轨"; return
+            }
+            guard let session = AVAssetExportSession(asset: asset,
+                                                     presetName: AVAssetExportPresetAppleM4A) else { return }
+            session.outputURL = dest
+            session.outputFileType = .m4a
+            await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+                session.exportAsynchronously { c.resume() }
+            }
+            if session.status == .completed {
+                extractNote = "音频已生成，去「库→音频」翻看"
+            } else {
+                try? FileManager.default.removeItem(at: dest)
+                extractNote = "提取失败：\(session.error?.localizedDescription ?? "未知错误")"
+            }
+        }
+    }
 
     func commitRename() {
         guard let v = renameTarget else { return }
@@ -135,6 +169,13 @@ struct RootView: View {
             Button("确定") { app.commitRename() }
         } message: { v in
             Text("当前：\(v.title)")
+        }
+        .alert("音频提取",
+               isPresented: Binding(get: { app.extractNote != nil },
+                                    set: { if !$0 { app.extractNote = nil } })) {
+            Button("好") { app.extractNote = nil }
+        } message: {
+            Text(app.extractNote ?? "")
         }
     }
 }

@@ -4,12 +4,17 @@ struct LibraryView: View {
     @EnvironmentObject var app: AppState
     @State private var search = ""
     @State private var sort = 0   // 0 最新 1 名称 2 大小
-    @State private var favOnly = false
+    @State private var seg = 0    // 0视频 1图集 2音频 3收藏
     @State private var filterTag: String?
     private let cols = [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())]
 
     private var shown: [VideoItem] {
-        var list = favOnly ? app.videos.filter { app.favorites.contains($0.id) } : app.videos
+        var list: [VideoItem]
+        switch seg {
+        case 2:  list = app.videos.filter { $0.isAudio }
+        case 3:  list = app.videos.filter { app.favorites.contains($0.id) }
+        default: list = app.videos.filter { !$0.isAudio }
+        }
         if let ft = filterTag { list = list.filter { TagStore.tags($0.id).contains(ft) } }
         if !search.isEmpty { list = list.filter { $0.title.localizedCaseInsensitiveContains(search) } }
         switch sort {
@@ -20,8 +25,19 @@ struct LibraryView: View {
         return list
     }
 
+    private var vidCount: Int { app.videos.filter { !$0.isAudio }.count }
+    private var audCount: Int { app.videos.filter { $0.isAudio }.count }
     private var favCount: Int { app.videos.count { app.favorites.contains($0.id) } }
     private var tagChips: [String] { TagStore.chips(ids: Set(app.videos.map { $0.id })) }
+
+    private var navTitle: String {
+        switch seg {
+        case 1: return "图集"
+        case 2: return "音频"
+        case 3: return "收藏"
+        default: return "视频库"
+        }
+    }
 
     private var chipRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -49,24 +65,22 @@ struct LibraryView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                Picker("视图", selection: $favOnly) {
-                    Text("全部 (\(app.videos.count))").tag(false)
-                    Text("收藏 (\(favCount))").tag(true)
+                Picker("视图", selection: $seg) {
+                    Text("视频 (\(vidCount))").tag(0)
+                    Text("图集 (\(app.albums.count))").tag(1)
+                    Text("音频 (\(audCount))").tag(2)
+                    Text("收藏 (\(favCount))").tag(3)
                 }
                 .pickerStyle(.segmented)
                 .padding(.horizontal)
                 .padding(.top, 6)
 
-                chipRow
-
-                if !favOnly && !app.albums.isEmpty {
-                    albumsStrip
-                }
+                if seg != 1 { chipRow }
 
                 content
             }
-            .navigationTitle(favOnly ? "收藏" : "视频库")
-            .searchable(text: $search, prompt: "搜索视频")
+            .navigationTitle(navTitle)
+            .searchable(text: $search, prompt: "搜索")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
@@ -81,23 +95,17 @@ struct LibraryView: View {
     }
 
     @ViewBuilder private var content: some View {
-        if app.videos.isEmpty {
-            ContentUnavailableView("还没有视频",
-                                   systemImage: "square.grid.3x3.fill",
-                                   description: Text("去「解析」下载视频"))
-        } else if favOnly && favCount == 0 {
-            ContentUnavailableView("还没有收藏",
-                                   systemImage: "star",
-                                   description: Text("播放页点 ☆ 收藏，或长按视频选「收藏」"))
+        if seg == 1 {
+            albumsGrid
         } else if shown.isEmpty {
-            ContentUnavailableView("没有匹配", systemImage: "magnifyingglass", description: Text("换个关键词"))
+            emptyState
         } else {
             ScrollView {
                 LazyVGrid(columns: cols, spacing: 10) {
                     ForEach(shown) { v in
                         Button { app.playInPlace(v) } label: {
                             VStack(alignment: .leading, spacing: 4) {
-                                Thumb(url: v.url)
+                                RowCover(v: v)
                                     .frame(height: 160)
                                     .overlay(alignment: .topLeading) {
                                         if app.favorites.contains(v.id) {
@@ -105,6 +113,12 @@ struct LibraryView: View {
                                                 .font(.caption).foregroundStyle(.pink)
                                                 .padding(6)
                                                 .background(.black.opacity(0.35), in: Circle())
+                                                .padding(4)
+                                        }
+                                        if app.exportingID == v.id {
+                                            Text("提取中…")
+                                                .font(.caption2).foregroundStyle(.white)
+                                                .padding(4).background(.orange.opacity(0.85), in: Capsule())
                                                 .padding(4)
                                         }
                                     }
@@ -117,6 +131,12 @@ struct LibraryView: View {
                             Button { app.toggleFav(v.id) } label: {
                                 Label(app.favorites.contains(v.id) ? "取消收藏" : "收藏",
                                       systemImage: app.favorites.contains(v.id) ? "star.slash" : "star")
+                            }
+                            if !v.isAudio {
+                                Button { app.extractAudio(v) } label: {
+                                    Label("提取音频", systemImage: "music.note.list")
+                                }
+                                .disabled(app.exportingID != nil && app.exportingID != v.id)
                             }
                             Button { app.beginRename(v) } label: { Label("改名", systemImage: "pencil") }
                             Button(role: .destructive) { app.deleteVideo(v) } label: { Label("删除", systemImage: "trash") }
@@ -137,40 +157,77 @@ struct LibraryView: View {
         }
     }
 
-    private var albumsStrip: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Label("图集 (\(app.albums.count))", systemImage: "photo.stack")
-                .font(.subheadline).foregroundStyle(.secondary)
-                .padding(.horizontal)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    ForEach(app.albums) { a in
-                        Button { app.openAlbum = a } label: {
-                            VStack(alignment: .leading, spacing: 4) {
-                                AlbumThumb(url: a.cover)
-                                    .frame(width: 108, height: 144)
-                                    .background(Color.gray.opacity(0.15))
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                                    .overlay(alignment: .bottomTrailing) {
-                                        Text("\(a.count)图")
-                                            .font(.caption2).foregroundStyle(.white)
-                                            .padding(4).background(.black.opacity(0.5), in: Capsule())
-                                            .padding(4)
-                                    }
-                                Text(a.title).font(.caption).lineLimit(1)
-                                    .frame(width: 108, alignment: .leading)
-                                    .foregroundStyle(.primary)
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        .contextMenu {
-                            Button(role: .destructive) {
-                                try? FileManager.default.removeItem(at: a.url)
-                                app.refresh()
-                            } label: { Label("删除整本", systemImage: "trash") }
+    @ViewBuilder private var emptyState: some View {
+        if seg == 3 {
+            ContentUnavailableView("还没有收藏",
+                                   systemImage: "star",
+                                   description: Text("播放页点 ☆ 收藏，或长按视频选「收藏」"))
+        } else if seg == 2 {
+            ContentUnavailableView("还没有音频",
+                                   systemImage: "music.note",
+                                   description: Text("视频库长按视频 → 提取音频，生成 m4a 存进 App"))
+        } else if !search.isEmpty || filterTag != nil {
+            ContentUnavailableView("没有匹配", systemImage: "magnifyingglass", description: Text("换个关键词"))
+        } else {
+            ContentUnavailableView("还没有视频",
+                                   systemImage: "square.grid.3x3.fill",
+                                   description: Text("去「解析」下载视频"))
+        }
+    }
+
+    private var albumsGrid: some View {
+        ScrollView {
+            LazyVGrid(columns: cols, spacing: 10) {
+                ForEach(app.albums) { a in
+                    Button { app.openAlbum = a } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            AlbumThumb(url: a.cover)
+                                .frame(height: 150)
+                                .background(Color.gray.opacity(0.15))
+                                .overlay(alignment: .bottomTrailing) {
+                                    Text("\(a.count)图")
+                                        .font(.caption2).foregroundStyle(.white)
+                                        .padding(4).background(.black.opacity(0.5), in: Capsule())
+                                        .padding(4)
+                                }
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                            Text(a.title).font(.caption).lineLimit(1)
+                                .foregroundStyle(.primary)
                         }
                     }
-                }.padding(.horizontal)
+                    .buttonStyle(.plain)
+                    .contextMenu {
+                        Button(role: .destructive) {
+                            try? FileManager.default.removeItem(at: a.url)
+                            app.refresh()
+                        } label: { Label("删除整本", systemImage: "trash") }
+                    }
+                }
+            }
+            .padding()
+        }
+        .overlay {
+            if app.albums.isEmpty {
+                ContentUnavailableView("还没有图集",
+                                       systemImage: "photo.stack",
+                                       description: Text("解析抖音「图文作品」→ 存入 App"))
+            }
+        }
+    }
+}
+
+private struct RowCover: View {
+    let v: VideoItem
+    var body: some View {
+        ZStack {
+            if v.isAudio {
+                LinearGradient(colors: [Color(white: 0.22), Color(white: 0.10)],
+                               startPoint: .top, endPoint: .bottom)
+                Image(systemName: "music.note")
+                    .font(.system(size: 44))
+                    .foregroundStyle(.secondary)
+            } else {
+                Thumb(url: v.url)
             }
         }
     }
