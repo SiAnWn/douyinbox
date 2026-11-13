@@ -165,6 +165,12 @@ actor EngineHealth {
     func reset() { fails = 0 }
     func dead() -> Bool { fails >= 4 }
 }
+actor StopFlag {
+    private var stopped = false
+    func setStop() { stopped = true }
+    func clear() { stopped = false }
+    func check() -> Bool { stopped }
+}
 actor EpQueue {
     private var q: [MixEpisode]
     init(_ eps: [MixEpisode]) { q = eps }
@@ -182,13 +188,13 @@ final class BatchRunner: ObservableObject {
     @Published var failed = 0
     @Published var current = ""
 
-    private var cancelled = false
-    func cancel() { cancelled = true }
-    nonisolated func shouldStop() -> Bool { cancelled }   // worker 免切主线程读
+    private let stopFlag = StopFlag()
+    func cancel() { Task { await stopFlag.setStop() } }
 
     func start(mix: MixData, base: String, useEngine: Bool, folderName: String,
                onFinish: @escaping () -> Void) async {
-        phase = .running; cancelled = false
+        phase = .running
+        await stopFlag.clear()
         got = 0; skipped = 0; failed = 0; total = mix.eps.count
         current = ""
 
@@ -213,7 +219,8 @@ final class BatchRunner: ObservableObject {
                 group.addTask { [weak self] in
                     while true {
                         guard let ep = await queue.take() else { break }
-                        if self?.shouldStop() == true { break }
+                        let chk1 = await stopFlag.check()
+                        if chk1 { break }
                         await self?.showCur(ep)
                         var dlURL: URL?
                         var useEngNow = realEngine
@@ -223,7 +230,8 @@ final class BatchRunner: ObservableObject {
                         }
                         if useEngNow {
                             while CallStats.current().minute >= CallStats.limits.minute {
-                                if self?.shouldStop() == true { break }
+                                let stopped = await stopFlag.check()
+                                if stopped { break }
                                 try? await Task.sleep(nanoseconds: 15_000_000_000)
                             }
                             await gate.space()
@@ -258,8 +266,9 @@ final class BatchRunner: ObservableObject {
                 }
             }
         }
-        phase = cancelled ? .failed : .done
-        if cancelled { current = "已取消（已下保留，再粘同链接续传）" }
+        let wasStop = await stopFlag.check()
+        phase = wasStop ? .failed : .done
+        if wasStop { current = "已取消（已下保留，再粘同链接续传）" }
         onFinish()
     }
 
