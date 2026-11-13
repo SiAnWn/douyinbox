@@ -5,7 +5,7 @@ import AppIntents
 
 // MARK: - 灵动岛数据（App 与扩展共同编译）
 struct BoxActivity: ActivityAttributes {
-    struct State: Codable, Hashable {
+    struct ContentState: Codable, Hashable {
         var phase = "standby"   // standby | parsing | parsed | fail
         var title = ""
         var author = ""
@@ -14,6 +14,7 @@ struct BoxActivity: ActivityAttributes {
         var link = ""
         var stamp = Date().timeIntervalSince1970
     }
+    typealias State = ContentState   // 协议要求嵌套名必须为 ContentState，别名保旧写法
 }
 
 enum BoxIsland {
