@@ -156,7 +156,7 @@ struct ParseView: View {
                     title: t.isEmpty ? "boat 视频 \(vid)" : t, author: "",
                     options: st.map { QualityOption(label: $0.label,
                         url: URL(string: $0.m3u8) ?? URL(string: "https://placeholder.local")!,
-                        width: 0, height: 0, sizeBytes: 0, isOriginal: true, isHLS: true) }
+                        width: 0, height: 0, sizeBytes: 0, isOriginal: true, isHLS: true) })
                 status = "流地址已就绪（时效很短，请尽快选档）"
                 return
             }
