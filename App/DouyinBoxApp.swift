@@ -1,6 +1,6 @@
 import SwiftUI
 
-enum Tab: Hashable { case parse, play, fav, drama, privacy, library }
+enum Tab: Hashable { case parse, play, drama, privacy, library }
 
 @MainActor
 final class AppState: ObservableObject {
@@ -107,14 +107,12 @@ struct RootView: View {
                 .tabItem { Label("解析", systemImage: "arrow.down.circle") }.tag(Tab.parse)
             PlayerView()
                 .tabItem { Label("播放", systemImage: "play.circle") }.tag(Tab.play)
-            FavoritesView()
-                .tabItem { Label("收藏", systemImage: "star") }.tag(Tab.fav)
+            LibraryView()
+                .tabItem { Label("库", systemImage: "square.grid.3x3.fill") }.tag(Tab.library)
             DramaView()
                 .tabItem { Label("短剧", systemImage: "film") }.tag(Tab.drama)
             PrivateView()
                 .tabItem { Label("私密", systemImage: "lock.fill") }.tag(Tab.privacy)
-            LibraryView()
-                .tabItem { Label("库", systemImage: "square.grid.3x3.fill") }.tag(Tab.library)
         }
         .fullScreenCover(item: $app.coverVideo) { v in
             InlinePlayer(video: v).environmentObject(app)
