@@ -307,7 +307,7 @@ struct LibraryView: View {
     }
 }
 
-private struct RowCover: View {
+struct CoverTile: View {
     let v: VideoItem
     @State private var img: UIImage?
     @State private var landscape = false
@@ -336,6 +336,11 @@ private struct RowCover: View {
             if let s = i?.size, s.height > 0 { landscape = s.width > s.height * 1.05 }
         }
     }
+}
+
+private struct RowCover: View {
+    let v: VideoItem
+    var body: some View { CoverTile(v: v) }
 }
 
 struct AlbumThumb: View {

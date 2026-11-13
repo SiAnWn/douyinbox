@@ -99,8 +99,10 @@ struct PrivateEpisodes: View {
                         ForEach(vids) { v in
                             Button { cleanVideo = v } label: {
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Thumb(url: v.url).frame(height: 160).clipShape(RoundedRectangle(cornerRadius: 8))
+                                    CoverTile(v: v)
+                                        .clipShape(RoundedRectangle(cornerRadius: 8))
                                     Text(v.title).font(.caption).lineLimit(1).foregroundStyle(.primary)
+                                    Text(Naming.fmtSize(v.size)).font(.caption2).foregroundStyle(.secondary)
                                 }
                             }.buttonStyle(.plain)
                                 .contextMenu {
