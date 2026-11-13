@@ -187,6 +187,7 @@ struct LibraryView: View {
                         }
                     }
                 }
+                .padding()
                 if list.count > page.count {
                     HStack(spacing: 8) {
                         Spacer()
@@ -201,7 +202,6 @@ struct LibraryView: View {
                         shownLimit += 360
                     }
                 }
-                .padding()
             }
         }
     }
