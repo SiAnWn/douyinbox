@@ -27,8 +27,25 @@ final class AppState: ObservableObject {
     @Published var subs: [SubData] = []
     @Published var subsChecking = false
     @Published var tagEditor: VideoItem?
+    @Published var islandPending: String?
+    @Published var islandOn = (UserDefaults.standard.object(forKey: "islandOn") as? Bool) ?? true {
+        didSet {
+            UserDefaults.standard.set(islandOn, forKey: "islandOn")
+            if islandOn { BoxIsland.ensureStandby() } else { BoxIsland.endAll() }
+        }
+    }
+
+    static let shared = AppState()
 
     var immersive: Bool { selection == .play && !revealUI }
+
+    // 灵动岛“开始下载”按钮 → 回 App 自动解析+下最优档
+    func islandDownload(_ link: String) {
+        guard !link.isEmpty else { return }
+        selection = .parse
+        BoxIsland.update { $0.note = "已回App，即将自动下载" }
+        islandPending = link
+    }
 
     private let favKey = "favorites"
 
@@ -192,7 +209,7 @@ final class AppState: ObservableObject {
 
 @main
 struct DouyinBoxApp: App {
-    @StateObject private var app = AppState()
+    @StateObject private var app = AppState.shared
     var body: some Scene {
         WindowGroup {
             RootView()
@@ -202,6 +219,7 @@ struct DouyinBoxApp: App {
                     app.refreshSoon(); app.refreshSeriesSoon()
                     app.loadSubs()
                     if !app.subs.isEmpty { Task { await app.checkSubs() } }
+                    if app.islandOn { BoxIsland.ensureStandby() }
                 }
         }
     }
@@ -209,6 +227,7 @@ struct DouyinBoxApp: App {
 
 struct RootView: View {
     @EnvironmentObject var app: AppState
+    @Environment(\.scenePhase) private var scenePhase
     var body: some View {
         TabView(selection: $app.selection) {
             ParseView()
@@ -231,6 +250,9 @@ struct RootView: View {
         }
         .onChange(of: app.selection) { sel in
             if sel != .privacy { app.privateUnlocked = false }
+        }
+        .onChange(of: scenePhase) { p in
+            if p == .background { BoxIsland.ensureStandby() }   // 退后台时岛若被收回则重建
         }
         .alert("重命名",
                isPresented: Binding(get: { app.renameTarget != nil },

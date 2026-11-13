@@ -1,4 +1,4 @@
-﻿name: DouyinBox
+name: DouyinBox
 options:
   bundleIdPrefix: com.sian
   deploymentTarget:
@@ -7,16 +7,43 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.9"
-    MARKETING_VERSION: "1.3.24"
-    CURRENT_PROJECT_VERSION: "34"
+    MARKETING_VERSION: "1.3.25"
+    CURRENT_PROJECT_VERSION: "35"
     TARGETED_DEVICE_FAMILY: "1"
     ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
 targets:
+  DouyinBoxIsland:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: Widget
+      - path: App/IslandKit.swift
+      - path: App/Models.swift
+      - path: App/DouyinAPI.swift
+      - path: App/Engines.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.sian.douyinbox.island
+        PRODUCT_NAME: DouyinBoxIsland
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) ISLANDAPP
+        SKIP_INSTALL: YES
+    info:
+      path: Generated/IslandInfo.plist
+      properties:
+        CFBundleDisplayName: 抖音盒子灵动岛
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
   DouyinBox:
     type: application
     platform: iOS
+    deploymentTarget: "17.0"
     sources:
       - App
+    dependencies:
+      - target: DouyinBoxIsland
     info:
       path: Generated/Info.plist
       properties:
@@ -30,8 +57,3 @@ targets:
           - background-transfer
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
-
-
-
-
-

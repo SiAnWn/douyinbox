@@ -6,6 +6,7 @@ struct ParseView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var input = ""
     @State private var lastAutoClip = ""   // 最近一次已自动解析的剪贴板链接
+    @State private var autoPickAfterParse = false   // 灵动岛“开始下载”：解析完直接下最优档
     @State private var status = "粘贴抖音（或B站/快手）链接 → 选清晰度或自动批量"
     @State private var busy = false
     @State private var result: ParseResult?
@@ -90,6 +91,14 @@ struct ParseView: View {
             .sheet(isPresented: $showSettings) { SettingsView() }
             .fullScreenCover(item: $mix) { m in
                 BatchSheet(mix: m).environmentObject(app)
+            }
+            .onChange(of: app.islandPending) { v in
+                guard let l = v, !busy else { app.islandPending = nil; return }
+                app.islandPending = nil
+                autoPickAfterParse = true
+                input = l
+                status = "灵动岛下单：自动解析并下载最优档…"
+                Task { await doParse(link: l) }
             }
             .onAppear { refreshQuota(); autoFillAndParse() }
             .onChange(of: scenePhase) { _ in
@@ -224,7 +233,9 @@ struct ParseView: View {
             status = "已达限制：\(r)"
             return
         }
-        busy = true; savedLink = link; lastAutoClip = link; defer { busy = false; refreshQuota() }
+        busy = true; savedLink = link; lastAutoClip = link
+        defer { busy = false; refreshQuota() }
+        defer { autoPickAfterParse = false }
         do {
             // 站点规则·boat 系小站（实测过，直连 playback API，不开浏览器不耗配额）
             if let vid = BoatSite.videoID(from: link) {
@@ -261,6 +272,11 @@ struct ParseView: View {
             }
             status = "解析中（\(engine == .web ? "浏览器引擎较慢…" : "API 直连…")）"
             result = try await ParseRouter.parse(link: link)
+            if autoPickAfterParse, let r = result, let o = r.options.first {
+                status = "灵动岛下单：直接下载 \(o.label)"
+                await pick(r, o, idx: 0)
+                return
+            }
             status = "选一个清晰度下载"
         } catch {
             status = "失败：\(error.localizedDescription)"
