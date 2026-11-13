@@ -277,6 +277,7 @@ struct ParseView: View {
             if autoPickAfterParse, let r = result, let o = r.options.first {
                 status = "一键下载：\(o.label)"
                 islandFrac = 0
+                app.keepAlive.start()          // 静音续命：被抖音顶到后台也不冻结搬运
                 BoxIsland.update {
                     $0.phase = "parsing"; $0.link = link
                     $0.title = String(r.title.prefix(40)); $0.author = String(r.author.prefix(16))
@@ -289,6 +290,7 @@ struct ParseView: View {
                     }
                 }
                 await pick(r, o, idx: 0)
+                app.keepAlive.stop()
                 let fin = status
                 BoxIsland.update {
                     $0.phase = fin.hasPrefix("已保存") ? "parsed" : "fail"

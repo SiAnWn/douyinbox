@@ -39,6 +39,7 @@ final class AppState: ObservableObject {
     }
 
     static let shared = AppState()
+    let keepAlive = BGKeepAlive()
 
     var immersive: Bool { selection == .play && !revealUI }
 
