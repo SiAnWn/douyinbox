@@ -1,4 +1,4 @@
-﻿import Foundation
+import Foundation
 
 // ============ 纯 Swift AES-128（表由 GF(2^8) 构造生成；含 FIPS-197 官方向量自检）============
 // 设计参照 N_m3u8DL-RE(MIT) 的解密思路；state 按列主序 b[4c+r]
@@ -173,6 +173,8 @@ enum HLS {
         var keyIV: [UInt8]?
         var initURL: URL?
         var segments: [URL] = []
+        var segKeyURLs: [URL?] = []      // 与 segments 平行：逐分片密钥(轮换)
+        var segIVs: [[UInt8]?] = []      // 与 segments 平行：逐分片 IV(nil=按序号)
         var seqStart = 0
     }
 
@@ -218,6 +220,9 @@ enum HLS {
         }
         var m = Manifest()
         var seen = Set<String>()
+        var curMethod = "NONE"
+        var curKeyURL: URL?
+        var curIV: [UInt8]?
         for line in rawText.split(separator: "\n", omittingEmptySubsequences: true) {
             let l = line.trimmingCharacters(in: .whitespaces)
             if l.hasPrefix("#EXT-X-MEDIA-SEQUENCE:") {
@@ -230,10 +235,13 @@ enum HLS {
                 let method = RegexHelper.firstGroup(l, pattern: "METHOD=([^,]+)") ?? "NONE"
                 if method == "NONE" {
                     m.keyMethod = "NONE"; m.keyURL = nil
+                    curMethod = "NONE"; curKeyURL = nil; curIV = nil
                 } else {
                     m.keyMethod = method
+                    curMethod = method
                     let uri = RegexHelper.firstGroup(l, pattern: "URI=\"([^\"]+)\"") ?? ""
-                    if let u = resolveBase(uri, base: m3u8URL) { m.keyURL = u }
+                    if let u = resolveBase(uri, base: m3u8URL) { m.keyURL = u; curKeyURL = u }
+                    curIV = nil
                     if let h = RegexHelper.firstGroup(l, pattern: "IV=0x([0-9a-fA-F]{32})") {
                         var iv = [UInt8]()
                         var pos = h.startIndex
@@ -243,6 +251,7 @@ enum HLS {
                             pos = nx
                         }
                         m.keyIV = iv
+                        curIV = iv
                     }
                 }
             } else if !l.hasPrefix("#") && !l.isEmpty {
@@ -250,6 +259,8 @@ enum HLS {
                 if !seen.contains(u.absoluteString) {          // 去重复分片（片头/广告循环）
                     seen.insert(u.absoluteString)
                     m.segments.append(u)
+                    m.segKeyURLs.append(curMethod == "AES-128" ? curKeyURL : nil)
+                    m.segIVs.append(curMethod == "AES-128" ? curIV : nil)
                 }
             }
         }
@@ -266,20 +277,28 @@ enum HLS {
         try AES.ensureReady()
         guard let first = URL(string: m3u8URLString) else { throw GError.noStream }
         let m = try await loadMedia(m3u8URL: first, tok: tok)
-        var keyOpt: [UInt8]? = nil
+        // 支持密钥轮换：收集去重所有分片用到的 key，一次性预取
+        var keyDict: [String: [UInt8]] = [:]
         if m.keyMethod == "AES-128" {
-            guard let ku = m.keyURL else { throw GError.failed("缺密钥 URL") }
-            let kd = try await fetch(ku, tok: tok)
-            if kd.count != 16 { throw GError.failed("密钥长度异常(\(kd.count))") }
-            keyOpt = [UInt8](kd)
+            var need = Set<String>()
+            for ku in m.segKeyURLs { if let ku = ku { need.insert(ku.absoluteString) } }
+            if need.isEmpty { if let ku = m.keyURL { need.insert(ku.absoluteString) } }
+            for us in need {
+                guard let ku = URL(string: us) else { continue }
+                let kd = try await fetch(ku, tok: tok)
+                if kd.count != 16 { throw GError.failed("密钥长度异常(\(kd.count))") }
+                keyDict[us] = [UInt8](kd)
+            }
+            if keyDict.isEmpty { throw GError.failed("缺密钥 URL") }
         }
         var initData: Data? = nil
         if let iu = m.initURL { initData = try await fetch(iu, tok: tok) }
 
         let segs = m.segments
         let total = segs.count
-        let key = keyOpt                                   // 供 @Sendable 闭包捕获(不可变)
-        let baseIV = m.keyIV
+        let keyDictLocal = keyDict
+        let segKeyStrs: [String?] = m.segKeyURLs.map { $0?.absoluteString }
+        let segIVList: [[UInt8]?] = m.segIVs
         let seq0 = m.seqStart
         let tokLocal = tok
 
@@ -306,8 +325,8 @@ enum HLS {
                                 segs[idx], referer: tokLocal.referer, cookie: tokLocal.cookie, extra: tokLocal.headers)
                             defer { try? FileManager.default.removeItem(at: d) }
                             var bytes = [UInt8](try Data(contentsOf: d))
-                            if let kk = key {
-                                let iv = baseIV ?? HLS.ivFromSeq(seq0 + idx)
+                            if let ks = segKeyStrs[idx], let kk = keyDictLocal[ks] {
+                                let iv = segIVList[idx] ?? HLS.ivFromSeq(seq0 + idx)
                                 bytes = AES.cbcDecrypt(bytes, key: kk, iv: iv)
                             }
                             bytes = TSRestuff.fix(bytes)          // 非标 TS 自动整形(ovod 类)
