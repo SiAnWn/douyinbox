@@ -1,4 +1,4 @@
-name: DouyinBox
+﻿name: DouyinBox
 options:
   bundleIdPrefix: com.sian
   deploymentTarget:
@@ -7,8 +7,8 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.9"
-    MARKETING_VERSION: "1.3.25"
-    CURRENT_PROJECT_VERSION: "35"
+    MARKETING_VERSION: "1.3.26"
+    CURRENT_PROJECT_VERSION: "36"
     TARGETED_DEVICE_FAMILY: "1"
     ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
 targets:
@@ -31,8 +31,7 @@ targets:
     info:
       path: Generated/IslandInfo.plist
       properties:
-        CFBundleDisplayName: 抖音盒子灵动岛
-        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleDisplayName: 鎶栭煶鐩掑瓙鐏靛姩宀?        CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
@@ -47,9 +46,9 @@ targets:
     info:
       path: Generated/Info.plist
       properties:
-        CFBundleDisplayName: 抖音盒子
+        CFBundleDisplayName: 鎶栭煶鐩掑瓙
         CFBundleDevelopmentRegion: zh_CN
-        NSFaceIDUsageDescription: 用于解锁私密视频
+        NSFaceIDUsageDescription: 鐢ㄤ簬瑙ｉ攣绉佸瘑瑙嗛
         NSSupportsLiveActivities: true
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
