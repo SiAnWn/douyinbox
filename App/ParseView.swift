@@ -273,7 +273,9 @@ struct ParseView: View {
                 return
             }
             status = "解析中（\(engine == .web ? "浏览器引擎较慢…" : "API 直连…")）"
-            result = try await ParseRouter.parse(link: link)
+            result = Hongguo.isHongguo(link)
+                ? try await Hongguo.parse(link)
+                : try await ParseRouter.parse(link: link)
             if autoPickAfterParse, let r = result, let o = r.options.first {
                 status = "一键下载：\(o.label)"
                 islandFrac = 0
@@ -334,6 +336,13 @@ struct ParseView: View {
         let dkey = "\(res.videoID)|\(opt.label)"
         result = nil
         busy = true; defer { busy = false; refreshQuota() }
+        if opt.url.scheme == "hg" {
+            showProgress = true; progress = 0; speedText = ""
+            app.keepAlive.start()
+            defer { app.keepAlive.stop(); showProgress = false }
+            await hongguoRun(res, opt)
+            return
+        }
         if opt.isHLS {
             showProgress = true; progress = 0; speedText = ""
             do {
@@ -410,6 +419,72 @@ struct ParseView: View {
         } catch {
             showProgress = false
             status = "下载失败：\(error.localizedDescription)"
+        }
+    }
+
+    // 红果整剧批量：逐集 resolve → 下载 → CENC 解密 → 落库 短剧/<剧名>/第NN集.mp4
+    private func hongguoRun(_ res: ParseResult, _ opt: QualityOption) async {
+        guard let c = Hongguo.client else { status = "红果引擎初始化失败"; return }
+        let sid = opt.url.host() ?? ""
+        let def = opt.url.lastPathComponent
+        guard !sid.isEmpty else { status = "红果剧集ID缺失"; return }
+        do {
+            status = "红果列全集…"
+            let all = await Hongguo.episodes(sid)
+            let play = all.filter { $0.playable }
+            let list = play.isEmpty ? all : play
+            guard !list.isEmpty else { status = "红果没有可播分集"; return }
+            let n = list.count
+            let seriesName = Naming.sanitize(res.title)
+            var okN = 0, failN = 0
+            for (i, ep) in list.enumerated() {
+                if Task.isCancelled { break }
+                let num = ep.number > 0 ? ep.number : i + 1
+                let rel = "短剧/\(seriesName)/" + String(format: "第%02d集.mp4", num)
+                if SavePaths.exists(rel: rel) {
+                    okN += 1
+                    progress = Double(i + 1) / Double(n)
+                    continue
+                }
+                status = String(format: "红果 %d/%d 集 · %@", i + 1, n, def)
+                guard let prb = try? await c.resolvePlayback(ep.id),
+                      let st = Hongguo.chooseStream(prb.playback, def: def),
+                      let su = Hongguo.streamURL(st) else { failN += 1; continue }
+                let baseFrac = Double(i) / Double(n)
+                let tmp = try await DouyinAPI.download(su) { f, sps in
+                    self.reportFrac(baseFrac + f / Double(n), sps)
+                }
+                var savedOK = false
+                if prb.playback.protected, let ck = prb.contentKey?.key, !ck.isEmpty {
+                    if let data = try? Data(contentsOf: tmp), let clear = CencMP4.decrypt(data, keyHex: ck) {
+                        let dest = SavePaths.docs.appendingPathComponent(rel)
+                        try? FileManager.default.createDirectory(at: dest.deletingLastPathComponent(),
+                                                                 withIntermediateDirectories: true)
+                        try? FileManager.default.removeItem(at: dest)
+                        savedOK = (try? clear.write(to: dest)) != nil
+                    }
+                } else {
+                    savedOK = SavePaths.write(tmp, rel: rel)
+                }
+                try? FileManager.default.removeItem(at: tmp)
+                if savedOK { okN += 1 } else { failN += 1 }
+                progress = Double(i + 1) / Double(n)
+                DownloadStore.set("hg|\(sid)|\(num)|\(def)", rel)
+                if i + 1 < n { try? await Task.sleep(nanoseconds: 700_000_000) }   // 温和限速防风控
+            }
+            showProgress = false
+            if okN > 0 {
+                app.refresh()
+                app.refreshDramaSeries()
+                status = failN > 0
+                    ? "已保存：短剧/\(seriesName)（\(okN)/\(n) 集，缺 \(failN) 集）"
+                    : "已保存：短剧/\(seriesName)（共 \(n) 集）"
+            } else {
+                status = "红果下载失败：没有一集成功（可能接口风控，稍后再试）"
+            }
+        } catch {
+            showProgress = false
+            status = "红果失败：\(error.localizedDescription)"
         }
     }
 

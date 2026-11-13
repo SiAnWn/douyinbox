@@ -1,0 +1,324 @@
+import Foundation
+import CommonCrypto
+import Openhongguo
+
+// MARK: - 红果短剧引擎
+// 分享链接 → 匿名 SDK 取全集与密钥 → 下载 cenc-aes-ctr 加密 mp4 → 本地解密清洗成普通 HEVC 文件。
+// 解密算法已在电脑端对 ffmpeg 逐样本验证（12665/12665 样本零误差）。
+
+enum Hongguo {
+    static func isHongguo(_ link: String) -> Bool {
+        link.contains("novelquickapp.com") || link.contains("hongguoduanju")
+    }
+
+    static let client: OpenhongguoClient? = try? OpenhongguoClient.create()
+
+    // 短链跳转拿 series_id
+    static func seriesID(from link: String) async -> String? {
+        if let sid = queryValue(link, "video_series_id") { return sid }
+        guard let u = URL(string: link) else { return nil }
+        var req = URLRequest(url: u, timeoutInterval: 12)
+        req.setValue(DouyinAPI.ua, forHTTPHeaderField: "User-Agent")
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.timeoutIntervalForResource = 15
+        let (_, resp) = try? await URLSession(configuration: cfg).data(for: req)
+        guard let final = (resp as? HTTPURLResponse)?.url?.absoluteString else { return nil }
+        return queryValue(final, "video_series_id")
+    }
+
+    private static func queryValue(_ s: String, _ k: String) -> String? {
+        guard var c = URLComponents(string: s) else { return nil }
+        if c.query == nil, let q = s.range(of: "?") {
+            c.query = String(s[q.upperBound...])
+        }
+        return c.queryItems?.first(where: { $0.name == k })?.value
+    }
+
+    // 全集聚标（自动翻页）
+    static func episodes(_ sid: String) async throws -> [Episode] {
+        guard let c = client else { throw GError.failed("红果引擎初始化失败") }
+        var all: [Episode] = []
+        var cursor = ""
+        for _ in 0..<40 {
+            let opts = cursor.isEmpty ? EpisodeOptions() : EpisodeOptions(cursor: cursor)
+            let page = try await c.listEpisodes(sid, options: opts)
+            all += page.items
+            if !page.hasMore || page.cursor.isEmpty { break }
+            cursor = page.cursor
+        }
+        return all
+    }
+
+    // 解析成清晰度列表（hg:// 占位链接，pick 时特判走整剧批量）
+    static func parse(_ link: String) async throws -> ParseResult {
+        guard let sid = await seriesID(from: link) else {
+            throw GError.failed("红果链接里没找到剧集ID（可能版本过新）")
+        }
+        guard let c = client else { throw GError.failed("红果引擎初始化失败") }
+        let s = try? await c.getSeries(sid)
+        let eps = try await episodes(sid)
+        guard let first = eps.first else { throw GError.failed("红果这部剧没有分集") }
+        let pr = try await c.resolvePlayback(first.id)
+        let ladder = pr.playback.streams
+            .filter { !$0.url.isEmpty && !$0.hls && !$0.dash }
+            .sorted { a, b in (a.height * a.bitrate) > (b.height * b.bitrate) }
+        guard !ladder.isEmpty else { throw GError.noStream }
+        var opts: [QualityOption] = []
+        for st in ladder {
+            let perEp = st.size
+            let total = perEp * max(1, eps.count)
+            let szTxt = total > 0 ? "约\(Naming.fmtSize(total))" : (perEp > 0 ? "约\(Naming.fmtSize(perEp))/集" : "")
+            opts.append(QualityOption(
+                label: "红果 \(st.definition) · 全\(eps.count)集" + (szTxt.isEmpty ? "" : " · \(szTxt)"),
+                url: URL(string: "hg://\(sid)/\(st.definition)")!,
+                width: st.width, height: st.height, sizeBytes: total, isOriginal: false))
+        }
+        let title = (s?.title.isEmpty == false ? s!.title : (first.title.isEmpty ? "红果短剧" : first.title))
+        return ParseResult(videoID: "hg_\(sid)", title: title, author: "红果", options: opts)
+    }
+
+    // 挑一集的可播流：优先 definition 一致，退而求其次最高档
+    static func chooseStream(_ pb: Playback, def: String) -> Stream? {
+        let usable = pb.streams.filter { !$0.url.isEmpty && !$0.hls && !$0.dash }
+        if let m = usable.first(where: { $0.definition.lowercased() == def.lowercased() }) { return m }
+        return usable.max { a, b in (a.height * a.bitrate) < (b.height * b.bitrate) }
+    }
+
+    // 选流兜底：主地址空时用备份
+    static func streamURL(_ st: Stream) -> URL? {
+        if !st.url.isEmpty, let x = URL(string: st.url) { return x }
+        if !st.backupUrl.isEmpty, let x = URL(string: st.backupUrl) { return x }
+        return nil
+    }
+}
+
+// MARK: - CENC (cenc-aes-ctr) 整样本解密 + 清洗成可播 mp4
+// 红果样本结构：faststart 渐进式；sinf/tenc + saio/saiz/senc 每样本 8 字节 IV；
+// 计数器 = IV(8B)‖低 8 字节从 0 递增；整样本加密（无 subsample 图案）。
+enum CencMP4 {
+    struct BoxRef { let start: Int; let size: Int; let type: String }
+
+    static func u32(_ d: Data, _ i: Int) -> Int {
+        guard i + 4 <= d.count else { return 0 }
+        return Int(d[d.startIndex + i]) << 24 | Int(d[d.startIndex + i + 1]) << 16
+             | Int(d[d.startIndex + i + 2]) << 8 | Int(d[d.startIndex + i + 3])
+    }
+
+    static func fourcc(_ d: Data, _ i: Int) -> String {
+        guard i + 4 <= d.count else { return "" }
+        let b = [d[d.startIndex + i], d[d.startIndex + i + 1], d[d.startIndex + i + 2], d[d.startIndex + i + 3]]
+        return String(bytes: b, encoding: .ascii) ?? ""
+    }
+
+    static func children(_ d: Data, _ start: Int, _ end: Int) -> [BoxRef] {
+        var out: [BoxRef] = []
+        var i = start
+        while i + 8 <= end {
+            var sz = u32(d, i)
+            let tp = fourcc(d, i + 4)
+            var hdr = 8
+            if sz == 1 {
+                guard i + 16 <= end else { break }
+                sz = 0
+                for k in 8..<16 { sz = sz * 256 + Int(d[d.startIndex + i + k]) }
+                hdr = 16
+            } else if sz == 0 {
+                sz = end - i
+            }
+            if sz < hdr || i + sz > end || sz <= 0 { break }
+            out.append(BoxRef(start: i, size: sz, type: tp))
+            i += sz
+        }
+        _ = hdr
+        return out
+    }
+
+    static func top(_ d: Data, _ name: String) -> BoxRef? {
+        children(d, 0, d.count).first { $0.type == name }
+    }
+
+    // 沿 moov→trak→mdia→minf→stbl 定位 stbl 子盒
+    struct StblRefs {
+        let trakBox: BoxRef
+        let stsd: BoxRef; let stsz: BoxRef; let stco: BoxRef; let stsc: BoxRef
+        let senc: BoxRef?
+        let entry: BoxRef       // stsd 第一样本描述
+        let sinf: BoxRef?
+        let chain: [BoxRef]     // entry/stsd/stbl/minf/mdia/trak 祖先链（自内向外）
+    }
+
+    static func traks(_ d: Data, _ moov: BoxRef) -> [StblRefs] {
+        var res: [StblRefs] = []
+        for trak in children(d, moov.start + 8, moov.start + moov.size) where trak.type == "trak" {
+            guard let mdia = children(d, trak.start + 8, trak.start + trak.size).first(where: { $0.type == "mdia" }),
+                  let minf = children(d, mdia.start + 8, mdia.start + mdia.size).first(where: { $0.type == "minf" }),
+                  let stbl = children(d, minf.start + 8, minf.start + minf.size).first(where: { $0.type == "stbl" })
+            else { continue }
+            let kids = children(d, stbl.start + 8, stbl.start + stbl.size)
+            guard let stsd = kids.first(where: { $0.type == "stsd" }),
+                  let stsz = kids.first(where: { $0.type == "stsz" }),
+                  let stco = kids.first(where: { $0.type == "stco" }),
+                  let stsc = kids.first(where: { $0.type == "stsc" })
+            else { continue }
+            guard let entry = children(d, stsd.start + 16, stsd.start + stsd.size).first else { continue }
+            var sinf: BoxRef?
+            for pre in [94, 44, 86, 36, 8, 20] {   // 视觉/音频样本描述固定前导长，兜底多试
+                let cs = children(d, entry.start + 8 + pre, entry.start + entry.size)
+                if let s = cs.first(where: { $0.type == "sinf" }) { sinf = s; break }
+            }
+            let chain = [entry, stsd, stbl, minf, mdia, trak]
+            res.append(StblRefs(trakBox: trak, stsd: stsd, stsz: stsz, stco: stco, stsc: stsc,
+                                senc: kids.first(where: { $0.type == "senc" }), entry: entry, sinf: sinf, chain: chain))
+        }
+        return res
+    }
+
+    struct SampleTable {
+        var offsets: [(Int, Int)]      // (文件偏移, 样本大小)
+        var ivs: [Data]
+    }
+
+    static func sampleTable(_ d: Data, _ t: StblRefs) -> SampleTable? {
+        let ns = u32(d, t.stsz.start + 8 + 8)          // verflags+sample_size 后是 count
+        guard ns > 0 else { return nil }
+        var sizes: [Int] = []
+        sizes.reserveCapacity(ns)
+        let szBase = t.stsz.start + 8 + 12
+        for k in 0..<ns { sizes.append(u32(d, szBase + k * 4)) }
+        let nc = u32(d, t.stco.start + 8 + 4)
+        guard nc > 0 else { return nil }
+        var ch: [Int] = []
+        let chBase = t.stco.start + 8 + 8
+        for k in 0..<nc { ch.append(u32(d, chBase + k * 4)) }
+        let nse = u32(d, t.stsc.start + 8 + 4)
+        var rules: [(Int, Int)] = []
+        let rBase = t.stsc.start + 8 + 8
+        for k in 0..<nse {
+            let first = u32(d, rBase + k * 12)
+            let spc = u32(d, rBase + k * 12 + 4)
+            rules.append((first, spc))
+        }
+        rules.sort { $0.0 < $1.0 }
+        var offs: [(Int, Int)] = []
+        var si = 0
+        for ci in 1...nc {
+            var spc = 1
+            for (f, p) in rules where ci >= f { spc = p }
+            var acc = ch[ci - 1]
+            for _ in 0..<spc {
+                if si >= ns { break }
+                offs.append((acc, sizes[si]))
+                acc += sizes[si]; si += 1
+            }
+        }
+        var ivs: [Data] = []
+        if let senc = t.senc {
+            let base = senc.start + 8 + 8
+            guard senc.size >= 8 + 8 + ns * 8 else { return nil }
+            for k in 0..<ns {
+                ivs.append(d.subdata(in: d.startIndex + base + k * 8 ..< d.startIndex + base + k * 8 + 8))
+            }
+        } else { return nil }
+        return SampleTable(offsets: offs, ivs: ivs)
+    }
+
+    static func hexToData(_ h: String) -> Data? {
+        var s = h.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard s.count == 32 || s.count == 64 else { return nil }
+        var out = Data()
+        while !s.isEmpty {
+            let two = s.prefix(2); s = String(s.dropFirst(2))
+            guard let b = UInt8(two, radix: 16) else { return nil }
+            out.append(b)
+        }
+        return out
+    }
+
+    static func ctrXOR(_ out: inout Data, _ off: Int, _ len: Int, _ iv16: Data, _ key: Data) -> Bool {
+        guard off >= 0, off + len <= out.count, len > 0 else { return false }
+        return out.withUnsafeMutableBytes { raw in
+            let p = raw.bindMemory(to: UInt8.self).baseAddress!.advanced(by: off)
+            var ccc: CCCryptorRef?
+            let st = iv16.withUnsafeBytes { ivp in
+                key.withUnsafeBytes { kp in
+                    CCCryptorCreateWithMode(CCOperation(kCCDecrypt), CCMode(kCCModeCTR),
+                                            CCAlgorithm(kCCAlgorithmAES), CCPadding(ccNoPadding),
+                                            nil, kp.baseAddress!, key.count,
+                                            ivp.baseAddress!, 16, 0,
+                                            CCModeOptions(kCCModeOptionCTR_BE), &ccc)
+                }
+            }
+            guard st == CCCryptorStatus(kCCSuccess), let ccc else { return false }
+            defer { CCCryptorRelease(ccc) }
+            var moved = 0
+            let s2 = CCCryptorUpdate(ccc, p, len, p, len, &moved)
+            var fin = 0
+            let s3 = CCCryptorFinal(ccc, p + moved, len - moved, &fin)
+            return s2 == CCCryptorStatus(kCCSuccess) && s3 == CCCryptorStatus(kCCSuccess) && moved + fin == len
+        }
+    }
+
+    // 主入口：解密并清洗（encv→hvc1、enca→mp4a、去 sinf、stco 重定位）。失败回 nil。
+    static func decrypt(_ data: Data, keyHex: String) -> Data? {
+        guard let key = hexToData(keyHex) else { return nil }
+        guard let moov = top(data, "moov") else { return nil }
+        var out = data
+        var removals: [(start: Int, len: Int)] = []
+        var stcoPatches: [(boxStart: Int, entries: Int)] = []   // (stco盒起点, 条目数)
+        var totalRemoved = 0
+
+        for t in traks(data, moov) {
+            guard let entryType = (t.entry.type == "encv" || t.entry.type == "enca") ? t.entry.type : nil else { continue }
+            guard let tab = sampleTable(data, t) else { continue }
+            guard tab.offsets.count == tab.ivs.count else { continue }
+            // 1) 逐样本原地解密
+            var ok = true
+            for m in 0..<tab.offsets.count {
+                let (off, len) = tab.offsets[m]
+                var iv16 = tab.ivs[m]
+                iv16.append(Data([0, 0, 0, 0, 0, 0, 0, 0]))
+                if !ctrXOR(&out, off, len, iv16, key) { ok = false; break }
+            }
+            guard ok else { return nil }
+            // 2) 描述盒改名 + 记录 sinf 摘除 + 祖先尺寸收缩
+            let rename: [UInt8] = entryType == "encv" ? Array("hvc1".utf8) : Array("mp4a".utf8)
+            out[data.startIndex + t.entry.start + 4] = rename[0]
+            out[data.startIndex + t.entry.start + 5] = rename[1]
+            out[data.startIndex + t.entry.start + 6] = rename[2]
+            out[data.startIndex + t.entry.start + 7] = rename[3]
+            stcoPatches.append((t.stco.start, u32(data, t.stco.start + 8 + 4)))
+            if let sinf = t.sinf {
+                let sz = sinf.size
+                totalRemoved += sz
+                removals.append((sinf.start, sz))
+                for anc in t.chain {   // entry/stsd/stbl/minf/mdia/trak 逐级收缩
+                    let cur = u32(out, anc.start)
+                    let ns = cur - sz
+                    out[data.startIndex + anc.start] = UInt8((ns >> 24) & 0xFF)
+                    out[data.startIndex + anc.start + 1] = UInt8((ns >> 16) & 0xFF)
+                    out[data.startIndex + anc.start + 2] = UInt8((ns >> 8) & 0xFF)
+                    out[data.startIndex + anc.start + 3] = UInt8(ns & 0xFF)
+                }
+            }
+        }
+
+        // 3) stco 条目值：mdat 整体左移 totalRemoved（趁删除前按原位置写值）
+        for (boxStart, n) in stcoPatches {
+            let nb = boxStart + 8 + 8
+            for k in 0..<n {
+                let oldVal = u32(out, nb + k * 4)
+                let nv = oldVal - totalRemoved
+                out[data.startIndex + nb + k * 4] = UInt8((nv >> 24) & 0xFF)
+                out[data.startIndex + nb + k * 4 + 1] = UInt8((nv >> 16) & 0xFF)
+                out[data.startIndex + nb + k * 4 + 2] = UInt8((nv >> 8) & 0xFF)
+                out[data.startIndex + nb + k * 4 + 3] = UInt8(nv & 0xFF)
+            }
+        }
+
+        // 4) 摘除 sinf 盒（降序删，偏移保持有效）
+        for r in removals.sorted(by: { $0.start > $1.start }) {
+            out.removeSubrange(data.startIndex + r.start ..< data.startIndex + r.start + r.len)
+        }
+        return out
+    }
+}
