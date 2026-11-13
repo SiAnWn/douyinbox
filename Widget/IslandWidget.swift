@@ -37,8 +37,8 @@ private func islandSub(_ s: BoxActivity.State) -> String {
     }
 }
 
-struct BoxLiveActivity: LiveActivity {
-    var body: some LiveActivityConfiguration<BoxActivity, DynamicIsland> {
+struct BoxLiveActivity: Widget {
+    var body: some WidgetConfiguration {
         ActivityConfiguration(for: BoxActivity.self) { ctx in
             HStack(spacing: 10) {
                 Image(systemName: islandIcon(ctx.state.phase))

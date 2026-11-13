@@ -50,6 +50,7 @@ targets:
         CFBundleDisplayName: 抖音盒子
         CFBundleDevelopmentRegion: zh_CN
         NSFaceIDUsageDescription: 用于解锁私密视频
+        NSSupportsLiveActivities: true
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
         UILaunchScreen: {}
