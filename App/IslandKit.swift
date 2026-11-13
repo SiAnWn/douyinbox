@@ -68,9 +68,11 @@ enum BoxIsland {
                let s = String(data: d, encoding: .utf8), !s.isEmpty { return s }
         }
         for it in pb.items {
-            for k in it.registeredTypeIdentifiers {
-                if let d = it.data(forType: k),
-                   let s = String(data: d, encoding: .utf8), s.contains("http") { return s }
+            for (_, v) in it {
+                var s: String?
+                if let d = v as? Data { s = String(data: d, encoding: .utf8) }
+                else if let ss = v as? String { s = ss }
+                if let s = s, s.contains("http") { return s }
             }
         }
         return nil
