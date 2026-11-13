@@ -54,6 +54,7 @@ enum Support {
 
 // MARK: - 统一解析入口
 enum ParseRouter {
+    @MainActor
     static func parse(link: String) async throws -> ParseResult {
         switch EngineStore.current {
         case .web:
@@ -66,6 +67,7 @@ enum ParseRouter {
     }
 
     // 合集批量用：指定引擎直连 ifphp（内部自动记录配额）
+    @MainActor
     static func originalURL(link: String) async throws -> URL {
         let r = try await parse(link: link)
         guard let top = r.options.first else { throw GError.noStream }
