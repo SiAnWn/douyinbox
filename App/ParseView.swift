@@ -278,7 +278,6 @@ struct ParseView: View {
                 status = "一键下载：\(o.label)"
                 islandFrac = 0
                 app.keepAlive.start()          // 静音续命：被抖音顶到后台也不冻结搬运
-                BoxProgress.begin(r.title)     // 专职进度小气泡（多岛机型悬浮显示）
                 BoxIsland.update {
                     $0.phase = "parsing"; $0.link = link; $0.pct = 0
                     $0.title = String(r.title.prefix(40)); $0.author = String(r.author.prefix(16))
@@ -293,7 +292,6 @@ struct ParseView: View {
                 await pick(r, o, idx: 0)
                 app.keepAlive.stop()
                 let fin = status
-                BoxProgress.finish(ok: fin.hasPrefix("已保存"))
                 BoxIsland.update {
                     $0.phase = fin.hasPrefix("已保存") ? "parsed" : "fail"
                     $0.pct = 0
@@ -316,7 +314,6 @@ struct ParseView: View {
                 self.islandFrac = frac
                 let pct = Int(frac * 100)
                 let sp = Naming.fmtSpeed(sps)
-                BoxProgress.updatePct(pct)
                 BoxIsland.update { $0.phase = "parsing"; $0.pct = pct; $0.note = "下载 \(pct)% · \(sp)" }
             }
         }
