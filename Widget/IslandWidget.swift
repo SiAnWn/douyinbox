@@ -133,22 +133,20 @@ struct BoxLiveActivity: Widget {
                     .frame(maxWidth: .infinity)
                 }
             } compactLeading: {
-                ZStack {
-                    Image(systemName: islandIcon(s.phase, s.pct))
-                        .font(.system(size: 15))
-                        .foregroundStyle(s.phase == "parsed" ? Color.green
-                                           : s.phase == "fail" ? Color.red : Color.orange)
-                    if s.phase == "parsing" && s.pct > 0 {
-                        Circle()
-                            .stroke(Color.white.opacity(0.25), lineWidth: 1.6)
-                            .frame(width: 21, height: 21)
-                        Circle()
-                            .trim(from: 0, to: CGFloat(s.pct) / 100.0)
-                            .stroke(Color.orange,
-                                    style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
-                            .rotationEffect(.degrees(-90))
-                            .frame(width: 21, height: 21)
+                GeometryReader { g in
+                    ZStack {
+                        Image(systemName: islandIcon(s.phase, s.pct))
+                            .font(.system(size: 15))
+                            .foregroundStyle(s.phase == "parsed" ? Color.green
+                                               : s.phase == "fail" ? Color.red : Color.orange)
+                        VStack(spacing: 0) {
+                            Spacer(minLength: 0)
+                            if s.phase == "parsing" && s.pct > 0 {
+                                islandBar(Double(s.pct) / 100.0)
+                            }
+                        }
                     }
+                    .frame(width: g.size.width, height: g.size.height)
                 }
             } compactTrailing: {
                 Text("")
