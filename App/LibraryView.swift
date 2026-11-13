@@ -53,7 +53,7 @@ struct LibraryView: View {
         if seg == 1 {
             return "\(app.albums.count) 本 · \(app.albums.reduce(0) { $0 + $1.count }) 图"
         }
-        let list = app.videos.filter { seg == 2 ? $0.isAudio : !$0.isAudio }
+        let list = pool(seg)              // 统计跟随标签/搜索筛选
         let total = list.reduce(0) { $0 + $1.size }
         let free = (try? FileManager.default.attributesOfFileSystem(forPath: NSHomeDirectory()))?[.systemFreeSize] as? Int ?? 0
         return "\(list.count) 个 · 共 \(fmtGB(total)) · 本机剩 \(fmtGB(free))"
@@ -76,8 +76,8 @@ struct LibraryView: View {
         Button(action: action) {
             Text(text).font(.footnote)
                 .padding(.horizontal, 10).padding(.vertical, 5)
-                .background(on ? Color.accentColor.opacity(0.18) : Color(white: 0.14))
-                .foregroundStyle(on ? Color.primary : Color.secondary)
+                .background(on ? Color.accentColor : Color(white: 0.16))
+                .foregroundStyle(on ? Color.white : Color.secondary)
                 .clipShape(Capsule())
         }.buttonStyle(.plain)
     }
