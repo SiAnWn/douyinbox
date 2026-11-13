@@ -310,7 +310,7 @@ struct ParseView: View {
         Task { @MainActor in
             self.progress = frac
             self.speedText = Naming.fmtSpeed(sps)
-            if frac - self.islandFrac > 0.02 || (frac >= 0.999 && self.islandFrac < 0.999) {
+            if frac - self.islandFrac > 0.04 || (frac >= 0.999 && self.islandFrac < 0.999) {
                 self.islandFrac = frac
                 let pct = Int(frac * 100)
                 let sp = Naming.fmtSpeed(sps)

@@ -185,7 +185,6 @@ struct LibraryView: View {
                         Button { app.playInPlace(v) } label: {
                             VStack(alignment: .leading, spacing: 4) {
                                 RowCover(v: v)
-                                    .frame(height: 160)
                                     .overlay(alignment: .topLeading) {
                                         if app.favorites.contains(v.id) {
                                             Image(systemName: "star.fill")
@@ -203,6 +202,7 @@ struct LibraryView: View {
                                     }
                                     .clipShape(RoundedRectangle(cornerRadius: 8))
                                 Text(v.title).font(.caption).lineLimit(1).foregroundStyle(.primary)
+                                Text(Naming.fmtSize(v.size)).font(.caption2).foregroundStyle(.secondary)
                             }
                         }
                         .buttonStyle(.plain)
@@ -309,17 +309,31 @@ struct LibraryView: View {
 
 private struct RowCover: View {
     let v: VideoItem
+    @State private var img: UIImage?
+    @State private var landscape = false
+
     var body: some View {
         ZStack {
+            Color(white: 0.12)
             if v.isAudio {
                 LinearGradient(colors: [Color(white: 0.22), Color(white: 0.10)],
                                startPoint: .top, endPoint: .bottom)
                 Image(systemName: "music.note")
-                    .font(.system(size: 44))
+                    .font(.system(size: 40))
                     .foregroundStyle(.secondary)
+            } else if let i = img {
+                Image(uiImage: i).resizable().scaledToFill()
             } else {
-                Thumb(url: v.url)
+                ProgressView().tint(.white)
             }
+        }
+        .frame(height: (landscape && !v.isAudio) ? 96 : 160)   // 横版压扁一行，竖版满格
+        .clipped()
+        .task(id: v.url) {
+            if v.isAudio { return }
+            let i = await ThumbCache.shared.image(v.url)
+            img = i
+            if let s = i?.size, s.height > 0 { landscape = s.width > s.height * 1.05 }
         }
     }
 }
