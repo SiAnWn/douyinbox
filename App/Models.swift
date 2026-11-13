@@ -120,3 +120,36 @@ actor ThumbCache {
         return nil
     }
 }
+
+// MARK: - 应用内标签（key=文件路径；改名自动跟随；跨引擎位置无关仅库根）
+enum TagStore {
+    private static let key = "videoTags"
+    static let suggestions = ["跳舞", "搞笑", "知识", "音乐", "游戏", "生活", "影视", "其他"]
+
+    private static func dict() -> [String: [String]] {
+        (UserDefaults.standard.dictionary(forKey: key) as? [String: [String]]) ?? [:]
+    }
+    private static func save(_ d: [String: [String]]) { UserDefaults.standard.set(d, forKey: key) }
+
+    static func tags(_ id: String) -> [String] { dict()[id] ?? [] }
+
+    static func toggle(_ id: String, _ tag: String) {
+        var d = dict(); var t = d[id] ?? []
+        if let i = t.firstIndex(of: tag) { t.remove(at: i) } else { t.append(tag) }
+        if t.isEmpty { d.removeValue(forKey: id) } else { d[id] = t }
+        save(d)
+    }
+
+    static func move(old: String, new: String) {
+        guard old != new else { return }
+        var d = dict()
+        if let t = d[old] { d.removeValue(forKey: old); d[new] = t; save(d) }
+    }
+
+    // 只回显"现有文件真正在用"的标签，按字母排序
+    static func chips(ids: Set<String>) -> [String] {
+        var set = Set<String>()
+        for (id, ts) in dict() where ids.contains(id) { set.formUnion(ts) }
+        return Array(set).sorted()
+    }
+}

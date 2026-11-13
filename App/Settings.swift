@@ -1,20 +1,14 @@
 import SwiftUI
 
-// 接口 Key 只存本机（不写进代码/仓库），别人拉代码构建不会消耗你的额度
-enum KeyStore {
-    private static let key = "ifphpApiKey"
-    static var value: String { UserDefaults.standard.string(forKey: key) ?? "" }
-    static func set(_ v: String) {
-        UserDefaults.standard.set(v.trimmingCharacters(in: .whitespacesAndNewlines), forKey: key)
-    }
-}
+// Key 存本机（Engines.swift 的 KeyStore 读写），不写进代码/仓库
+// ——别人拉仓库构建不会消耗你的额度
 
 struct Quota: Equatable {
     var minute = 0, hour = 0, day = 0, month = 0
     static let zero = Quota()
 }
 
-// 本机调用计数（分/时/日/月），可手动校正 + 自动累加
+// 本机调用计数（分/时/日/月，两个 ifphp 引擎共用计数）
 enum CallStats {
     static let limits = (minute: 15, hour: 600, day: 8000, month: 150000)
     private static let key = "apiCallCounts"
@@ -60,27 +54,43 @@ enum CallStats {
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
-    @State private var keyInput = ""
-    @State private var saved = false
+    @State private var engine = EngineStore.current
+    @State private var dyjxInput = ""
+    @State private var svInput = ""
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("接口 Key") {
-                    SecureField("粘贴你的 ifphp 接口 Key", text: $keyInput)
-                        .textInputAutocapitalization(.never).autocorrectionDisabled()
-                    Button("保存 Key") { KeyStore.set(keyInput); saved = true }
-                    Text(saved ? "已保存，现在可以解析了"
-                               : (KeyStore.value.isEmpty ? "尚未设置 Key（解析前请先填）" : "已设置 Key（可更新）"))
-                        .font(.footnote).foregroundStyle(.secondary)
-                    Text("Key 只存本机、不写进代码；别人拉仓库构建不会消耗你的额度。")
+                Section("解析引擎") {
+                    Picker("引擎", selection: $engine) {
+                        ForEach(Engine.allCases, id: \.self) { e in
+                            Text(e.label).tag(e)
+                        }
+                    }
+                    .pickerStyle(.inline)
+                    .labelsHidden()
+                    Text("合集列表始终免费（公开接口）；批量原画仅 API 引擎支持。")
                         .font(.caption).foregroundStyle(.secondary)
+                }
+                Section("接口 Key（各产品独立，只存本机）") {
+                    SecureField("抖音原画引擎 Key（dyjx）", text: $dyjxInput)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                    Button("保存 抖音 Key") { KeyStore.set(dyjxInput, for: .dyjx) }
+                    SecureField("多平台引擎 Key（svparse）", text: $svInput)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                    Button("保存 多平台 Key") { KeyStore.set(svInput, for: .svparse) }
+                    Text("当前：\(engine.label)")
+                        .font(.footnote).foregroundStyle(.secondary)
                 }
             }
             .navigationTitle("设置")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
-            .onAppear { keyInput = KeyStore.value }
+            .onAppear {
+                dyjxInput = KeyStore.value(for: .dyjx)
+                svInput = KeyStore.value(for: .svparse)
+            }
+            .onChange(of: engine) { nv in EngineStore.current = nv }
         }
     }
 }

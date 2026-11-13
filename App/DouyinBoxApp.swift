@@ -82,7 +82,8 @@ final class AppState: ObservableObject {
             .appendingPathComponent(safe)
             .appendingPathExtension(v.url.pathExtension)
         guard dest.path != v.url.path, !FileManager.default.fileExists(atPath: dest.path) else { return }
-        try? FileManager.default.moveItem(at: v.url, to: dest)
+        do { try FileManager.default.moveItem(at: v.url, to: dest) } catch { statusMsg = "改名失败"; return }
+        TagStore.move(old: v.url.path, new: dest.path)
         refresh(); refreshDramaSeries(); refreshPrivateSeries()
     }
 }

@@ -5,10 +5,12 @@ struct LibraryView: View {
     @State private var search = ""
     @State private var sort = 0   // 0 最新 1 名称 2 大小
     @State private var favOnly = false
+    @State private var filterTag: String?
     private let cols = [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())]
 
     private var shown: [VideoItem] {
         var list = favOnly ? app.videos.filter { app.favorites.contains($0.id) } : app.videos
+        if let ft = filterTag { list = list.filter { TagStore.tags($0.id).contains(ft) } }
         if !search.isEmpty { list = list.filter { $0.title.localizedCaseInsensitiveContains(search) } }
         switch sort {
         case 1: list.sort { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
@@ -19,6 +21,30 @@ struct LibraryView: View {
     }
 
     private var favCount: Int { app.videos.count { app.favorites.contains($0.id) } }
+    private var tagChips: [String] { TagStore.chips(ids: Set(app.videos.map { $0.id })) }
+
+    private var chipRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                chip("全部", on: filterTag == nil) { filterTag = nil }
+                ForEach(tagChips, id: \.self) { t in
+                    chip(t, on: filterTag == t) { filterTag = (filterTag == t ? nil : t) }
+                }
+            }
+            .padding(.horizontal)
+            .padding(.top, 2)
+        }
+    }
+
+    private func chip(_ text: String, on: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(text).font(.footnote)
+                .padding(.horizontal, 10).padding(.vertical, 5)
+                .background(on ? Color.accentColor.opacity(0.18) : Color(white: 0.14))
+                .foregroundStyle(on ? Color.primary : Color.secondary)
+                .clipShape(Capsule())
+        }.buttonStyle(.plain)
+    }
 
     var body: some View {
         NavigationStack {
@@ -30,6 +56,8 @@ struct LibraryView: View {
                 .pickerStyle(.segmented)
                 .padding(.horizontal)
                 .padding(.top, 6)
+
+                chipRow
 
                 content
             }
@@ -88,6 +116,15 @@ struct LibraryView: View {
                             }
                             Button { app.beginRename(v) } label: { Label("改名", systemImage: "pencil") }
                             Button(role: .destructive) { app.deleteVideo(v) } label: { Label("删除", systemImage: "trash") }
+                            Menu {
+                                ForEach(TagStore.suggestions, id: \.self) { t in
+                                    Button { TagStore.toggle(v.id, t) } label: {
+                                        if TagStore.tags(v.id).contains(t) {
+                                            Label(t, systemImage: "checkmark")
+                                        } else { Text(t) }
+                                    }
+                                }
+                            } label: { Label("标签", systemImage: "tag") }
                         }
                     }
                 }

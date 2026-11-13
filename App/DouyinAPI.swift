@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 struct QualityOption {
     let label: String
@@ -18,7 +19,7 @@ struct ParseResult: Identifiable {
 }
 
 enum GError: LocalizedError {
-    case noURL, failed(String), noData, noStream, http(Int)
+    case noURL, failed(String), noData, noStream, http(Int), timeout
     var errorDescription: String? {
         switch self {
         case .noURL: return "链接里没找到网址"
@@ -26,104 +27,110 @@ enum GError: LocalizedError {
         case .noData: return "接口没返回数据"
         case .noStream: return "没有可下载的清晰度"
         case .http(let c): return "HTTP \(c)"
+        case .timeout: return "解析超时（抖音可能弹了登录/验证，可稍后重试或换引擎）"
         }
     }
 }
 
 enum DouyinAPI {
-    static let endpoint = "https://api-new.ifphp.com/api/dyjx"
     static let ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15"
 
-    static func extractURL(_ text: String) -> String? {
-        if let r = RegexHelper.range(text, pattern: "https?://[^\\s，,、]+") { return String(text[r]) }
-        return nil
-    }
+    static func extractURL(_ text: String) -> String? { RegexHelper.firstFullURL(text) }
 
-    static func parse(link: String) async throws -> ParseResult {
-        guard let u = extractURL(link) else { throw GError.noURL }
-        let key = KeyStore.value
-        guard !key.isEmpty else { throw GError.failed("请先在「设置」填写接口 Key") }
-        guard var comp = URLComponents(string: endpoint) else { throw GError.noData }
-        comp.queryItems = [URLQueryItem(name: "key", value: key), URLQueryItem(name: "url", value: u)]
-        guard let reqURL = comp.url else { throw GError.noData }
-        var req = URLRequest(url: reqURL)
-        req.setValue(ua, forHTTPHeaderField: "User-Agent")
-        CallStats.record()
-        let (data, resp) = try await URLSession.shared.data(for: req)
-        if let h = resp as? HTTPURLResponse, !(200...299).contains(h.statusCode) { throw GError.http(h.statusCode) }
-        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw GError.noData }
-        let code = (obj["code"] as? Int) ?? ((obj["code"] as? NSNumber)?.intValue ?? -1)
-        if code != 200 { throw GError.failed((obj["message"] as? String) ?? (obj["error"] as? String) ?? "解析失败") }
-        guard let d = obj["data"] as? [String: Any] else { throw GError.noData }
-        let title = (d["desc"] as? String) ?? (d["title"] as? String) ?? ""
-        let author = ((d["author"] as? [String: Any])?["name"] as? String) ?? ""
-        let vid = strOf(d["video_id"]) ?? ""
-        var opts: [QualityOption] = []
-        if let s = d["url"] as? String, let uu = URL(string: s) {
-            opts.append(QualityOption(label: "原画（最高画质）", url: uu,
-                                      width: intOf(d["width"]) ?? 0, height: intOf(d["height"]) ?? 0,
-                                      sizeBytes: intOf(d["size"]) ?? 0, isOriginal: true))
-        }
-        if let vb = d["video_backup"] as? [[String: Any]] {
-            for b in vb {
-                guard let s = b["url"] as? String, let uu = URL(string: s) else { continue }
-                let label = (b["label"] as? String) ?? (b["quality"] as? String) ?? "视频"
-                opts.append(QualityOption(label: label, url: uu,
-                                          width: intOf(b["width"]) ?? 0, height: intOf(b["height"]) ?? 0,
-                                          sizeBytes: intOf(b["size"]) ?? 0, isOriginal: false))
-            }
-        }
-        if opts.isEmpty { throw GError.noStream }
-        return ParseResult(videoID: vid.isEmpty ? u : vid, title: title, author: author, options: opts)
+    // 按下载域名自动带 Referer（抖音 CDN 要 douyin；B站直链要 bilibili，否则 403）
+    static func referer(for url: URL) -> String {
+        let h = url.host?.lowercased() ?? ""
+        if h.contains("bilivideo") || h.contains("bilibili") { return "https://www.bilibili.com/" }
+        if h.contains("kuaishou") || h.contains("gifshow") || h.contains("klivo") { return "https://www.kuaishou.com/" }
+        return "https://www.douyin.com/"
     }
 
     static func download(_ url: URL, progress: @escaping @Sendable (Double, Double) -> Void) async throws -> URL {
         let d = Downloader(progress: progress)
-        return try await d.start(url, referer: "https://www.douyin.com/", ua: ua)
-    }
-
-    private static func strOf(_ v: Any?) -> String? {
-        if let s = v as? String { return s }
-        if let n = v as? NSNumber { return n.stringValue }
-        return nil
-    }
-    private static func intOf(_ v: Any?) -> Int? {
-        if let i = v as? Int { return i }
-        if let n = v as? NSNumber { return n.intValue }
-        return nil
+        return try await d.start(url, referer: referer(for: url), ua: ua)
     }
 }
 
 enum RegexHelper {
+    static func firstFullURL(_ s: String) -> String? {
+        if let r = range(s, pattern: "https?://[^\\s，,、]+") { return String(s[r]) }
+        return nil
+    }
     static func range(_ s: String, pattern: String) -> Range<String.Index>? {
         guard let re = try? NSRegularExpression(pattern: pattern) else { return nil }
         let ns = NSRange(s.startIndex..., in: s)
         guard let m = re.firstMatch(in: s, range: ns), let r = Range(m.range, in: s) else { return nil }
         return r
     }
+    static func firstGroup(_ s: String, pattern: String) -> String? {
+        guard let re = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let ns = NSRange(s.startIndex..., in: s)
+        guard let m = re.firstMatch(in: s, range: ns) else { return nil }
+        for g in 1..<m.numberOfRanges {
+            if let r = Range(m.range(at: g), in: s) { return String(s[r]) }
+        }
+        return nil
+    }
 }
 
+func strOf(_ v: Any?) -> String? {
+    if let s = v as? String { return s }
+    if let n = v as? NSNumber { return n.stringValue }
+    return nil
+}
+func intOf(_ v: Any?) -> Int? {
+    if let i = v as? Int { return i }
+    if let n = v as? NSNumber { return n.intValue }
+    return nil
+}
+
+// MARK: - 存储目录：根(视频库) / 短剧/<名> / 私密/<名>
 enum SavePaths {
-    static var dir: URL { FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0] }
-    static func exists(_ name: String) -> Bool { FileManager.default.fileExists(atPath: dir.appendingPathComponent(name).path) }
-    static func write(_ file: URL, name: String) -> Bool {
-        let dest = dir.appendingPathComponent(name)
+    static var docs: URL { FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0] }
+    static func root(_ base: String) -> URL {          // base = "短剧" / "私密"
+        let d = docs.appendingPathComponent(base, isDirectory: true)
+        try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+        return d
+    }
+    static func seriesDir(base: String, name: String) -> URL {   // 合集/创作者文件夹
+        let d = root(base).appendingPathComponent(Naming.sanitize(name), isDirectory: true)
+        try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+        return d
+    }
+    static func exists(rel: String) -> Bool {
+        FileManager.default.fileExists(atPath: docs.appendingPathComponent(rel).path)
+    }
+    @discardableResult
+    static func write(_ file: URL, rel: String) -> Bool {   // rel 如 "短剧/王某/01_x.mp4" 或 "x.mp4"(库)
+        let dest = docs.appendingPathComponent(rel)
+        try? FileManager.default.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? FileManager.default.removeItem(at: dest)
         return (try? FileManager.default.copyItem(at: file, to: dest)) != nil
     }
 }
 
+enum DownloadStore {
+    private static let key = "downloadedMap"
+    static func map() -> [String: String] {
+        (UserDefaults.standard.dictionary(forKey: key) as? [String: String]) ?? [:]
+    }
+    static func set(_ k: String, _ rel: String) {
+        var m = map(); m[k] = rel; UserDefaults.standard.set(m, forKey: key)
+    }
+}
+
+// MARK: - 命名/格式工具
 enum Naming {
+    static let illegal = CharacterSet(charactersIn: "\\/:*?\"<>|\n\r\t")
+    static func sanitize(_ s: String) -> String {
+        var t = s.components(separatedBy: illegal).joined(separator: " ")
+        while t.contains("  ") { t = t.replacingOccurrences(of: "  ", with: " ") }
+        return t.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
     static func fileName(_ author: String, _ title: String, _ opt: QualityOption) -> String {
-        let illegal = CharacterSet(charactersIn: "\\/:*?\"<>|\n\r\t")
-        func clean(_ s: String) -> String {
-            var t = s.components(separatedBy: illegal).joined(separator: " ")
-            while t.contains("  ") { t = t.replacingOccurrences(of: "  ", with: " ") }
-            return t.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        let a = clean(author), c = clean(title)
+        let a = sanitize(author), c = sanitize(title)
         var base = [a, c].filter { !$0.isEmpty }.joined(separator: " ")
-        let tag = clean(opt.label).replacingOccurrences(of: "（最高画质）", with: "")
+        let tag = sanitize(opt.label).replacingOccurrences(of: "（最高画质）", with: "")
         if !tag.isEmpty { base += "_" + tag }
         if base.count > 60 { base = String(base.prefix(60)) }
         if base.isEmpty { base = "douyin_\(opt.width)x\(opt.height)_\(Int(Date().timeIntervalSince1970))" }
@@ -137,8 +144,15 @@ enum Naming {
     static func fmtSize(_ b: Int) -> String {
         b > 0 ? String(format: "%.1f MB", Double(b) / 1048576.0) : "大小未知"
     }
+    static func epName(num: Int, title: String) -> String {
+        let c = sanitize(title)
+        var base = String(format: "%02d_", num) + c
+        if base.count > 64 { base = String(base.prefix(64)) }
+        return base + ".mp4"
+    }
 }
 
+// MARK: - 下载代理（进度/速度回调）
 final class Downloader: NSObject, URLSessionDownloadDelegate {
     private let progress: @Sendable (Double, Double) -> Void
     private var cont: CheckedContinuation<URL, Error>?
