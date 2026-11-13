@@ -4,6 +4,7 @@ struct DramaView: View {
     @EnvironmentObject var app: AppState
     @State private var search = ""
     @State private var sort = 0   // 0 名称 1 集数
+    @State private var showSubs = false
 
     private var shown: [Series] {
         var list = app.dramaSeries
@@ -33,6 +34,11 @@ struct DramaView: View {
             .navigationTitle("短剧 · \(app.dramaSeries.count)")
             .searchable(text: $search, prompt: "搜索短剧")
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { showSubs = true } label: {
+                        Image(systemName: app.subsBadge > 0 ? "bell.badge.fill" : "bell")
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         Button("名称") { sort = 0 }
@@ -42,6 +48,7 @@ struct DramaView: View {
             }
             .navigationDestination(for: Series.self) { s in DramaEpisodes(series: s) }
             .refreshable { app.refreshDramaSeries() }
+            .sheet(isPresented: $showSubs) { SubsView().environmentObject(app) }
         }
     }
 }

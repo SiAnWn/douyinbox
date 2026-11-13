@@ -24,6 +24,8 @@ final class AppState: ObservableObject {
     @Published var renameText = ""
     @Published var exportingID: String?      // 正在提取音频的文件 id
     @Published var extractNote: String?      // 提取结果提示
+    @Published var subs: [SubData] = []
+    @Published var subsChecking = false
 
     var immersive: Bool { selection == .play && !revealUI }
 
@@ -32,6 +34,56 @@ final class AppState: ObservableObject {
     func refresh() { videos = Library.scanRootByDate(); albums = Library.scanAlbums() }
     func refreshDramaSeries() { dramaSeries = Library.series(in: Library.sub("短剧")) }
     func refreshPrivateSeries() { privateSeries = Library.series(in: Library.sub("私密")) }
+
+    // MARK: 订阅追更
+    var subsBadge: Int { subs.reduce(0) { $0 + $1.newCount } }
+    func loadSubs() { subs = SubscriptionStore.all() }
+
+    func checkOne(_ s: SubData) async {
+        guard let mx = try? await MixAPI.fetch(mixID: s.mixID) else { return }
+        var c = s
+        c.newCount = SubscriptionStore.pendings(mx).count
+        c.lastTotal = mx.eps.count
+        c.lastCheck = Date().timeIntervalSince1970
+        SubscriptionStore.update(c)
+        subs = SubscriptionStore.all()
+    }
+
+    func checkSubs() async {
+        guard !subsChecking else { return }
+        subsChecking = true
+        defer { subsChecking = false }
+        var list = SubscriptionStore.all()
+        for i in 0 ..< list.count {
+            if let mx = try? await MixAPI.fetch(mixID: list[i].mixID) {
+                list[i].newCount = SubscriptionStore.pendings(mx).count
+                list[i].lastTotal = mx.eps.count
+                list[i].lastCheck = Date().timeIntervalSince1970
+            }
+            try? await Task.sleep(nanoseconds: 400_000_000)
+        }
+        SubscriptionStore.save(list)
+        subs = list
+    }
+
+    // MARK: 清理已看完（只清库根，不动短剧/私密集合文件夹）
+    @discardableResult
+    func wipeWatched() -> Int {
+        let w = WatchStore.all()
+        guard !w.isEmpty else { return 0 }
+        let doomed = videos.filter { w.contains($0.id) }
+        var ids = [String]()
+        for v in doomed {
+            try? FileManager.default.removeItem(at: v.url)
+            ProgressStore.clear(v.id)
+            if favorites.contains(v.id) { favorites.remove(v.id) }
+            ids.append(v.id)
+        }
+        WatchStore.removeMany(ids)
+        saveFav()
+        refresh()
+        return doomed.count
+    }
 
     func loadFav() { favorites = Set(UserDefaults.standard.stringArray(forKey: favKey) ?? []) }
     private func saveFav() { UserDefaults.standard.set(Array(favorites), forKey: favKey) }
@@ -131,7 +183,11 @@ struct DouyinBoxApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(app)
-                .onAppear { app.loadFav(); app.refresh(); app.refreshDramaSeries(); app.refreshPrivateSeries() }
+                .onAppear {
+                    app.loadFav(); app.refresh(); app.refreshDramaSeries(); app.refreshPrivateSeries()
+                    app.loadSubs()
+                    if !app.subs.isEmpty { Task { await app.checkSubs() } }
+                }
         }
     }
 }
@@ -148,6 +204,7 @@ struct RootView: View {
                 .tabItem { Label("库", systemImage: "square.grid.3x3.fill") }.tag(Tab.library)
             DramaView()
                 .tabItem { Label("短剧", systemImage: "film") }.tag(Tab.drama)
+                .badge(app.subsBadge)
             PrivateView()
                 .tabItem { Label("私密", systemImage: "lock.fill") }.tag(Tab.privacy)
         }
@@ -170,7 +227,7 @@ struct RootView: View {
         } message: { v in
             Text("当前：\(v.title)")
         }
-        .alert("音频提取",
+        .alert("提示",
                isPresented: Binding(get: { app.extractNote != nil },
                                     set: { if !$0 { app.extractNote = nil } })) {
             Button("好") { app.extractNote = nil }

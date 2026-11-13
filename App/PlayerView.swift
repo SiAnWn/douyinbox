@@ -44,7 +44,12 @@ final class PlayerController: ObservableObject {
             let d = CMTimeGetSeconds(it.duration)
             Task { @MainActor in
                 if t.isFinite { self.currentTime = t }
-                if d.isFinite { self.duration = d }
+                if d.isFinite {
+                    self.duration = d
+                    if t.isFinite && d > 3 && t > d * 0.92, let cid = self.currentID {
+                        WatchStore.mark(cid)          // 看到 92% 自动算“已看完”
+                    }
+                }
             }
         }
     }

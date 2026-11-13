@@ -8,6 +8,7 @@ struct BatchSheet: View {
     @State private var base = UserDefaults.standard.string(forKey: "batchBase") ?? "短剧"
     @State private var useEngine = EngineStore.current.isIfphp
     @State private var existing = 0
+    @State private var subbed = false
 
     private var isWebEngine: Bool { EngineStore.current == .web }
 
@@ -18,6 +19,22 @@ struct BatchSheet: View {
                     Text(mix.name).font(.headline)
                     Text("\(mix.eps.count) 集 · 本机已有 \(existing) 集 · 待下 \(mix.eps.count - existing) 集")
                         .font(.footnote).foregroundStyle(.secondary)
+                }
+                Section {
+                    Button {
+                        if subbed {
+                            SubscriptionStore.remove(mix.id)
+                        } else {
+                            SubscriptionStore.add(mixID: mix.id, title: mix.name, base: base)
+                        }
+                        subbed.toggle()
+                        app.loadSubs()
+                    } label: {
+                        Label(subbed ? "已订阅 · 点一下退订（打开App自动检测新集）"
+                                     : "订阅此合集（自动发现新集，一键追更）",
+                              systemImage: subbed ? "bell.fill" : "bell")
+                    }
+                    .foregroundStyle(subbed ? Color.orange : Color.accentColor)
                 }
                 Section("存放位置") {
                     Picker("位置", selection: $base) {
@@ -79,6 +96,7 @@ struct BatchSheet: View {
                 let rec = MixManifest.map(mix.id)
                 existing = rec.values.filter { SavePaths.exists(rel: $0) }.count
                 if isWebEngine { useEngine = false }
+                subbed = SubscriptionStore.exists(mix.id)
             }
         }
     }
