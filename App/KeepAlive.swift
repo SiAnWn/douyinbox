@@ -19,8 +19,7 @@ final class BGKeepAlive {
             try session.setCategory(.playback, mode: .default,
                                     options: [.mixWithOthers, .interruptSpokenAudioAndMixWithOthers])
             try session.setActive(true)
-            if let p = AVAudioPlayer(data: Self.silentWAV(seconds: 0.6),
-                                     options: [.mixWithOthers]) {
+            if let p = AVAudioPlayer(data: Self.silentWAV(seconds: 0.6)) {
                 p.numberOfLoops = -1
                 p.volume = 0
                 p.prepareToPlay()
@@ -33,7 +32,7 @@ final class BGKeepAlive {
     func stop() {
         player?.stop()
         player = nil
-        try? AVAudioSession.sharedInstance().setActive(false, .notifyOthersOnDeactivation)
+        try? AVAudioSession.sharedInstance().setActive(false, withFlags: .notifyOthersOnDeactivation)
         if token != .invalid {
             UIApplication.shared.endBackgroundTask(token)
             token = .invalid
@@ -53,7 +52,7 @@ final class BGKeepAlive {
         str("fmt "); u32(16); u16(1); u16(1)
         u32(UInt32(rate)); u32(UInt32(rate) * 2); u16(2); u16(16)
         str("data"); u32(dataBytes)
-        d.append(Data(Int(dataBytes)))
+        d.append(Data(count: Int(dataBytes)))
         return d
     }
 }
