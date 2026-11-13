@@ -58,7 +58,8 @@ final class AppleHLS: NSObject, AVAssetDownloadDelegate {
         let loader = HLSResLoader(referer: referer, cookie: cookie)
         asset.resourceLoader.setDelegate(loader, queue: DispatchQueue(label: "dsh.hlsrl"))
         guard let task = session.makeAssetDownloadTask(asset: asset,
-            assetTitle: destRel, assetMetadata: nil) else {
+            assetTitle: destRel, assetArtworkData: nil,
+            assetMetadata: nil) else {
             throw GError.failed("系统未能创建 HLS 下载任务")
         }
         let tid = task.taskIdentifier
@@ -161,7 +162,7 @@ final class HLSResLoader: NSObject, AVAssetResourceLoaderDelegate {
             if let d = data, !d.isEmpty {
                 loadingRequest.contentInformationRequest?.contentType =
                     Self.mime(for: url.pathExtension.lowercased())
-                loadingRequest.dataResponse?.appendData(d)
+                loadingRequest.data?.appendData(d)
                 loadingRequest.finishLoading()
             } else {
                 loadingRequest.finishLoading(with: err ?? GError.http(404))
