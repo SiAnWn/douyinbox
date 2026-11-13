@@ -19,20 +19,19 @@ final class BGKeepAlive {
             try session.setCategory(.playback, mode: .default,
                                     options: [.mixWithOthers, .interruptSpokenAudioAndMixWithOthers])
             try session.setActive(true)
-            if let p = AVAudioPlayer(data: Self.silentWAV(seconds: 0.6)) {
-                p.numberOfLoops = -1
-                p.volume = 0
-                p.prepareToPlay()
-                p.play()
-                player = p
-            }
+            let p = try AVAudioPlayer(data: Self.silentWAV(seconds: 0.6))
+            p.numberOfLoops = -1
+            p.volume = 0
+            p.prepareToPlay()
+            p.play()
+            player = p
         } catch { /* 拿不到音频权限也别影响下载 */ }
     }
 
     func stop() {
         player?.stop()
         player = nil
-        try? AVAudioSession.sharedInstance().setActive(false, withFlags: .notifyOthersOnDeactivation)
+        try? AVAudioSession.sharedInstance().setActive(false)
         if token != .invalid {
             UIApplication.shared.endBackgroundTask(token)
             token = .invalid
