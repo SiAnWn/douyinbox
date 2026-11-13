@@ -8,6 +8,7 @@ struct IslandBundle: WidgetBundle {
     @WidgetBundleBuilder
     var body: some Widget {
         BoxLiveActivity()
+        BoxProgressLiveActivity()
         if #available(iOS 18.0, *) {
             BoxControl()
         }
@@ -133,25 +134,89 @@ struct BoxLiveActivity: Widget {
                     .frame(maxWidth: .infinity)
                 }
             } compactLeading: {
-                GeometryReader { g in
-                    ZStack {
-                        Image(systemName: islandIcon(s.phase, s.pct))
-                            .font(.system(size: 15))
-                            .foregroundStyle(s.phase == "parsed" ? Color.green
-                                               : s.phase == "fail" ? Color.red : Color.orange)
-                        VStack(spacing: 0) {
-                            Spacer(minLength: 0)
-                            if s.phase == "parsing" && s.pct > 0 {
-                                islandBar(Double(s.pct) / 100.0)
-                            }
-                        }
-                    }
-                    .frame(width: g.size.width, height: g.size.height)
-                }
+                Image(systemName: islandIcon(s.phase, s.pct))
+                    .font(.system(size: 14))
+                    .foregroundStyle(s.phase == "parsed" ? Color.green
+                                       : s.phase == "fail" ? Color.red : Color.orange)
             } compactTrailing: {
                 Text("")
             } minimal: {
                 Image(systemName: "square.stack.3d.down.right.fill")
+            }
+        }
+    }
+}
+
+// 环+中心状态（给进度专属岛用：小圆气泡里完整可见）
+private struct ProgRing: View {
+    let pct: Int
+    let done: Bool
+    let failed: Bool
+    var body: some View {
+        ZStack {
+            Circle().stroke(Color.white.opacity(0.28), lineWidth: 2.4)
+            Circle()
+                .trim(from: 0, to: done ? 1 : CGFloat(max(2, pct)) / 100.0)
+                .stroke(done ? Color.green : failed ? Color.red : Color.orange,
+                        style: StrokeStyle(lineWidth: 2.4, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            if done {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 9, weight: .bold)).foregroundStyle(.green)
+            } else if failed {
+                Image(systemName: "xmark")
+                    .font(.system(size: 8, weight: .bold)).foregroundStyle(.red)
+            } else {
+                Text("\(pct)")
+                    .font(.system(size: 8, weight: .bold)).monospacedDigit()
+            }
+        }
+        .frame(width: 26, height: 26)
+    }
+}
+
+// 进度专属岛：与主岛并存时，系统把它挂成独立小圆气泡（minimal 展示）——镜头完全挡不到
+struct BoxProgressLiveActivity: Widget {
+    var body: some WidgetConfiguration {
+        ActivityConfiguration(for: BoxProgressActivity.self) { ctx in
+            let s = ctx.state
+            VStack(alignment: .leading, spacing: 8) {
+                Text(s.title.isEmpty ? "盒子下载" : s.title)
+                    .font(.headline).lineLimit(1)
+                ProgressView(value: Double(s.pct), total: 100)
+                    .tint(s.done ? Color.green : s.failed ? Color.red : Color.orange)
+                Text(s.done ? "✓ 下载完成" : s.failed ? "✗ 下载失败" : "下载中 \(s.pct)%")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            .padding(12)
+        } dynamicIsland: { ctx in
+            let s = ctx.state
+            return DynamicIsland {
+                DynamicIslandExpandedRegion(.leading) {
+                    Text(s.title).font(.caption).lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                DynamicIslandExpandedRegion(.trailing) {
+                    Text(s.done ? "完成" : s.failed ? "失败" : "\(s.pct)%")
+                        .font(.system(size: 12, weight: .bold).monospacedDigit())
+                        .foregroundStyle(s.done ? Color.green : s.failed ? Color.red : Color.orange)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+                DynamicIslandExpandedRegion(.bottom) {
+                    ProgressView(value: Double(s.pct), total: 100)
+                        .tint(s.done ? Color.green : s.failed ? Color.red : Color.orange)
+                }
+            } compactLeading: {
+                ProgRing(pct: s.pct, done: s.done, failed: s.failed)
+            } compactTrailing: {
+                if !s.done && !s.failed {
+                    Text("\(s.pct)%")
+                        .font(.system(size: 10, weight: .bold))
+                        .monospacedDigit()
+                        .foregroundStyle(Color.orange)
+                }
+            } minimal: {
+                ProgRing(pct: s.pct, done: s.done, failed: s.failed)
             }
         }
     }

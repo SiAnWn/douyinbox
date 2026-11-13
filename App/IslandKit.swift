@@ -150,6 +150,63 @@ enum BoxIsland {
     }
 }
 
+// MARK: - 进度专用岛（第二个实时活动：多岛机型上以独立小圆气泡浮现，不被镜头遮挡）
+struct BoxProgressActivity: ActivityAttributes {
+    struct ContentState: Codable, Hashable {
+        var pct = 0            // 0-100
+        var title = ""
+        var done = false
+        var failed = false
+        var stamp = Date().timeIntervalSince1970
+    }
+    typealias State = ContentState
+}
+
+enum BoxProgress {
+    static func current() -> Activity<BoxProgressActivity>? {
+        Activity<BoxProgressActivity>.activities.first
+    }
+
+    private static func push(_ mutate: (inout BoxProgressActivity.ContentState) -> Void) {
+        guard let act = current() else { return }
+        var s = act.contentState
+        mutate(&s)
+        s.stamp = Date().timeIntervalSince1970
+        Task { try? await act.update(using: s) }
+    }
+
+    @MainActor
+    static func begin(_ title: String) {
+        guard current() == nil else { return }
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        var s = BoxProgressActivity.ContentState()
+        s.title = String(title.prefix(28))
+        do {
+            _ = try Activity<BoxProgressActivity>.request(attributes: BoxProgressActivity(),
+                                                          contentState: s, pushType: nil)
+        } catch { /* 额度/未授权 */ }
+    }
+
+    static func updatePct(_ pct: Int) {
+        push { $0.pct = max(0, min(100, pct)) }
+    }
+
+    @MainActor
+    static func finish(ok: Bool) {
+        push {
+            $0.failed = !ok
+            if ok { $0.pct = 100; $0.done = true }
+        }
+        guard let act = current() else { return }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            if let a = Activity<BoxProgressActivity>.activities.first(where: { $0.id == act.id }) {
+                try? await a.end(dismissalPolicy: .immediate)
+            }
+        }
+    }
+}
+
 // MARK: - App Intents
 
 // 一键：点岛按钮 → 不打开 App，直接后台解析
