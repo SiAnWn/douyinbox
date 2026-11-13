@@ -17,7 +17,6 @@ struct MixData: Identifiable {
 enum MixAPI {
     static let iosUA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1"
 
-    // 跟随短链跳转拿最终 URL（纯 HTTP，已验证）
     static func resolve(_ link: String) async -> String? {
         guard let u = RegexHelper.firstFullURL(link), let url = URL(string: u) else { return nil }
         var req = URLRequest(url: url)
@@ -30,7 +29,6 @@ enum MixAPI {
         }
     }
 
-    // range 含前缀会连字符返回，用 group 提纯 ID
     static func mixID(from finalURL: String) -> String? {
         RegexHelper.firstGroup(finalURL, pattern: "/mix(?:/detail)?/(\\d{15,20})")
             ?? RegexHelper.firstGroup(finalURL, pattern: "mix_id=(\\d{15,20})")
@@ -100,7 +98,80 @@ enum MixManifest {
     }
 }
 
-// MARK: - 批量执行器
+// MARK: - 后台下载会话：切去别的 app / 锁屏后 iOS 原生继续传输
+final class BatchTransfer: NSObject, URLSessionDownloadDelegate {
+    static let shared = BatchTransfer()
+    private struct Pending { let cont: CheckedContinuation<URL, Error>; var dest: URL? }
+    private var table: [Int: Pending] = [:]
+    private let lock = NSLock()   // 主线程登记 vs 后台回调线程，双向访问需加锁
+
+    private func reg(_ id: Int, _ p: Pending) { lock.lock(); table[id] = p; lock.unlock() }
+    private func setDest(_ id: Int, _ d: URL) {
+        lock.lock(); if var p = table[id] { p.dest = d; table[id] = p }; lock.unlock()
+    }
+    private func take(_ id: Int) -> Pending? { lock.lock(); defer { lock.unlock() }; return table.removeValue(forKey: id) }
+
+    private lazy var session: URLSession = {
+        let cfg = URLSessionConfiguration.background(withIdentifier: "com.sian.douyinbox.batch")
+        cfg.httpAdditionalHeaders = ["User-Agent": DouyinAPI.ua]
+        return URLSession(configuration: cfg, delegate: self, delegateQueue: nil)
+    }()
+
+    func download(_ url: URL) async throws -> URL {
+        var req = URLRequest(url: url)
+        req.setValue(DouyinAPI.referer(for: url), forHTTPHeaderField: "Referer")
+        return try await withCheckedThrowingContinuation { (c: CheckedContinuation<URL, Error>) in
+            let t = session.downloadTask(with: req)
+            reg(t.taskIdentifier, Pending(cont: c))
+            t.resume()
+        }
+    }
+
+    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
+        let dest = FileManager.default.temporaryDirectory
+            .appendingPathComponent("bg_\(downloadTask.taskIdentifier).mp4")
+        try? FileManager.default.removeItem(at: dest)
+        if (try? FileManager.default.moveItem(at: location, to: dest)) != nil {
+            setDest(downloadTask.taskIdentifier, dest)
+        }
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        let id = task.taskIdentifier
+        guard let p = take(id) else { return }
+        if let e = error { p.cont.resume(throwing: e) }
+        else if let d = p.dest { p.cont.resume(returning: d) }
+        else { p.cont.resume(throwing: GError.failed("传输结束但文件丢失")) }
+    }
+}
+
+// 下载并发槽（最多3路）与引擎调用节拍/健康度
+actor Slots {
+    private var used = 0
+    func acquire() async { while used >= 3 { try? await Task.sleep(nanoseconds: 250_000_000) }; used += 1 }
+    func release() { if used > 0 { used -= 1 } }
+}
+actor ParseGate {
+    private var next = Date()
+    func space() async {
+        let w = next.timeIntervalSinceNow
+        if w > 0 { try? await Task.sleep(nanoseconds: UInt64(w * 1_000_000_000)) }
+        next = Date().addingTimeInterval(4)   // ≥4秒间隔 → 天然 ≤15次/分
+    }
+}
+actor EngineHealth {
+    private var fails = 0
+    func noteError() -> Int { fails += 1; return fails }
+    func reset() { fails = 0 }
+    func dead() -> Bool { fails >= 4 }
+}
+actor EpQueue {
+    private var q: [MixEpisode]
+    init(_ eps: [MixEpisode]) { q = eps }
+    func take() -> MixEpisode? { q.isEmpty ? nil : q.removeFirst() }
+}
+
+// MARK: - 批量执行器（v1.3.1：后台会话 + 4 workers + 3并发下载）
 @MainActor
 final class BatchRunner: ObservableObject {
     enum Phase { case ready, running, done, failed }
@@ -112,55 +183,83 @@ final class BatchRunner: ObservableObject {
     @Published var current = ""
 
     private var cancelled = false
-
     func cancel() { cancelled = true }
+    nonisolated func shouldStop() -> Bool { cancelled }   // worker 免切主线程读
 
-    // base: "短剧"/"私密"；useEngine: true=每集调引擎拿原画(1配额/集)；false=用列表内嵌地址(0配额)
     func start(mix: MixData, base: String, useEngine: Bool, folderName: String,
                onFinish: @escaping () -> Void) async {
         phase = .running; cancelled = false
-        total = mix.eps.count; got = 0; skipped = 0; failed = 0
+        got = 0; skipped = 0; failed = 0; total = mix.eps.count
+        current = ""
+
         let rec = MixManifest.map(mix.id)
+        let pendingList = mix.eps.filter { ep in
+            if let rel = rec[ep.id], SavePaths.exists(rel: rel) { return false }
+            return true
+        }
+        skipped = total - pendingList.count
+
+        let eng = EngineStore.current
+        let realEngine = useEngine && eng.isIfphp
+        let endpoint = eng == .svparse ? "svparse" : "dyjx"
+        let apikey = KeyStore.value(for: eng)
         let folder = Naming.sanitize(folderName.isEmpty ? mix.name : folderName)
-        var engineFailStreak = 0
-        for ep in mix.eps {
-            if cancelled { break }
-            current = "第 \(ep.num) 集 · \(String(ep.title.prefix(24)))"
-            if let rel = rec[ep.id], SavePaths.exists(rel: rel) { skipped += 1; continue }
-            var dlURL: URL?
-            if useEngine {
-                // 尊重 15 次/分限制
-                while CallStats.current().minute >= CallStats.limits.minute {
-                    if cancelled { break }
-                    try? await Task.sleep(nanoseconds: 20_000_000_000)
+
+        let queue = EpQueue(pendingList)
+        let slots = Slots(); let gate = ParseGate(); let health = EngineHealth()
+
+        await withTaskGroup(of: Void.self) { group in
+            for _ in 0..<min(4, pendingList.count) {
+                group.addTask { [weak self] in
+                    while true {
+                        guard let ep = await queue.take() else { break }
+                        if self?.shouldStop() == true { break }
+                        await self?.showCur(ep)
+                        var dlURL: URL?
+                        if realEngine && !await health.dead() {
+                            while CallStats.current().minute >= CallStats.limits.minute {
+                                if self?.shouldStop() == true { break }
+                                try? await Task.sleep(nanoseconds: 15_000_000_000)
+                            }
+                            await gate.space()
+                            do {
+                                let r = try await ifphpParse(endpoint: endpoint, key: apikey,
+                                    link: "https://www.douyin.com/video/\(ep.id)")
+                                dlURL = r.options.first?.url
+                                await health.reset()
+                            } catch {
+                                _ = await health.noteError()
+                                dlURL = ep.embedded    // 引擎故障退内嵌
+                            }
+                        } else {
+                            dlURL = ep.embedded
+                        }
+                        guard let u2 = dlURL else { await self?.addFail(); continue }
+                        await slots.acquire()
+                        do {
+                            let file = try await BatchTransfer.shared.download(u2)
+                            let rel = "\(base)/\(folder)/\(Naming.epName(num: ep.num, title: ep.title))"
+                            let ok = SavePaths.write(file, rel: rel)
+                            try? FileManager.default.removeItem(at: file)
+                            if ok {
+                                await self?.persist(mix.id, ep.id, rel)
+                                await self?.addGot()
+                            } else { await self?.addFail() }
+                        } catch {
+                            await self?.addFail()
+                        }
+                        await slots.release()
+                    }
                 }
-                do {
-                    dlURL = try await ParseRouter.originalURL(link: "https://www.douyin.com/video/\(ep.id)")
-                    engineFailStreak = 0
-                    try? await Task.sleep(nanoseconds: 5_000_000_000)
-                } catch {
-                    engineFailStreak += 1
-                    if ep.embedded == nil && engineFailStreak >= 3 { break }
-                    try? await Task.sleep(nanoseconds: 8_000_000_000)
-                }
-                if dlURL == nil { dlURL = ep.embedded }   // 引擎失败退内嵌
-            } else {
-                dlURL = ep.embedded
-                try? await Task.sleep(nanoseconds: 400_000_000)
             }
-            guard let u2 = dlURL else { failed += 1; continue }
-            do {
-                let file = try await DouyinAPI.download(u2) { _, _ in }
-                let rel = "\(base)/\(folder)/\(Naming.epName(num: ep.num, title: ep.title))"
-                if SavePaths.write(file, rel: rel) {
-                    MixManifest.record(mix.id, epID: ep.id, rel: rel)
-                    got += 1
-                } else { failed += 1 }
-                try? FileManager.default.removeItem(at: file)
-            } catch { failed += 1 }
         }
         phase = cancelled ? .failed : .done
-        if cancelled { current = "已取消（已下的保留，再粘同链接可续传）" }
+        if cancelled { current = "已取消（已下保留，再粘同链接续传）" }
         onFinish()
     }
+
+    private func showCur(_ ep: MixEpisode) { current = "第 \(ep.num) 集 · \(String(ep.title.prefix(24)))" }
+    private func addGot() { got += 1 }
+    private func addFail() { failed += 1 }
+    private func persist(_ mixID: String, _ epID: String, _ rel: String) { MixManifest.record(mixID, epID: epID, rel: rel) }
 }

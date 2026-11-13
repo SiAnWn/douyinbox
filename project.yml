@@ -7,8 +7,8 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.9"
-    MARKETING_VERSION: "1.3.0"
-    CURRENT_PROJECT_VERSION: "10"
+    MARKETING_VERSION: "1.3.1"
+    CURRENT_PROJECT_VERSION: "11"
     TARGETED_DEVICE_FAMILY: "1"
     ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
 targets:
@@ -26,5 +26,7 @@ targets:
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
         UILaunchScreen: {}
+        UIBackgroundModes:
+          - background-transfer
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
