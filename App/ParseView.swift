@@ -290,7 +290,7 @@ struct ParseView: View {
                 islandFrac = 0
                 handed = true
                 app.keepAlive.rearm()                    // 下载开跑：刷新音轨+后台时限
-                BoxIsland.update {
+                BoxIsland.update(force: true) {
                     $0.phase = "parsing"; $0.link = link; $0.pct = 0
                     $0.title = String(r.title.prefix(40)); $0.author = String(r.author.prefix(16))
                     $0.quality = o.label; $0.note = "已开始下载"
@@ -298,7 +298,7 @@ struct ParseView: View {
                 await pick(r, o, idx: 0)
                 app.keepAlive.stop()
                 let fin = status
-                BoxIsland.update {
+                BoxIsland.update(force: true) {
                     $0.phase = fin.hasPrefix("已保存") ? "parsed" : "fail"
                     $0.pct = 0
                     $0.note = fin.hasPrefix("已保存") ? "✓ 已存入视频库" : String(fin.prefix(60))

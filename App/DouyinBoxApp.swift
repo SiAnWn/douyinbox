@@ -47,7 +47,7 @@ final class AppState: ObservableObject {
     func islandDownload(_ link: String) {
         guard !link.isEmpty else { return }
         selection = .parse
-        BoxIsland.update { $0.note = "已回App，即将自动下载" }
+        BoxIsland.update(force: true) { $0.note = "已回App，即将自动下载" }
         islandPending = link
     }
 

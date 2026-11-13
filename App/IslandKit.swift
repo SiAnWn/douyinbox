@@ -23,11 +23,35 @@ enum BoxIsland {
         Activity<BoxActivity>.activities.first
     }
 
-    // 串行更新队列：ActivityKit 会丢弃时间戳倒序的更新，
-    // 并发发送必然互相抢跑 → 卡进度。强制后发等先发落地。
-    private static var pendingUpdate: Task<Void, Never>?
+    // 岛更新调度：最新快照合并 + 2 秒限流 + force 插队直达
+    // （不排队不阻塞：某次发送卡死/被丢弃，2 秒内新快照自动补位）
+    private static var latestPair: (Activity<BoxActivity>, BoxActivity.ContentState)?
+    private static var lastSent = Date.distantPast
+    private static var flushScheduled = false
+
+    private static func flush(force: Bool) {
+        guard let (act, s) = latestPair else { return }
+        if !force && Date().timeIntervalSince(lastSent) < 2.0 {
+            if !flushScheduled {
+                flushScheduled = true
+                Task {
+                    try? await Task.sleep(nanoseconds: 2_000_000_000)
+                    flushScheduled = false
+                    flush(force: true)
+                }
+            }
+            return
+        }
+        lastSent = Date()
+        latestPair = nil
+        Task { _ = try? await act.update(using: s) }
+    }
 
     static func update(_ mutate: (inout BoxActivity.ContentState) -> Void) {
+        update(force: false, mutate)
+    }
+
+    static func update(force: Bool, _ mutate: (inout BoxActivity.ContentState) -> Void) {
         var act = current()
         if act == nil {                       // 岛被收回了？先复活再写，保证按钮永远有反馈
             ensureStandby()
@@ -35,14 +59,11 @@ enum BoxIsland {
             act = current()
         }
         guard let act else { return }
-        var s = act.contentState
+        var s = (latestPair?.1 ?? act.contentState)
         mutate(&s)
         s.stamp = Date().timeIntervalSince1970
-        let prev = pendingUpdate
-        pendingUpdate = Task {
-            if let prev { _ = await prev.value }   // 排队：上一条送达后我再发
-            try? await act.update(using: s)
-        }
+        latestPair = (act, s)
+        flush(force: force)
     }
 
     static func enabled() -> Bool {
@@ -98,7 +119,7 @@ enum BoxIsland {
     static func runParse() async {
         let clip = clipText() ?? ""
         guard let url = DouyinAPI.extractURL(clip) else {
-            update { $0.phase = "fail"; $0.note = "后台读不到剪贴板(iOS限制)：请在抖音点 分享→抖音盒子" }
+            update(force: true) { $0.phase = "fail"; $0.note = "后台读不到剪贴板(iOS限制)：请在抖音点 分享→抖音盒子" }
             return
         }
         await parseAndShow(url)
@@ -109,7 +130,7 @@ enum BoxIsland {
     static func parseAndShow(_ url: String) async {
         ensureStandby()
         try? await Task.sleep(nanoseconds: 300_000_000)
-        update {
+        update(force: true) {
             $0.phase = "parsing"; $0.note = ""; $0.pct = 0
             $0.title = ""; $0.author = ""; $0.quality = ""; $0.link = ""
         }
@@ -121,7 +142,7 @@ enum BoxIsland {
         do {
             let r = try await withTimeout(14) { try await ParseRouter.parse(link: url) }
             let q = r.options.first
-            update {
+            update(force: true) {
                 $0.phase = "parsed"; $0.link = url
                 $0.title = String(r.title.prefix(40))
                 $0.author = String(r.author.prefix(16))
@@ -134,7 +155,7 @@ enum BoxIsland {
         } catch {
             var timedOut = false
             if case GError.timeout = error { timedOut = true }
-            update {
+            update(force: true) {
                 $0.phase = "fail"; $0.link = url
                 $0.note = timedOut ? "解析超时(14s)：再按一次或回App解析"
                                    : "解析失败（合集/特殊链接请回App）"
@@ -242,7 +263,7 @@ struct IslandDownloadIntent: LiveActivityIntent {
             AppState.shared.islandDownload(l)
         }
         #endif
-        BoxIsland.update { $0.note = "已回App，开始下载…" }
+        BoxIsland.update(force: true) { $0.note = "已回App，开始下载…" }
         return .result()
     }
 }
@@ -252,7 +273,7 @@ struct IslandStandbyIntent: LiveActivityIntent {
     static var title: LocalizedStringResource = "盒子：重新待命"
     static var openAppWhenRunning = false
     func perform() async throws -> some IntentResult {
-        BoxIsland.update {
+        BoxIsland.update(force: true) {
             $0.phase = "standby"; $0.note = ""; $0.pct = 0
             $0.title = ""; $0.author = ""; $0.quality = ""; $0.link = ""
         }
