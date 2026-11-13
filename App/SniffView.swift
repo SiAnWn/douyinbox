@@ -16,6 +16,7 @@ final class SniffVM: ObservableObject {
     @Published var items: [Snip] = []
     @Published var pageURL = ""
     @Published var pageTitle = ""
+    @Published var hint = ""
 
     func add(_ url: String) {
         guard url.hasPrefix("http"), items.count < 40 else { return }
@@ -48,6 +49,7 @@ struct SniffView: View {
     @StateObject private var vm = SniffVM()
     @StateObject private var bridge = BrowserBridge()
     @State private var urlInput = ""
+    @State private var webPlay: VideoItem?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -65,11 +67,12 @@ struct SniffView: View {
             SiteBrowser(bridge: bridge, onURL: { u, t in
                 vm.pageURL = u ?? vm.pageURL
                 if let t = t, !t.isEmpty { vm.pageTitle = t }
+                vm.hint = ""
             })
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             VStack(spacing: 0) {
-                Text("候选 \(vm.items.count) 个 —— 网页里点播放即可自动嗅取，也可点「重扫」")
+                Text(vm.hint.isEmpty ? "候选 \(vm.items.count) 个 —— 网页里点播放即可自动嗅取，也可点「重扫」" : vm.hint)
                     .font(.caption).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 10).padding(.vertical, 6)
                 if vm.items.isEmpty {
@@ -77,35 +80,40 @@ struct SniffView: View {
                 } else {
                     List {
                         ForEach($vm.items) { $s in
-                            VStack(alignment: .leading, spacing: 4) {
-                                HStack(spacing: 6) {
-                                    Text(s.kind == "m3u8" ? "HLS" : "MP4")
-                                        .font(.caption2).bold()
-                                        .padding(.horizontal, 6).padding(.vertical, 2)
-                                        .background(s.kind == "m3u8" ? Color.purple.opacity(0.25) : Color.green.opacity(0.25))
-                                        .foregroundStyle(s.kind == "m3u8" ? Color.purple : Color.green)
-                                        .clipShape(Capsule())
-                                    Text(s.id).font(.caption2).lineLimit(1).foregroundStyle(.secondary)
-                                    Spacer()
-                                    if s.frac >= 0 {
-                                        ProgressView(value: Double(min(max(s.frac, 0), 1)))
-                                            .frame(width: 54).scaleEffect(0.8)
+                            Button {
+                                if !s.downloaded && s.frac < 0 { startDownload(s) }
+                            } label: {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    HStack(spacing: 6) {
+                                        Text(s.kind == "m3u8" ? "HLS" : "MP4")
+                                            .font(.caption2).bold()
+                                            .padding(.horizontal, 6).padding(.vertical, 2)
+                                            .background(s.kind == "m3u8" ? Color.purple.opacity(0.25) : Color.green.opacity(0.25))
+                                            .foregroundStyle(s.kind == "m3u8" ? Color.purple : Color.green)
+                                            .clipShape(Capsule())
+                                        Text(s.id).font(.caption2).lineLimit(1).foregroundStyle(.secondary)
+                                        Spacer()
+                                        if s.frac >= 0 {
+                                            ProgressView(value: Double(min(max(s.frac, 0), 1)))
+                                                .frame(width: 54).scaleEffect(0.8)
+                                        }
                                     }
-                                }
-                                if !s.note.isEmpty {
-                                    Text(s.note).font(.caption2).foregroundStyle(s.downloaded ? Color.green : .secondary)
-                                }
-                                HStack(spacing: 14) {
-                                    Button(s.downloaded ? "已入库" : "下载") { startDownload(s) }
-                                        .disabled(s.downloaded || s.frac >= 0)
-                                    Button("复制链接") { UIPasteboard.general.string = s.id }
-                                    Button("播放试探") {
-                                        if let v = VideoItem.fromURLString(s.id, kind: s.kind) { app.coverVideo = v }
+                                    if !s.note.isEmpty {
+                                        Text(s.note).font(.caption2).foregroundStyle(s.downloaded ? Color.green : Color.secondary)
                                     }
+                                    Text(s.downloaded ? "已入库 · 长按可试播/复制" : "点按下载 · 长按更多操作")
+                                        .font(.caption2).foregroundStyle(Color.secondary)
                                 }
-                                .font(.caption)
+                                .contentShape(Rectangle())
                             }
+                            .buttonStyle(.plain)
                             .padding(.vertical, 2)
+                            .contextMenu {
+                                Button("复制链接") { UIPasteboard.general.string = s.id }
+                                Button("在播放器打开") {
+                                    if let v = VideoItem.fromURLString(s.id, kind: s.kind) { webPlay = v }
+                                }
+                            }
                         }
                     }
                     .frame(height: 230)
@@ -115,6 +123,9 @@ struct SniffView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } }
+            }
+            .fullScreenCover(item: $webPlay) { v in
+                InlinePlayer(video: v)
             }
         }
         .onAppear { bridge.vm = vm }
@@ -152,7 +163,7 @@ struct SniffView: View {
                     vm.update(s.id) { $0.frac = 1; $0.done = true; $0.downloaded = true; $0.note = "已存入视频库(\(destRel))" }
                     app.refresh()
                 } else {
-                    let file = try await DouyinAPI.download(u) { frac, sps in
+                    let file = try await DouyinAPI.download(u, referer: vm.pageURL) { frac, sps in
                         Task { @MainActor in
                             self.vm.update(s.id) { cur in
                                 cur.frac = frac
@@ -186,6 +197,11 @@ final class BrowserBridge: ObservableObject {
     }
     func deepScan() {
         webView?.evaluateJavaScript("window.__deepScan && window.__deepScan()", completionHandler: nil)
+    }
+    func hintBlocked() {
+        Task { @MainActor in
+            self.vm?.hint = "媒体直链已拦进列表（不再被全屏播放器抢走），点按该行即可下载"
+        }
     }
     func report(t: String, u: String) {
         _ = t
@@ -226,6 +242,20 @@ struct SiteBrowser: UIViewRepresentable {
         init(bridge: BrowserBridge, onURL: @escaping (String?, String?) -> Void) {
             self.bridge = bridge
             self.onURL = onURL
+        }
+        // 主框架直接导航到媒体地址 → 拦下来进列表，不让 WebKit 独占全屏
+        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
+                     decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+            let u = navigationAction.request.url?.absoluteString ?? ""
+            let low = u.lowercased()
+            let isMedia = low.contains(".m3u8") || low.contains(".mp4") || low.contains(".ts")
+            if navigationAction.targetFrame?.isMainFrame == true && isMedia {
+                bridge.report(t: "net", u: u)
+                bridge.hintBlocked()
+                decisionHandler(.cancel)
+                return
+            }
+            decisionHandler(.allow)
         }
         func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
                      decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {

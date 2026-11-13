@@ -46,9 +46,10 @@ enum DouyinAPI {
         return "https://www.douyin.com/"
     }
 
-    static func download(_ url: URL, progress: @escaping @Sendable (Double, Double) -> Void) async throws -> URL {
+    static func download(_ url: URL, referer: String = "",
+                         progress: @escaping @Sendable (Double, Double) -> Void) async throws -> URL {
         let d = Downloader(progress: progress)
-        return try await d.start(url, referer: referer(for: url), ua: ua)
+        return try await d.start(url, referer: referer.isEmpty ? referer(for: url) : referer, ua: ua)
     }
 }
 
