@@ -170,7 +170,8 @@ struct ParseView: View {
             status = String(format: "存图 %d/%d…", i + 1, total)
             guard let u = URL(string: s) else { fails += 1; continue }
             do {
-                let f = try await DouyinAPI.download(u, referer: "https://www.douyin.com/")
+                let f = try await DouyinAPI.download(u, referer: "https://www.douyin.com/",
+                                                     progress: { _, _ in })
                 let rawExt = u.pathExtension.lowercased()
                 let ext = ImgKinds.exts.contains(rawExt) ? rawExt : "jpg"
                 let rel = folder + "/" + String(format: "%02d.%@", i + 1, ext)
