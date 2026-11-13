@@ -1,5 +1,14 @@
 import SwiftUI
 
+// 容量显示：GB 优先，小文件退 MB/KB
+private func fmtGB(_ b: Int) -> String {
+    let gb = Double(b) / 1_073_741_824.0
+    if gb >= 0.05 { return String(format: "%.2f GB", gb) }
+    let mb = Double(b) / 1_048_576.0
+    if mb >= 1 { return String(format: "%.0f MB", mb) }
+    return String(format: "%.0f KB", Double(b) / 1024.0)
+}
+
 struct LibraryView: View {
     @EnvironmentObject var app: AppState
     @State private var search = ""
@@ -8,9 +17,9 @@ struct LibraryView: View {
     @State private var filterTag: String?
     private let cols = [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())]
 
-    private var shown: [VideoItem] {
+    private func pool(_ kind: Int) -> [VideoItem] {
         var list: [VideoItem]
-        switch seg {
+        switch kind {
         case 2:  list = app.videos.filter { $0.isAudio }
         case 3:  list = app.videos.filter { app.favorites.contains($0.id) }
         default: list = app.videos.filter { !$0.isAudio }
@@ -30,16 +39,6 @@ struct LibraryView: View {
     private var favCount: Int { app.videos.count { app.favorites.contains($0.id) } }
     private var tagChips: [String] { TagStore.chips(ids: Set(app.videos.map { $0.id })) }
 
-    private var poolSizeText: String {
-        if seg == 1 {
-            return "\(app.albums.count) 本 · \(app.albums.reduce(0) { $0 + $1.count }) 图"
-        }
-        let pool: [VideoItem] = seg == 2 ? app.videos.filter { $0.isAudio } : app.videos.filter { !$0.isAudio }
-        let total = pool.reduce(0) { $0 + $1.size }
-        let free = (try? FileManager.default.attributesOfFileSystem(forPath: NSHomeDirectory()))?[.systemFreeSize] as? Int ?? 0
-        return "\(pool.count) 个 · 共 \(Naming.fmtSize(total)) · 本机剩 \(Naming.fmtSize(free))"
-    }
-
     private var navTitle: String {
         switch seg {
         case 1: return "图集"
@@ -47,6 +46,16 @@ struct LibraryView: View {
         case 3: return "收藏"
         default: return "视频库"
         }
+    }
+
+    private var poolSizeText: String {
+        if seg == 1 {
+            return "\(app.albums.count) 本 · \(app.albums.reduce(0) { $0 + $1.count }) 图"
+        }
+        let list = app.videos.filter { seg == 2 ? $0.isAudio : !$0.isAudio }
+        let total = list.reduce(0) { $0 + $1.size }
+        let free = (try? FileManager.default.attributesOfFileSystem(forPath: NSHomeDirectory()))?[.systemFreeSize] as? Int ?? 0
+        return "\(list.count) 个 · 共 \(fmtGB(total)) · 本机剩 \(fmtGB(free))"
     }
 
     private var chipRow: some View {
@@ -91,7 +100,13 @@ struct LibraryView: View {
 
                 if seg != 1 { chipRow }
 
-                content
+                TabView(selection: $seg) {
+                    fileGrid(0).tag(0)
+                    albumsPage.tag(1)
+                    fileGrid(2).tag(2)
+                    fileGrid(3).tag(3)
+                }
+                .tabViewStyle(.page(indexDisplayMode: .never))
             }
             .navigationTitle(navTitle)
             .searchable(text: $search, prompt: "搜索")
@@ -108,15 +123,15 @@ struct LibraryView: View {
         }
     }
 
-    @ViewBuilder private var content: some View {
-        if seg == 1 {
-            albumsGrid
-        } else if shown.isEmpty {
-            emptyState
+    // 一个网格页（kind: 0视频 2音频 3收藏）
+    @ViewBuilder private func fileGrid(_ kind: Int) -> some View {
+        let list = pool(kind)
+        if list.isEmpty {
+            emptyState(kind)
         } else {
             ScrollView {
                 LazyVGrid(columns: cols, spacing: 10) {
-                    ForEach(shown) { v in
+                    ForEach(list) { v in
                         Button { app.playInPlace(v) } label: {
                             VStack(alignment: .leading, spacing: 4) {
                                 RowCover(v: v)
@@ -172,12 +187,12 @@ struct LibraryView: View {
         }
     }
 
-    @ViewBuilder private var emptyState: some View {
-        if seg == 3 {
+    @ViewBuilder private func emptyState(_ kind: Int) -> some View {
+        if kind == 3 {
             ContentUnavailableView("还没有收藏",
                                    systemImage: "star",
                                    description: Text("播放页点 ☆ 收藏，或长按视频选「收藏」"))
-        } else if seg == 2 {
+        } else if kind == 2 {
             ContentUnavailableView("还没有音频",
                                    systemImage: "music.note",
                                    description: Text("视频库长按视频 → 提取音频，生成 m4a 存进 App"))
@@ -190,7 +205,7 @@ struct LibraryView: View {
         }
     }
 
-    private var albumsGrid: some View {
+    private var albumsPage: some View {
         ScrollView {
             LazyVGrid(columns: cols, spacing: 10) {
                 ForEach(app.albums) { a in
