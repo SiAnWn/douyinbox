@@ -285,6 +285,25 @@ struct ParseView: View {
             }
             status = "解析中（\(engine == .web ? "浏览器引擎较慢…" : "API 直连…")）"
             result = try await ParseRouter.parse(link: link)
+            // 一键流防糊保险：API“原画”有时只是 720p，顺手免费探一把浏览器流，谁大用谁
+            if autoPickAfterParse, engine.isIfphp, var apiR = result, let apiOpt = apiR.options.first {
+                status = "画质对比探测…"
+                let old = EngineStore.current
+                EngineStore.current = .web
+                let webR = try? await ParseRouter.parse(link: link)
+                EngineStore.current = old
+                if var wOpt = webR?.options.first, wOpt.url != apiOpt.url {
+                    let sA = await Self.headSize(apiOpt.url)
+                    wOpt.sizeBytes = await Self.headSize(wOpt.url)
+                    if wOpt.sizeBytes > sA {
+                        if var wr = webR {
+                            wr.options = [wOpt] + (wr.options.count > 1 ? Array(wr.options.dropFirst()) : [])
+                            result = wr
+                            status = "浏览器流更大(\(Naming.fmtSize(wOpt.sizeBytes)))，用它"
+                        }
+                    }
+                }
+            }
             if autoPickAfterParse, let r = result, let o = r.options.first {
                 status = "一键下载：\(o.label)"
                 islandFrac = 0
@@ -323,6 +342,16 @@ struct ParseView: View {
                 BoxIsland.update { $0.phase = "parsing"; $0.pct = pct; $0.note = "下载 \(pct)% · \(sp)" }
             }
         }
+    }
+
+    // HEAD 探真实文件大小（探测失败回 0，绝不抛）
+    static func headSize(_ url: URL) async -> Int {
+        var req = URLRequest(url: url, timeoutInterval: 8)
+        req.httpMethod = "HEAD"
+        req.setValue(DouyinAPI.ua, forHTTPHeaderField: "User-Agent")
+        guard let (_, resp) = try? await URLSession.shared.data(for: req),
+              let h = resp as? HTTPURLResponse else { return 0 }
+        return h.value(forHTTPHeaderField: "Content-Length").flatMap { Int($0) } ?? 0
     }
 
     // 一键流完成动作：跳回抖音，盒子退居后台继续传输
