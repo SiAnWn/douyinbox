@@ -8,6 +8,8 @@ struct ParseView: View {
     @State private var lastAutoClip = ""   // 最近一次已自动解析的剪贴板链接
     @State private var autoPickAfterParse = false   // 灵动岛“开始下载”：解析完直接下最优档
     @State private var islandFrac = 0.0             // 岛下载进度节流
+    @State private var islandPct = 0
+    @State private var islandLastPush = Date.distantPast
     @State private var status = "粘贴抖音（或B站/快手）链接 → 选清晰度或自动批量"
     @State private var busy = false
     @State private var result: ParseResult?
@@ -307,6 +309,8 @@ struct ParseView: View {
             if autoPickAfterParse, let r = result, let o = r.options.first {
                 status = "一键下载：\(o.label)"
                 islandFrac = 0
+                islandPct = 0
+                islandLastPush = .distantPast
                 handed = true
                 app.keepAlive.rearm()          // 下载开跑：续期后台时限+复活静音轨
                 BoxIsland.update {
@@ -330,15 +334,25 @@ struct ParseView: View {
         }
     }
 
-    // 进度中继：页内进度条 + 灵动岛（8% 节流）
+    // 进度中继：页内进度条 + 灵动岛（后台节流：≥3秒间隔 + 25/50/75/90/100 里程碑必发）
     private func reportFrac(_ frac: Double, _ sps: Double) {
         Task { @MainActor in
             self.progress = frac
             self.speedText = Naming.fmtSpeed(sps)
-            if frac - self.islandFrac > 0.02 || (frac >= 0.999 && self.islandFrac < 0.999) {
+            let pct = Int(frac * 100)
+            let sp = Naming.fmtSpeed(sps)
+            let now = Date()
+            let step = frac - self.islandFrac
+            let done = frac >= 0.999 && self.islandFrac < 0.999
+            let crossed = { () -> Bool in
+                for m in [25, 50, 75, 90] where self.islandPct < m && pct >= m { return true }
+                return false
+            }()
+            let timeOk = now.timeIntervalSince(self.islandLastPush) > 3.0
+            if (step > 0.02 && timeOk) || done || crossed {
                 self.islandFrac = frac
-                let pct = Int(frac * 100)
-                let sp = Naming.fmtSpeed(sps)
+                self.islandPct = pct
+                self.islandLastPush = now
                 BoxIsland.update { $0.phase = "parsing"; $0.pct = pct; $0.note = "下载 \(pct)% · \(sp)" }
             }
         }
