@@ -14,7 +14,7 @@ struct LibraryView: View {
     @State private var search = ""
     @State private var sort = 0   // 0 最新 1 名称 2 大小
     @State private var seg = 0    // 0视频 1图集 2音频 3收藏
-    @State private var filterTag: String?
+    @State private var filterTags: Set<String> = []   // 多选筛选，任一命中
     @State private var shownLimit = 180   // 分批渲染，几万条也丝滑
     private let cols = [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())]
 
@@ -25,7 +25,9 @@ struct LibraryView: View {
         case 3:  list = app.videos.filter { app.favorites.contains($0.id) }
         default: list = app.videos.filter { !$0.isAudio }
         }
-        if let ft = filterTag { list = list.filter { TagStore.tags($0.id).contains(ft) } }
+        if !filterTags.isEmpty {
+            list = list.filter { v in TagStore.tags(v.id).contains { filterTags.contains($0) } }
+        }
         if !search.isEmpty { list = list.filter { $0.title.localizedCaseInsensitiveContains(search) } }
         switch sort {
         case 1: list.sort { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
@@ -53,18 +55,25 @@ struct LibraryView: View {
         if seg == 1 {
             return "\(app.albums.count) 本 · \(app.albums.reduce(0) { $0 + $1.count }) 图"
         }
-        let list = pool(seg)              // 统计跟随标签/搜索筛选
+        let list = pool(seg == 0 ? 0 : (seg == 2 ? 2 : 3))   // 统计跟随标签/搜索筛选
         let total = list.reduce(0) { $0 + $1.size }
         let free = (try? FileManager.default.attributesOfFileSystem(forPath: NSHomeDirectory()))?[.systemFreeSize] as? Int ?? 0
-        return "\(list.count) 个 · 共 \(fmtGB(total)) · 本机剩 \(fmtGB(free))"
+        let filtered = !filterTags.isEmpty || !search.isEmpty
+        let head = filtered ? "筛选出 \(list.count) 个" : "\(list.count) 个"
+        return "\(head) · 共 \(fmtGB(total)) · 本机剩 \(fmtGB(free))"
     }
 
     private var chipRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                chip("全部", on: filterTag == nil) { filterTag = nil }
+                chip("全部", on: filterTags.isEmpty) { filterTags = [] }
                 ForEach(tagChips, id: \.self) { t in
-                    chip(t, on: filterTag == t) { filterTag = (filterTag == t ? nil : t) }
+                    chip(t, on: filterTags.contains(t)) {
+                        if filterTags.contains(t) { filterTags.remove(t) } else { filterTags.insert(t) }
+                    }
+                }
+                if filterTags.count > 1 {
+                    Text("（任一命中）").font(.caption2).foregroundStyle(.secondary)
                 }
             }
             .padding(.horizontal)
@@ -124,7 +133,7 @@ struct LibraryView: View {
             .refreshable { await app.refreshAsync() }
             .onChange(of: seg) { _ in shownLimit = 180 }
             .onChange(of: search) { _ in shownLimit = 180 }
-            .onChange(of: filterTag) { _ in shownLimit = 180 }
+            .onChange(of: filterTags) { _ in shownLimit = 180 }
         }
     }
 
@@ -176,26 +185,12 @@ struct LibraryView: View {
                             ShareLink(item: v.url) { Label("分享文件", systemImage: "square.and.arrow.up") }
                             Button { app.beginRename(v) } label: { Label("改名", systemImage: "pencil") }
                             Button(role: .destructive) { app.deleteVideo(v) } label: { Label("删除", systemImage: "trash") }
-                            Menu {
-                                Button { app.beginTag(v) } label: { Label("新建标签…", systemImage: "plus.circle") }
-                                Divider()
-                                ForEach(TagStore.suggestions, id: \.self) { t in
-                                    Button { TagStore.toggle(v.id, t) } label: {
-                                        if TagStore.tags(v.id).contains(t) {
-                                            Label(t, systemImage: "checkmark")
-                                        } else { Text(t) }
-                                    }
-                                }
-                                let customs = TagStore.tags(v.id).filter { !TagStore.suggestions.contains($0) }
-                                if !customs.isEmpty {
-                                    Divider()
-                                    ForEach(customs, id: \.self) { t in
-                                        Button { TagStore.toggle(v.id, t) } label: {
-                                            Label(t + "（再点取消）", systemImage: "checkmark.circle.fill")
-                                        }
-                                    }
-                                }
-                            } label: { Label("标签", systemImage: "tag") }
+                            Button { app.tagEditor = v } label: {
+                                let ts = TagStore.tags(v.id)
+                                Label(ts.isEmpty ? "标签（可多选/新建）"
+                                                 : "标签 · 已挂 \(ts.count) 个",
+                                      systemImage: "tag")
+                            }
                         }
                     }
                 }
@@ -227,8 +222,8 @@ struct LibraryView: View {
             ContentUnavailableView("还没有音频",
                                    systemImage: "music.note",
                                    description: Text("视频库长按视频 → 提取音频，生成 m4a 存进 App"))
-        } else if !search.isEmpty || filterTag != nil {
-            ContentUnavailableView("没有匹配", systemImage: "magnifyingglass", description: Text("换个关键词"))
+        } else if !search.isEmpty || !filterTags.isEmpty {
+            ContentUnavailableView("没有匹配", systemImage: "magnifyingglass", description: Text("换个关键词/少选一个标签"))
         } else {
             ContentUnavailableView("还没有视频",
                                    systemImage: "square.grid.3x3.fill",

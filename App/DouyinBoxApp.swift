@@ -26,9 +26,7 @@ final class AppState: ObservableObject {
     @Published var extractNote: String?      // 提取结果提示
     @Published var subs: [SubData] = []
     @Published var subsChecking = false
-    @Published var tagTarget: VideoItem?
-    @Published var tagInput = ""
-    @Published var showTagAlert = false
+    @Published var tagEditor: VideoItem?
 
     var immersive: Bool { selection == .play && !revealUI }
 
@@ -143,17 +141,6 @@ final class AppState: ObservableObject {
 
     func beginRename(_ v: VideoItem) { renameTarget = v; renameText = v.title }
 
-    // 自定义标签
-    func beginTag(_ v: VideoItem) { tagTarget = v; tagInput = ""; showTagAlert = true }
-    func commitTag() {
-        defer { showTagAlert = false; tagTarget = nil; tagInput = "" }
-        guard let v = tagTarget else { return }
-        var t = tagInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        if t.count > 12 { t = String(t.prefix(12)) }
-        guard !t.isEmpty else { return }
-        if !TagStore.tags(v.id).contains(t) { TagStore.toggle(v.id, t) }
-    }
-
     // 提取音频：原视频旁生成 "标题 音频.m4a"（纯音轨复制/转码，不改动源文件）
     func extractAudio(_ v: VideoItem) {
         guard exportingID == nil, !v.isAudio else { return }
@@ -262,12 +249,8 @@ struct RootView: View {
         } message: {
             Text(app.extractNote ?? "")
         }
-        .alert("新建标签", isPresented: $app.showTagAlert, presenting: app.tagTarget) { v in
-            TextField("标签名（12 字内）", text: $app.tagInput)
-            Button("取消", role: .cancel) { }
-            Button("添加") { app.commitTag() }
-        } message: { v in
-            Text("给「\(String(v.title.prefix(16)))」新建自定义标签，建好后会出现在顶部筛选里")
+        .sheet(item: $app.tagEditor) { v in
+            TagEditor(video: v)
         }
     }
 }

@@ -277,6 +277,21 @@ enum TagStore {
         if let t = d[old] { d.removeValue(forKey: old); d[new] = t; save(d) }
     }
 
+    // 全库用过的标签名（含自建）
+    static func allKnownTags() -> Set<String> {
+        var s = Set<String>()
+        for ts in dict().values { s.formUnion(ts) }
+        return s
+    }
+
+    // 一次性覆盖设置某文件的全部标签
+    static func setTags(_ id: String, _ tags: [String]) {
+        var d = dict()
+        let t = Array(Set(tags)).sorted()
+        if t.isEmpty { d.removeValue(forKey: id) } else { d[id] = t }
+        save(d)
+    }
+
     // 只回显"现有文件真正在用"的标签，按字母排序
     static func chips(ids: Set<String>) -> [String] {
         var set = Set<String>()
