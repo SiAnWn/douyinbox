@@ -212,6 +212,7 @@ final class BatchRunner: ObservableObject {
         let folder = Naming.sanitize(folderName.isEmpty ? mix.name : folderName)
 
         let queue = EpQueue(pendingList)
+        let flags = stopFlag
         let slots = Slots(); let gate = ParseGate(); let health = EngineHealth()
 
         await withTaskGroup(of: Void.self) { group in
@@ -219,7 +220,7 @@ final class BatchRunner: ObservableObject {
                 group.addTask { [weak self] in
                     while true {
                         guard let ep = await queue.take() else { break }
-                        let chk1 = await stopFlag.check()
+                        let chk1 = await flags.check()
                         if chk1 { break }
                         await self?.showCur(ep)
                         var dlURL: URL?
@@ -230,7 +231,7 @@ final class BatchRunner: ObservableObject {
                         }
                         if useEngNow {
                             while CallStats.current().minute >= CallStats.limits.minute {
-                                let stopped = await stopFlag.check()
+                                let stopped = await flags.check()
                                 if stopped { break }
                                 try? await Task.sleep(nanoseconds: 15_000_000_000)
                             }
