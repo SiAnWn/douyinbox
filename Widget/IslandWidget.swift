@@ -29,9 +29,10 @@ struct BoxControl: ControlWidget {
     }
 }
 
-private func islandIcon(_ phase: String) -> String {
+// 胶囊图标：parsing 且已有进度时改用下载箭头（环+箭头组合），否则按阶段
+private func islandIcon(_ phase: String, _ pct: Int) -> String {
     switch phase {
-    case "parsing": return "arrow.triangle.2.circlepath"
+    case "parsing": return pct > 0 ? "arrow.down.circle.fill" : "arrow.triangle.2.circlepath"
     case "parsed":  return "checkmark.circle.fill"
     case "fail":    return "exclamationmark.circle.fill"
     default:        return "arrow.down.circle"
@@ -74,7 +75,7 @@ struct BoxLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: BoxActivity.self) { ctx in
             HStack(spacing: 10) {
-                Image(systemName: islandIcon(ctx.state.phase))
+                Image(systemName: islandIcon(ctx.state.phase, ctx.state.pct))
                     .font(.title3)
                     .foregroundStyle(ctx.state.phase == "parsed" ? Color.green
                                        : ctx.state.phase == "fail" ? Color.red : Color.orange)
@@ -132,39 +133,25 @@ struct BoxLiveActivity: Widget {
                     .frame(maxWidth: .infinity)
                 }
             } compactLeading: {
-                GeometryReader { g in
-                    ZStack {
-                        if s.pct > 0 && s.phase == "parsing" {
-                            VStack(spacing: 0) {
-                                Spacer(minLength: 0)
-                                islandBar(min(1.0, Double(s.pct) / 50.0))
-                            }
-                        }
-                        if s.pct == 0 || s.phase != "parsing" {
-                            Image(systemName: islandIcon(s.phase))
-                                .font(.system(size: 15))
-                                .foregroundStyle(s.phase == "parsed" ? Color.green
-                                                   : s.phase == "fail" ? Color.red : Color.orange)
-                        }
+                ZStack {
+                    Image(systemName: islandIcon(s.phase, s.pct))
+                        .font(.system(size: 15))
+                        .foregroundStyle(s.phase == "parsed" ? Color.green
+                                           : s.phase == "fail" ? Color.red : Color.orange)
+                    if s.phase == "parsing" && s.pct > 0 {
+                        Circle()
+                            .stroke(Color.white.opacity(0.25), lineWidth: 1.6)
+                            .frame(width: 21, height: 21)
+                        Circle()
+                            .trim(from: 0, to: CGFloat(s.pct) / 100.0)
+                            .stroke(Color.orange,
+                                    style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
+                            .rotationEffect(.degrees(-90))
+                            .frame(width: 21, height: 21)
                     }
-                    .frame(width: g.size.width, height: g.size.height)
                 }
             } compactTrailing: {
-                Group {
-                    if s.phase == "parsing" && s.pct > 50 {
-                        GeometryReader { g in
-                            VStack(spacing: 0) {
-                                Spacer(minLength: 0)
-                                islandBar(min(1.0, Double(s.pct - 50) / 50.0))
-                            }
-                            .frame(width: g.size.width, height: g.size.height)
-                        }
-                    } else if s.phase == "parsed" || s.phase == "fail" {
-                        Text("")
-                    } else {
-                        Text("")
-                    }
-                }
+                Text("")
             } minimal: {
                 Image(systemName: "square.stack.3d.down.right.fill")
             }
