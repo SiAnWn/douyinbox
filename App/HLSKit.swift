@@ -172,7 +172,7 @@ enum HLS {
 
     static func resolveBase(_ raw: String, base: URL) -> URL? {
         if raw.contains("://") { return URL(string: raw) }
-        return URL(string: raw, baseURL: base)
+        return URL(string: raw, relativeTo: base)
     }
 
     static func loadMedia(m3u8URL: URL, tok: HLSToken) async throws -> Manifest {
@@ -283,7 +283,7 @@ enum HLS {
 
         while waveStart < total && failures <= 3 {
             let waveEnd = min(waveStart + 24, total)
-            await withTaskGroup(of: (Int, [UInt8], String?).self) { group in
+            try await withTaskGroup(of: (Int, [UInt8], String?).self) { group in
                 for idx in waveStart ..< waveEnd {
                     group.addTask {
                         do {
@@ -376,10 +376,10 @@ enum BoatSite {
         req.setValue(DouyinAPI.ua, forHTTPHeaderField: "User-Agent")
         let (data, resp) = try await URLSession.shared.data(for: req)
         if let h = resp as? HTTPURLResponse, !(200...299).contains(h.statusCode) { throw GError.http(h.statusCode) }
-        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let d = obj["data"] as? [String: Any],
+        let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        guard let d = obj?["data"] as? [String: Any],
               let streams = d["streams"] as? [String: Any] else {
-            let msg = ((obj["msg"] as? String) ?? "接口没给流地址")
+            let msg = ((obj?["msg"] as? String) ?? "接口没给流地址")
             throw GError.failed("playback 接口失败: \(msg)")
         }
         var out: [StreamItem] = []

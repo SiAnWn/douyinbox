@@ -230,7 +230,7 @@ struct SiteBrowser: UIViewRepresentable {
         func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
                      decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
             if let resp = navigationResponse.response as? HTTPURLResponse,
-               let u = resp.url?.absoluteString, !navigationResponse.isMainDocument {
+               let u = resp.url?.absoluteString {
                 let mime = (resp.mimeType ?? "").lowercased()
                 if mime.contains("mpegurl") || mime.contains("video/") || u.lowercased().contains(".m3u8") || u.lowercased().contains(".mp4") {
                     bridge.report(t: "net", u: u)
@@ -250,12 +250,6 @@ struct SiteBrowser: UIViewRepresentable {
                 if let u = d["u"] as? String { bridge.report(t: "net", u: u) }
                 if let lst = d["list"] as? [String] { bridge.reportList(lst) }
             }
-        }
-        // 新窗口需求 → 直接本页加载
-        func webView(_ webView: WKWebView, createWebViewWith config: WKWebViewConfiguration,
-                     for action: WKNavigationAction, childWindow: WKWindowContext?) -> WKWebView? {
-            if let u = action.request.url { webView.load(URLRequest(url: u)) }
-            return nil
         }
     }
 

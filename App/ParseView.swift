@@ -86,7 +86,7 @@ struct ParseView: View {
                              target: Binding(get: { saveTarget },
                                              set: { saveTarget = $0; UserDefaults.standard.set($0, forKey: "saveTarget") }),
                              downloaded: { opt in isDownloaded(res, opt) },
-                             onPick: { opt, idx in Task { await pick(res, opt, idx) } })
+                             onPick: { opt, idx in Task { await pick(res, opt, idx: idx) } })
             }
             .sheet(isPresented: $showSettings) { SettingsView() }
             .fullScreenCover(item: $mix) { m in
