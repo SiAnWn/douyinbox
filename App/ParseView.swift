@@ -8,8 +8,6 @@ struct ParseView: View {
     @State private var lastAutoClip = ""   // 最近一次已自动解析的剪贴板链接
     @State private var autoPickAfterParse = false   // 灵动岛“开始下载”：解析完直接下最优档
     @State private var islandFrac = 0.0             // 岛下载进度节流
-    @State private var islandPct = 0
-    @State private var islandLastPush = Date.distantPast
     @State private var status = "粘贴抖音（或B站/快手）链接 → 选清晰度或自动批量"
     @State private var busy = false
     @State private var result: ParseResult?
@@ -240,6 +238,17 @@ struct ParseView: View {
         busy = true; savedLink = link; lastAutoClip = link
         defer { busy = false; refreshQuota() }
         defer { autoPickAfterParse = false }
+        var handed = false
+        defer { if !handed { app.keepAlive.stop() } }   // 没走到下载就把音轨撤了
+        if autoPickAfterParse {
+            app.keepAlive.start()                        // 续命提前开，覆盖整个解析期
+            if app.autoReturn {
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 600_000_000)
+                    Self.launchDouyin()                  // 实验：进App 0.6 秒立刻切回
+                }
+            }
+        }
         do {
             // 站点规则·boat 系小站（实测过，直连 playback API，不开浏览器不耗配额）
             if let vid = BoatSite.videoID(from: link) {
@@ -279,19 +288,12 @@ struct ParseView: View {
             if autoPickAfterParse, let r = result, let o = r.options.first {
                 status = "一键下载：\(o.label)"
                 islandFrac = 0
-                islandPct = 0
-                islandLastPush = .distantPast
-                app.keepAlive.start()          // 静音续命：被抖音顶到后台也不冻结搬运
+                handed = true
+                app.keepAlive.rearm()                    // 下载开跑：刷新音轨+后台时限
                 BoxIsland.update {
                     $0.phase = "parsing"; $0.link = link; $0.pct = 0
                     $0.title = String(r.title.prefix(40)); $0.author = String(r.author.prefix(16))
                     $0.quality = o.label; $0.note = "已开始下载"
-                }
-                if app.autoReturn {
-                    Task { @MainActor in
-                        try? await Task.sleep(nanoseconds: 1_500_000_000)
-                        Self.launchDouyin()
-                    }
                 }
                 await pick(r, o, idx: 0)
                 app.keepAlive.stop()
@@ -309,23 +311,15 @@ struct ParseView: View {
         }
     }
 
-    // 进度中继：页内进度条 + 灵动岛（≥3秒节拍 + 25/50/75/90/100 里程碑必发）
+    // 进度中继：页内进度条 + 灵动岛（8% 节流）
     private func reportFrac(_ frac: Double, _ sps: Double) {
         Task { @MainActor in
             self.progress = frac
             self.speedText = Naming.fmtSpeed(sps)
-            let pct = Int(frac * 100)
-            let sp = Naming.fmtSpeed(sps)
-            let crossed = { () -> Bool in
-                for m in [25, 50, 75, 90] where self.islandPct < m && pct >= m { return true }
-                return false
-            }()
-            let done = frac >= 0.999 && self.islandPct < 100
-            let timeOk = Date().timeIntervalSince(self.islandLastPush) > 3.0
-            if (frac - self.islandFrac > 0.02 && timeOk) || crossed || done {
+            if frac - self.islandFrac > 0.08 || (frac >= 0.999 && self.islandFrac < 0.999) {
                 self.islandFrac = frac
-                self.islandPct = pct
-                self.islandLastPush = Date()
+                let pct = Int(frac * 100)
+                let sp = Naming.fmtSpeed(sps)
                 BoxIsland.update { $0.phase = "parsing"; $0.pct = pct; $0.note = "下载 \(pct)% · \(sp)" }
             }
         }

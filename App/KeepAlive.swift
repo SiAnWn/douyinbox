@@ -8,12 +8,26 @@ import UIKit
 final class BGKeepAlive {
     private var player: AVAudioPlayer?
     private var token: UIBackgroundTaskIdentifier = .invalid
+    private var obs: NSObjectProtocol?
 
     func start() {
         guard player == nil else { return }
-        token = UIApplication.shared.beginBackgroundTask(withName: "boxdl") { [weak self] in
-            Task { @MainActor in self?.token = .invalid }
+        if obs == nil {
+            obs = NotificationCenter.default.addObserver(
+                forName: AVAudioSession.interruptionNotification,
+                object: AVAudioSession.sharedInstance(), queue: .main) { note in
+                let raw = (note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt) ?? 0
+                if raw == AVAudioSession.InterruptionType.began.rawValue {
+                    Task { @MainActor in
+                        // 被抖音等抢走后 2 秒自我复活：重新激活会话并续播静音轨
+                        try? await Task.sleep(nanoseconds: 2_000_000_000)
+                        try? AVAudioSession.sharedInstance().setActive(true)
+                        self.player?.play()
+                    }
+                }
+            }
         }
+        arm()
         do {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playback, mode: .default,
@@ -28,9 +42,28 @@ final class BGKeepAlive {
         } catch { /* 拿不到音频权限也别影响下载 */ }
     }
 
+    // 下载真正开跑时续期：重置后台时限 + 复活可能被抢走的静音轨
+    func rearm() {
+        if player == nil { start(); return }
+        arm()
+        try? AVAudioSession.sharedInstance().setActive(true)
+        player?.play()
+    }
+
+    private func arm() {
+        if token != .invalid {
+            UIApplication.shared.endBackgroundTask(token)
+            token = .invalid
+        }
+        token = UIApplication.shared.beginBackgroundTask(withName: "boxdl") { [weak self] in
+            Task { @MainActor in self?.token = .invalid }
+        }
+    }
+
     func stop() {
         player?.stop()
         player = nil
+        if let obs { NotificationCenter.default.removeObserver(obs); self.obs = nil }
         try? AVAudioSession.sharedInstance().setActive(false)
         if token != .invalid {
             UIApplication.shared.endBackgroundTask(token)
