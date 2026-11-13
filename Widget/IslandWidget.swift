@@ -38,6 +38,20 @@ private func islandIcon(_ phase: String) -> String {
     }
 }
 
+// 胶囊底边进度线（左右两段拼接）：track 淡灰 + 橙色已下载段
+private func islandBar(_ frac: Double) -> some View {
+    ZStack(alignment: .leading) {
+        RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+            .fill(Color.white.opacity(0.30))
+        GeometryReader { g in
+            RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                .fill(Color.orange)
+                .frame(width: max(0, min(1, CGFloat(frac))) * g.size.width)
+        }
+    }
+    .frame(height: 3)
+}
+
 private func islandMark(_ s: BoxActivity.ContentState) -> String {
     switch s.phase {
     case "parsing": return s.pct > 0 ? "\(s.pct)%" : "…"
@@ -118,26 +132,39 @@ struct BoxLiveActivity: Widget {
                     .frame(maxWidth: .infinity)
                 }
             } compactLeading: {
-                ZStack {
-                    Image(systemName: (s.phase == "parsing" && s.pct > 0)
-                                        ? "arrow.down.circle.fill" : islandIcon(s.phase))
-                        .font(.system(size: 15))
-                        .foregroundStyle(s.phase == "parsed" ? Color.green
-                                           : s.phase == "fail" ? Color.red : Color.orange)
-                    if s.phase == "parsing" {
-                        Circle()
-                            .stroke(Color.gray.opacity(0.22), lineWidth: 1.6)
-                            .frame(width: 21, height: 21)
-                        Circle()
-                            .trim(from: 0, to: s.pct > 0 ? CGFloat(s.pct) / 100.0 : 0.08)
-                            .stroke(Color.orange,
-                                    style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
-                            .rotationEffect(.degrees(-90))
-                            .frame(width: 21, height: 21)
+                GeometryReader { g in
+                    ZStack {
+                        if s.pct > 0 && s.phase == "parsing" {
+                            VStack(spacing: 0) {
+                                Spacer(minLength: 0)
+                                islandBar(min(1.0, Double(s.pct) / 50.0))
+                            }
+                        }
+                        if s.pct == 0 || s.phase != "parsing" {
+                            Image(systemName: islandIcon(s.phase))
+                                .font(.system(size: 15))
+                                .foregroundStyle(s.phase == "parsed" ? Color.green
+                                                   : s.phase == "fail" ? Color.red : Color.orange)
+                        }
                     }
+                    .frame(width: g.size.width, height: g.size.height)
                 }
             } compactTrailing: {
-                Text("")
+                Group {
+                    if s.phase == "parsing" && s.pct > 50 {
+                        GeometryReader { g in
+                            VStack(spacing: 0) {
+                                Spacer(minLength: 0)
+                                islandBar(min(1.0, Double(s.pct - 50) / 50.0))
+                            }
+                            .frame(width: g.size.width, height: g.size.height)
+                        }
+                    } else if s.phase == "parsed" || s.phase == "fail" {
+                        Text("")
+                    } else {
+                        Text("")
+                    }
+                }
             } minimal: {
                 Image(systemName: "square.stack.3d.down.right.fill")
             }
