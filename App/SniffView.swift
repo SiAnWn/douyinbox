@@ -3,6 +3,11 @@ import WebKit
 
 // ===================== 🌐 浏览器嗅探：任意网页 → m3u8/mp4 候选 → 下载入库 =====================
 
+enum SniffConst {
+    // 和 WKWebView 用同一套身份，让"网页能看 = 能下"
+    static let ua = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1"
+}
+
 @MainActor
 final class SniffVM: ObservableObject {
     struct Snip: Identifiable {
@@ -164,15 +169,22 @@ struct SniffView: View {
                     vm.update(s.id) { $0.frac = 1; $0.done = true; $0.downloaded = true; $0.note = "已存入视频库(\(saved))" }
                     app.refresh()
                 } else {
-                    let file = try await DouyinAPI.download(u, referer: vm.pageURL) { frac, sps in
-                        Task { @MainActor in
-                            self.vm.update(s.id) { cur in
-                                cur.frac = frac
-                                cur.note = "\(Int(frac * 100))% · \(Naming.fmtSpeed(sps))"
+                    let ck = await sniffCookies(host: u.host ?? "")
+                    let file = try await DouyinAPI.download(u,
+                        referer: vm.pageURL.isEmpty ? s.id : vm.pageURL,
+                        cookie: ck, uaOverride: SniffConst.ua) { frac, sps in
+                            Task { @MainActor in
+                                self.vm.update(s.id) { cur in
+                                    cur.frac = frac
+                                    cur.note = "\(Int(frac * 100))% · \(Naming.fmtSpeed(sps))"
+                                }
                             }
                         }
-                    }
-                    if SavePaths.write(file, rel: destRel) {
+                    let sz = (try? FileManager.default.attributesOfItem(atPath: file.path))?[.size] as? Int ?? 0
+                    if sz < 30_000 {
+                        try? FileManager.default.removeItem(at: file)
+                        vm.update(s.id) { $0.frac = -1; $0.note = "站点拒直下(仅\(sz / 1024)KB)：优先用HLS候选，或先在网页里点播放再试" }
+                    } else if SavePaths.write(file, rel: destRel) {
                         try? FileManager.default.removeItem(at: file)
                         vm.update(s.id) { $0.frac = 1; $0.done = true; $0.downloaded = true; $0.note = "已存入视频库(\(destRel))" }
                         app.refresh()
@@ -231,7 +243,7 @@ struct SiteBrowser: UIViewRepresentable {
         let w = WKWebView(frame: .zero, configuration: cfg)
         w.navigationDelegate = context.coordinator
         w.uiDelegate = context.coordinator
-        w.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1"
+        w.customUserAgent = SniffConst.ua
         bridge.webView = w
         return w
     }

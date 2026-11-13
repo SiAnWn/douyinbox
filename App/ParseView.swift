@@ -213,6 +213,13 @@ struct ParseView: View {
                     preferApple: false) { frac, sps in
                         Task { @MainActor in self.progress = frac; self.speedText = Naming.fmtSpeed(sps) }
                     }
+                let savedSize = (try? FileManager.default.attributesOfItem(atPath: SavePaths.docs.appendingPathComponent(saved).path))?[.size] as? Int ?? 0
+                guard savedSize >= 30_000 else {
+                    try? FileManager.default.removeItem(at: SavePaths.docs.appendingPathComponent(saved))
+                    showProgress = false
+                    status = "产物过小(\(savedSize / 1024)KB)：流地址可能已过期，回网页重新播放后再试"
+                    return
+                }
                 let rel = baseDir.isEmpty ? saved : "\(baseDir)/\(sub)/\(saved)"
                 if baseDir.isEmpty {
                     // saved 已是相对根路径
@@ -245,6 +252,12 @@ struct ParseView: View {
                 Task { @MainActor in self.progress = frac; self.speedText = Naming.fmtSpeed(sps) }
             }
             showProgress = false
+            let sz = (try? FileManager.default.attributesOfItem(atPath: file.path))?[.size] as? Int ?? 0
+            guard sz >= 30_000 else {
+                try? FileManager.default.removeItem(at: file)
+                status = "文件过小(\(sz / 1024)KB)：直链可能已失效，重试或换清晰度"
+                return
+            }
             let name = Naming.fileName(res.author, res.title, opt)
             let (base, sub) = relDirFor(res.author)
             let rel = base.isEmpty ? name : "\(base)/\(sub)/\(name)"

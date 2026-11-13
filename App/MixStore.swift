@@ -256,7 +256,8 @@ final class BatchRunner: ObservableObject {
                         do {
                             let file = try await BatchTransfer.shared.download(u2)
                             let rel = "\(base)/\(folder)/\(Naming.epName(num: ep.num, title: ep.title))"
-                            let ok = SavePaths.write(file, rel: rel)
+                            let sz = (try? FileManager.default.attributesOfItem(atPath: file.path))?[.size] as? Int ?? 0
+                            let ok = sz >= 30_000 && SavePaths.write(file, rel: rel)
                             try? FileManager.default.removeItem(at: file)
                             if ok {
                                 await self?.persist(mix.id, ep.id, rel)

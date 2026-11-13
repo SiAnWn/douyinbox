@@ -177,6 +177,9 @@ enum HLS {
 
     static func loadMedia(m3u8URL: URL, tok: HLSToken) async throws -> Manifest {
         let rawText = String(decoding: try await fetch(m3u8URL, tok: tok), as: UTF8.self)
+        if !rawText.contains("#EXTM3U") {
+            throw GError.failed("拿到的不是播放列表（地址可能已过期或站点拒绝直连）：回网页重新点播放后再下载")
+        }
         if rawText.contains("#EXT-X-STREAM-INF") {
             // master：挑 BANDWIDTH(同值看 RESOLUTION) 最高的 media
             var bestBW = -1, bestRes = -1, bestURL = ""

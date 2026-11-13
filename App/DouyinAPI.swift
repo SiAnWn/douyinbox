@@ -46,10 +46,12 @@ enum DouyinAPI {
         return "https://www.douyin.com/"
     }
 
-    static func download(_ url: URL, referer: String = "",
+    static func download(_ url: URL, referer: String = "", cookie: String = "",
+                         uaOverride: String = "",
                          progress: @escaping @Sendable (Double, Double) -> Void) async throws -> URL {
         let d = Downloader(progress: progress)
-        return try await d.start(url, referer: referer.isEmpty ? DouyinAPI.referer(for: url) : referer, ua: ua)
+        return try await d.start(url, referer: referer.isEmpty ? DouyinAPI.referer(for: url) : referer,
+                                 ua: uaOverride.isEmpty ? ua : uaOverride, cookie: cookie)
     }
 }
 
@@ -164,10 +166,11 @@ final class Downloader: NSObject, URLSessionDownloadDelegate {
 
     init(progress: @escaping @Sendable (Double, Double) -> Void) { self.progress = progress }
 
-    func start(_ url: URL, referer: String, ua: String) async throws -> URL {
+    func start(_ url: URL, referer: String, ua: String, cookie: String = "") async throws -> URL {
         var req = URLRequest(url: url)
         req.setValue(referer, forHTTPHeaderField: "Referer")
         req.setValue(ua, forHTTPHeaderField: "User-Agent")
+        if !cookie.isEmpty { req.setValue(cookie, forHTTPHeaderField: "Cookie") }
         let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
         let task = session.downloadTask(with: req)
         return try await withCheckedThrowingContinuation { (c: CheckedContinuation<URL, Error>) in
