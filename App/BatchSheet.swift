@@ -9,7 +9,7 @@ struct BatchSheet: View {
     @State private var useEngine = EngineStore.current.isIfphp
     @State private var existing = 0
 
-    private let isWebEngine: Bool { EngineStore.current == .web }
+    private var isWebEngine: Bool { EngineStore.current == .web }
 
     var body: some View {
         NavigationStack {
