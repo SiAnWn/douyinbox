@@ -76,8 +76,9 @@ struct LibraryView: View {
         Button(action: action) {
             Text(text).font(.footnote)
                 .padding(.horizontal, 10).padding(.vertical, 5)
-                .background(on ? Color.accentColor : Color(white: 0.16))
-                .foregroundStyle(on ? Color.white : Color.secondary)
+                .background(on ? Color.accentColor
+                               : Color(UIColor.tertiarySystemFill))   // 浅色/深色模式都清晰
+                .foregroundStyle(on ? Color.white : Color.primary)
                 .clipShape(Capsule())
         }.buttonStyle(.plain)
     }
