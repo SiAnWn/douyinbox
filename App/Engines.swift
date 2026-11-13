@@ -50,6 +50,8 @@ enum Support {
                              "youtube.com", "youtu.be", "tiktok.com", "twitter.com", "x.com",
                              "instagram.com", "weishi.qq.com", "meipai.com", "56.com", "v.douyin"]
     static func hostOK(_ url: String, _ e: Engine) -> Bool {
+        // 红果走专属引擎，任何引擎档位下都放行
+        if url.contains("novelquickapp.com") || url.contains("hongguoduanju") { return true }
         switch e {
         case .web: return url.contains("douyin.com")
         case .dyjx: return url.contains("douyin.com")
