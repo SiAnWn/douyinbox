@@ -81,14 +81,22 @@ enum BoxIsland {
     // 实际解析：读剪贴板 → 解析 → 回写岛状态（全程不打开 App）
     @MainActor
     static func runParse() async {
+        let clip = clipText() ?? ""
+        guard let url = DouyinAPI.extractURL(clip) else {
+            update { $0.phase = "fail"; $0.note = "后台读不到剪贴板(iOS限制)：请在抖音点 分享→抖音盒子" }
+            return
+        }
+        await parseAndShow(url)
+    }
+
+    // 分享扩展直接送链接进来 → 解析上岛（不依赖剪贴板）
+    @MainActor
+    static func parseAndShow(_ url: String) async {
+        ensureStandby()
+        try? await Task.sleep(nanoseconds: 300_000_000)
         update {
             $0.phase = "parsing"; $0.note = ""
             $0.title = ""; $0.author = ""; $0.quality = ""; $0.link = ""
-        }
-        let clip = clipText() ?? ""
-        guard let url = DouyinAPI.extractURL(clip) else {
-            update { $0.phase = "fail"; $0.note = "剪贴板读不到链接（iOS后台限制），点胶囊体回App自动解析" }
-            return
         }
         // 扩展进程的默认值与 App 独立：没填 Key 就用免费内置引擎，绝不硬抛 Key 错
         let eng = EngineStore.current
