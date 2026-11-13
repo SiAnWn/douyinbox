@@ -43,11 +43,17 @@ enum KeyStore {
 
 // 引擎允许的平台域名
 enum Support {
+    // svparse 聚合口实测/官方支持的平台分享域名（海外站按接口方实测为准，失败会给明确提示）
+    static let multiHosts = ["douyin.com", "bilibili.com", "kuaishou.com", "weixin.qq.com",
+                             "xiaohongshu.com", "xhslink.com", "weibo.com", "weibo.cn", "zhihu.com",
+                             "ixigua.com", "haokan.baidu.com", "acfun.cn", "huya.com",
+                             "youtube.com", "youtu.be", "tiktok.com", "twitter.com", "x.com",
+                             "instagram.com", "weishi.qq.com", "meipai.com", "56.com", "v.douyin"]
     static func hostOK(_ url: String, _ e: Engine) -> Bool {
         switch e {
         case .web: return url.contains("douyin.com")
         case .dyjx: return url.contains("douyin.com")
-        case .svparse: return url.contains("douyin.com") || url.contains("bilibili.com") || url.contains("kuaishou.com") || url.contains("weixin.qq.com")
+        case .svparse: return Support.multiHosts.contains { url.contains($0) }
         }
     }
 }
@@ -86,7 +92,14 @@ func ifphpParse(endpoint: String, key: String, link: String) async throws -> Par
     req.setValue(DouyinAPI.ua, forHTTPHeaderField: "User-Agent")
     CallStats.record()
     let (data, resp) = try await URLSession.shared.data(for: req)
-    if let h = resp as? HTTPURLResponse, !(200...299).contains(h.statusCode) { throw GError.http(h.statusCode) }
+    if let h = resp as? HTTPURLResponse, !(200...299).contains(h.statusCode) {
+        // 失败也常带 JSON 说明(如 422)：优先把 msg 透出来
+        if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let m = (obj["msg"] as? String) ?? (obj["message"] as? String), !m.isEmpty {
+            throw GError.failed(m)
+        }
+        throw GError.http(h.statusCode)
+    }
     guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw GError.noData }
     let code = (obj["code"] as? Int) ?? ((obj["code"] as? NSNumber)?.intValue ?? -1)
     if code != 200 {
@@ -99,10 +112,15 @@ func ifphpParse(endpoint: String, key: String, link: String) async throws -> Par
         ?? ((d["author"] as? [String: Any])?["nickname"] as? String) ?? ""
     let vid = strOf(d["video_id"]) ?? ""
     var opts: [QualityOption] = []
-    if let s = d["url"] as? String, let uu = URL(string: s) {
+    // data.url 多数是字符串；个别平台回对象 {url:...} / {default:...}，都兼容
+    let rawURL = (d["url"] as? String)
+        ?? ((d["url"] as? [String: Any])?["url"] as? String)
+        ?? ((d["url"] as? [String: Any])?["default"] as? String)
+    if let s = rawURL, let uu = URL(string: s) {
         opts.append(QualityOption(label: "原画（最高画质）", url: uu,
             width: intOf(d["width"]) ?? 0, height: intOf(d["height"]) ?? 0,
-            sizeBytes: intOf(d["size"]) ?? 0, isOriginal: true))
+            sizeBytes: intOf(d["size"]) ?? 0, isOriginal: true,
+            isHLS: s.lowercased().contains(".m3u8")))
     }
     if let vb = d["video_backup"] as? [[String: Any]] {
         for b in vb {

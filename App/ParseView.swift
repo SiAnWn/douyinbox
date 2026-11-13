@@ -120,9 +120,15 @@ struct ParseView: View {
             await doParse(link: url)
             return
         }
-        if let any = clipAnyURL() {          // 有链接但站点不支持：照样粘进输入框
+        if let any = clipAnyURL() {          // 有链接：能自动救的一律救
             input = any
-            status = "已粘贴，但当前引擎[\(engine.label)]不认这个站点——可切引擎再解析"
+            if engine != .svparse && Support.hostOK(any, .svparse) {
+                EngineStore.current = .svparse
+                status = "非抖音链接：已自动切换「多平台」引擎并解析…"
+                await doParse(link: any)
+                return
+            }
+            status = "已粘贴，但该站点暂无引擎支持（可试切「多平台」引擎）"
             return
         }
         status = "剪贴板里没有链接"
@@ -135,7 +141,13 @@ struct ParseView: View {
             await doParse(link: url)
         } else if let any = clipAnyURL(), any != input {
             input = any
-            status = "已粘贴，但当前引擎[\(engine.label)]不认这个站点——可切引擎再解析"
+            if engine != .svparse && Support.hostOK(any, .svparse) {
+                EngineStore.current = .svparse
+                status = "非抖音链接：已自动切换「多平台」引擎并解析…"
+                await doParse(link: any)
+                return
+            }
+            status = "已粘贴，但该站点暂无引擎支持（可试切「多平台」引擎）"
         } else if !input.isEmpty {
             status = "剪贴板没有新链接，用框内现有链接解析"
             await doParse(link: input)
