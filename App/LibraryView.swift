@@ -15,6 +15,7 @@ struct LibraryView: View {
     @State private var sort = 0   // 0 最新 1 名称 2 大小
     @State private var seg = 0    // 0视频 1图集 2音频 3收藏
     @State private var filterTag: String?
+    @State private var shownLimit = 180   // 分批渲染，几万条也丝滑
     private let cols = [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())]
 
     private func pool(_ kind: Int) -> [VideoItem] {
@@ -119,19 +120,23 @@ struct LibraryView: View {
                     } label: { Image(systemName: "arrow.up.arrow.down") }
                 }
             }
-            .refreshable { app.refresh() }
+            .refreshable { await app.refreshAsync() }
+            .onChange(of: seg) { _ in shownLimit = 180 }
+            .onChange(of: search) { _ in shownLimit = 180 }
+            .onChange(of: filterTag) { _ in shownLimit = 180 }
         }
     }
 
     // 一个网格页（kind: 0视频 2音频 3收藏）
     @ViewBuilder private func fileGrid(_ kind: Int) -> some View {
         let list = pool(kind)
+        let page = Array(list.prefix(shownLimit))
         if list.isEmpty {
             emptyState(kind)
         } else {
             ScrollView {
                 LazyVGrid(columns: cols, spacing: 10) {
-                    ForEach(list) { v in
+                    ForEach(page) { v in
                         Button { app.playInPlace(v) } label: {
                             VStack(alignment: .leading, spacing: 4) {
                                 RowCover(v: v)
@@ -180,6 +185,20 @@ struct LibraryView: View {
                                 }
                             } label: { Label("标签", systemImage: "tag") }
                         }
+                    }
+                }
+                if list.count > page.count {
+                    HStack(spacing: 8) {
+                        Spacer()
+                        ProgressView()
+                        Text("再载 \(min(360, list.count - page.count)) 个…")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    .padding(.vertical, 12)
+                    .task {
+                        try? await Task.sleep(nanoseconds: 250_000_000)
+                        shownLimit += 360
                     }
                 }
                 .padding()

@@ -35,6 +35,36 @@ final class AppState: ObservableObject {
     func refreshDramaSeries() { dramaSeries = Library.series(in: Library.sub("短剧")) }
     func refreshPrivateSeries() { privateSeries = Library.series(in: Library.sub("私密")) }
 
+    // 大库性能：扫描全部挪后台线程，扫完再一次性上屏（打开界面不再卡）
+    func refreshSoon() {
+        Task { @MainActor in
+            let v = await Task.detached(priority: .userInitiated) { Library.scanRootByDate() }.value
+            let a = await Task.detached(priority: .userInitiated) { Library.scanAlbums() }.value
+            videos = v
+            albums = a
+        }
+    }
+    func refreshSeriesSoon() {
+        Task { @MainActor in
+            let d = await Task.detached(priority: .userInitiated) { Library.series(in: Library.sub("短剧")) }.value
+            let p = await Task.detached(priority: .userInitiated) { Library.series(in: Library.sub("私密")) }.value
+            dramaSeries = d
+            privateSeries = p
+        }
+    }
+    func refreshAsync() async {
+        let v = await Task.detached(priority: .userInitiated) { Library.scanRootByDate() }.value
+        let a = await Task.detached(priority: .userInitiated) { Library.scanAlbums() }.value
+        videos = v
+        albums = a
+    }
+    func refreshSeriesAsync() async {
+        let d = await Task.detached(priority: .userInitiated) { Library.series(in: Library.sub("短剧")) }.value
+        let p = await Task.detached(priority: .userInitiated) { Library.series(in: Library.sub("私密")) }.value
+        dramaSeries = d
+        privateSeries = p
+    }
+
     // MARK: 订阅追更
     var subsBadge: Int { subs.reduce(0) { $0 + $1.newCount } }
     func loadSubs() { subs = SubscriptionStore.all() }
@@ -103,7 +133,9 @@ final class AppState: ObservableObject {
         ProgressStore.clear(v.id)
         if favorites.contains(v.id) { favorites.remove(v.id); saveFav() }
         if current?.id == v.id { current = nil }
-        refresh(); refreshDramaSeries(); refreshPrivateSeries()
+        videos.removeAll { $0.id == v.id }
+        albums.removeAll { $0.id == v.url.deletingLastPathComponent().path }
+        refreshSeriesSoon()
     }
 
     func beginRename(_ v: VideoItem) { renameTarget = v; renameText = v.title }
@@ -165,7 +197,8 @@ struct DouyinBoxApp: App {
             RootView()
                 .environmentObject(app)
                 .onAppear {
-                    app.loadFav(); app.refresh(); app.refreshDramaSeries(); app.refreshPrivateSeries()
+                    app.loadFav()
+                    app.refreshSoon(); app.refreshSeriesSoon()
                     app.loadSubs()
                     if !app.subs.isEmpty { Task { await app.checkSubs() } }
                 }

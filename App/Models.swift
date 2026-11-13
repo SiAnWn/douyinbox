@@ -2,6 +2,7 @@ import Foundation
 import AVFoundation
 import UIKit
 import UniformTypeIdentifiers
+import CryptoKit
 
 struct VideoItem: Identifiable, Hashable {
     let id: String
@@ -164,19 +165,81 @@ enum Library {
 actor ThumbCache {
     static let shared = ThumbCache()
     private var mem = NSCache<NSString, UIImage>()
+    private var genCount = 0
+    private let diskDir: URL = {
+        let c = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("thumbs", isDirectory: true)
+        try? FileManager.default.createDirectory(at: c, withIntermediateDirectories: true)
+        return c
+    }()
+
+    init() {
+        mem.countLimit = 250            // 几万条也不占爆内存，LRU 自动轮换
+    }
+
+    private nonisolated func diskKey(_ url: URL, _ mod: Double) -> String {
+        let s = url.path + "@" + String(format: "%.0f", mod)
+        let d = Insecure.MD5.hash(data: Data(s.utf8))
+        return d.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private nonisolated func shrunken(_ img: UIImage, maxW: CGFloat) -> UIImage {
+        let s = img.size
+        guard s.width > maxW else { return img }
+        let r = maxW / max(s.width, 1)
+        let newSize = CGSize(width: maxW, height: (s.height * r).rounded())
+        let fmt = UIGraphicsImageRendererFormat.default()
+        fmt.scale = 1
+        return UIGraphicsImageRenderer(size: newSize, format: fmt).image { _ in
+            img.draw(in: CGRect(origin: .zero, size: newSize))
+        }
+    }
+
+    private nonisolated func purgeDiskIfNeeded() {
+        let fm = FileManager.default
+        let files = (try? fm.contentsOfDirectory(at: diskDir, includingPropertiesForKeys: [
+            .contentModificationDateKey, .fileSizeKey])) ?? []
+        guard files.count > 4000 else { return }
+        struct E: Comparable { let url: URL; let date: Date; static func < (a: E, b: E) -> Bool { a.date < b.date } }
+        var es: [E] = []
+        for f in files {
+            let v = try? f.resourceValues(forKeys: [.contentModificationDateKey])
+            es.append(E(url: f, date: v?.contentModificationDate ?? .distantPast))
+        }
+        es.sort()
+        for e in es.prefix(es.count - 2500) { try? fm.removeItem(at: e.url) }
+    }
 
     func image(_ url: URL) async -> UIImage? {
         let k = url.path as NSString
         if let c = mem.object(forKey: k) { return c }
-        let gen = AVAssetImageGenerator(asset: AVURLAsset(url: url))
-        gen.appliesPreferredTrackTransform = true
-        gen.maximumSize = CGSize(width: 480, height: 480)
-        if let res = try? await gen.image(at: .zero) {
-            let img = UIImage(cgImage: res.image)
-            mem.setObject(img, forKey: k)
-            return img
+        let mod = ((try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate]
+                   as? Date) ?? .distantPast
+        let df = diskDir.appendingPathComponent(diskKey(url, mod.timeIntervalSince1970))
+        if let d = UIImage(contentsOfFile: df.path) {
+            mem.setObject(d, forKey: k)
+            return d
         }
-        return nil
+        var img: UIImage?
+        if ["jpg", "jpeg", "png", "webp", "heic", "gif", "bmp"].contains(url.pathExtension.lowercased()) {
+            img = UIImage(contentsOfFile: url.path).map { shrunken($0, maxW: 320) }
+        } else {
+            let gen = AVAssetImageGenerator(asset: AVURLAsset(url: url))
+            gen.appliesPreferredTrackTransform = true
+            gen.maximumSize = CGSize(width: 320, height: 320)
+            if let res = try? await gen.image(at: .zero) {
+                img = UIImage(cgImage: res.image)
+            }
+        }
+        if let i = img {
+            mem.setObject(i, forKey: k)
+            if let dat = i.jpegData(compressionQuality: 0.72) {
+                try? dat.write(to: df)
+                genCount += 1
+                if genCount >= 400 { genCount = 0; purgeDiskIfNeeded() }
+            }
+        }
+        return img
     }
 }
 

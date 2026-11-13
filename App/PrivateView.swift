@@ -44,7 +44,7 @@ struct PrivateView: View {
             }
             .navigationTitle(app.privateUnlocked ? "私密 · \(app.privateSeries.count)" : "私密")
             .navigationDestination(for: Series.self) { s in PrivateEpisodes(series: s) }
-            .refreshable { app.refreshPrivateSeries() }
+            .refreshable { await app.refreshSeriesAsync() }
         }
         .onAppear { if !app.privateUnlocked { authenticate() } }
     }

@@ -47,7 +47,7 @@ struct DramaView: View {
                 }
             }
             .navigationDestination(for: Series.self) { s in DramaEpisodes(series: s) }
-            .refreshable { app.refreshDramaSeries() }
+            .refreshable { await app.refreshSeriesAsync() }
             .sheet(isPresented: $showSubs) { SubsView().environmentObject(app) }
         }
     }
