@@ -23,6 +23,10 @@ enum BoxIsland {
         Activity<BoxActivity>.activities.first
     }
 
+    // 串行更新队列：ActivityKit 会丢弃时间戳倒序的更新，
+    // 并发发送必然互相抢跑 → 卡进度。强制后发等先发落地。
+    private static var pendingUpdate: Task<Void, Never>?
+
     static func update(_ mutate: (inout BoxActivity.ContentState) -> Void) {
         var act = current()
         if act == nil {                       // 岛被收回了？先复活再写，保证按钮永远有反馈
@@ -34,7 +38,11 @@ enum BoxIsland {
         var s = act.contentState
         mutate(&s)
         s.stamp = Date().timeIntervalSince1970
-        Task { try? await act.update(using: s) }
+        let prev = pendingUpdate
+        pendingUpdate = Task {
+            if let prev { _ = await prev.value }   // 排队：上一条送达后我再发
+            try? await act.update(using: s)
+        }
     }
 
     static func enabled() -> Bool {
