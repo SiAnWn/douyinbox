@@ -3,7 +3,9 @@ import UIKit
 
 struct ParseView: View {
     @EnvironmentObject var app: AppState
+    @Environment(\.scenePhase) private var scenePhase
     @State private var input = ""
+    @State private var lastAutoClip = ""   // 最近一次已自动解析的剪贴板链接
     @State private var status = "粘贴抖音（或B站/快手）链接 → 选清晰度或自动批量"
     @State private var busy = false
     @State private var result: ParseResult?
@@ -90,6 +92,10 @@ struct ParseView: View {
                 BatchSheet(mix: m).environmentObject(app)
             }
             .onAppear { refreshQuota(); autoFillAndParse() }
+            .onChange(of: scenePhase) { _ in
+                // 从别的 App 切回前台：重新读剪贴板，新链接自动开解
+                if scenePhase == .active { autoFillAndParse() }
+            }
         }
     }
 
@@ -107,8 +113,11 @@ struct ParseView: View {
     }
 
     private func autoFillAndParse() {
-        guard input.isEmpty, !busy else { return }
+        guard !busy else { return }
+        guard app.selection == .parse else { return }
         guard let url = clipURL() else { return }
+        if url == lastAutoClip { return }   // 这条已经自动解析过，不再浪费配额
+        lastAutoClip = url
         input = url
         status = "已自动填入，正在解析…"
         Task { await doParse(link: url) }
@@ -207,7 +216,7 @@ struct ParseView: View {
             status = "已达限制：\(r)"
             return
         }
-        busy = true; savedLink = link; defer { busy = false; refreshQuota() }
+        busy = true; savedLink = link; lastAutoClip = link; defer { busy = false; refreshQuota() }
         do {
             // 站点规则·boat 系小站（实测过，直连 playback API，不开浏览器不耗配额）
             if let vid = BoatSite.videoID(from: link) {
