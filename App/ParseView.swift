@@ -82,7 +82,8 @@ struct ParseView: View {
                              target: Binding(get: { saveTarget },
                                              set: { saveTarget = $0; UserDefaults.standard.set($0, forKey: "saveTarget") }),
                              downloaded: { opt in isDownloaded(res, opt) },
-                             onPick: { opt, idx in Task { await pick(res, opt, idx: idx) } })
+                             onPick: { opt, idx in Task { await pick(res, opt, idx: idx) } },
+                             onPickImages: { Task { await saveImages(res) } })
             }
             .sheet(isPresented: $showSettings) { SettingsView() }
             .fullScreenCover(item: $mix) { m in
@@ -154,6 +155,44 @@ struct ParseView: View {
         } else {
             status = "剪贴板没有链接，输入框也是空"
         }
+    }
+
+    // 图文作品：逐张下载到 App 内（库根 图集_标题/01.jpg…），附说明.txt
+    private func saveImages(_ res: ParseResult) async {
+        guard !busy else { return }
+        busy = true
+        defer { busy = false }
+        let title = Naming.sanitize(res.title.isEmpty ? "图集" : String(res.title.prefix(60)))
+        let folder = "图集_" + title
+        let total = res.images.count
+        var ok = 0, fails = 0
+        for (i, s) in res.images.enumerated() {
+            status = String(format: "存图 %d/%d…", i + 1, total)
+            guard let u = URL(string: s) else { fails += 1; continue }
+            do {
+                let f = try await DouyinAPI.download(u, referer: "https://www.douyin.com/")
+                let rawExt = u.pathExtension.lowercased()
+                let ext = ImgKinds.exts.contains(rawExt) ? rawExt : "jpg"
+                let rel = folder + "/" + String(format: "%02d.%@", i + 1, ext)
+                let sz = (try? FileManager.default.attributesOfItem(atPath: f.path)[.size] as? Int) ?? 0
+                if sz >= 5_000 && SavePaths.write(f, rel: rel) { ok += 1 } else { fails += 1 }
+                try? FileManager.default.removeItem(at: f)
+            } catch { fails += 1 }
+        }
+        if ok > 0 {
+            let meta = (res.title.isEmpty ? "" : res.title + "\n")
+                + (res.author.isEmpty ? "" : "作者: " + res.author + "\n") + savedLink
+            if let dat = meta.data(using: .utf8) {
+                let dest = Library.root().appendingPathComponent(folder).appendingPathComponent("说明.txt")
+                try? FileManager.default.createDirectory(at: dest.deletingLastPathComponent(),
+                                                         withIntermediateDirectories: true)
+                try? dat.write(to: dest)
+            }
+        }
+        status = ok > 0
+            ? "图集已存 App：\(ok) 张" + (fails > 0 ? "（\(fails) 张失败）" : "") + "，库页图集区翻看"
+            : "图集保存失败（\(fails) 张）"
+        app.refresh()
     }
 
     @MainActor
@@ -321,6 +360,7 @@ struct QualitySheet: View {
     @Binding var target: Int
     let downloaded: (QualityOption) -> Bool
     let onPick: (QualityOption, Int) -> Void
+    let onPickImages: () -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var confirmOpt: QualityOption?
     @State private var confirmIdx = 0
@@ -330,33 +370,60 @@ struct QualitySheet: View {
     var body: some View {
         NavigationStack {
             List {
-                Section("存入位置") {
-                    Picker("存入位置", selection: $target) {
-                        Text("视频库").tag(0)
-                        Text("私密/\(author)").tag(1)
-                        Text("短剧/\(author)").tag(2)
-                    }
-                    .pickerStyle(.segmented)
-                }
-                Section {
-                    ForEach(Array(result.options.enumerated()), id: \.offset) { idx, opt in
+                if !result.images.isEmpty {
+                    Section {
                         Button {
-                            if downloaded(opt) { confirmIdx = idx; confirmOpt = opt } else { onPick(opt, idx) }
+                            onPickImages()
+                            dismiss()
                         } label: {
                             HStack {
+                                Image(systemName: "photo.on.rectangle.angled").font(.title3)
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(opt.label + (opt.isOriginal ? "  ⭐" : "")).font(.body)
-                                    Text("\(opt.width)×\(opt.height) · \(Naming.fmtSize(opt.sizeBytes))")
+                                    Text("图集 · \(result.images.count) 张").font(.body)
+                                    Text("存入 App 库页图集区（不写系统相册）")
                                         .font(.caption).foregroundStyle(.secondary)
                                 }
                                 Spacer()
-                                if downloaded(opt) { Text("已下载").font(.caption).foregroundStyle(.green) }
+                                Image(systemName: "arrow.down.circle").font(.title3)
                             }
                         }.foregroundStyle(.primary)
+                    } header: {
+                        Text("\(result.author.isEmpty ? "" : result.author + " · ")\(result.title)")
+                            .font(.caption).lineLimit(2)
                     }
-                } header: {
-                    Text("\(result.author.isEmpty ? "" : result.author + " · ")\(result.title)")
-                        .font(.caption).lineLimit(2)
+                    if result.options.isEmpty {
+                        Section { Text("图文作品没有视频流").font(.caption).foregroundStyle(.secondary) }
+                    }
+                }
+                if !result.options.isEmpty {
+                    Section("存入位置") {
+                        Picker("存入位置", selection: $target) {
+                            Text("视频库").tag(0)
+                            Text("私密/\(author)").tag(1)
+                            Text("短剧/\(author)").tag(2)
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                    Section {
+                        ForEach(Array(result.options.enumerated()), id: \.offset) { idx, opt in
+                            Button {
+                                if downloaded(opt) { confirmIdx = idx; confirmOpt = opt } else { onPick(opt, idx) }
+                            } label: {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(opt.label + (opt.isOriginal ? "  ⭐" : "")).font(.body)
+                                        Text("\(opt.width)×\(opt.height) · \(Naming.fmtSize(opt.sizeBytes))")
+                                            .font(.caption).foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    if downloaded(opt) { Text("已下载").font(.caption).foregroundStyle(.green) }
+                                }
+                            }.foregroundStyle(.primary)
+                        }
+                    } header: {
+                        Text("\(result.author.isEmpty ? "" : result.author + " · ")\(result.title)")
+                            .font(.caption).lineLimit(2)
+                    }
                 }
             }
             .alert("已经下载过",

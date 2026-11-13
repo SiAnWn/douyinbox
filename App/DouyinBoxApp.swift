@@ -5,6 +5,8 @@ enum Tab: Hashable { case parse, play, drama, privacy, library }
 @MainActor
 final class AppState: ObservableObject {
     @Published var videos: [VideoItem] = []
+    @Published var albums: [AlbumItem] = []
+    @Published var openAlbum: AlbumItem?
     @Published var dramaSeries: [Series] = []
     @Published var privateSeries: [Series] = []
     @Published var privateUnlocked = false
@@ -24,7 +26,7 @@ final class AppState: ObservableObject {
 
     private let favKey = "favorites"
 
-    func refresh() { videos = Library.scanRootByDate() }
+    func refresh() { videos = Library.scanRootByDate(); albums = Library.scanAlbums() }
     func refreshDramaSeries() { dramaSeries = Library.series(in: Library.sub("短剧")) }
     func refreshPrivateSeries() { privateSeries = Library.series(in: Library.sub("私密")) }
 
@@ -117,6 +119,9 @@ struct RootView: View {
         }
         .fullScreenCover(item: $app.coverVideo) { v in
             InlinePlayer(video: v).environmentObject(app)
+        }
+        .fullScreenCover(item: $app.openAlbum) { a in
+            AlbumViewer(album: a).environmentObject(app)
         }
         .onChange(of: app.selection) { sel in
             if sel != .privacy { app.privateUnlocked = false }

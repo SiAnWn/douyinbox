@@ -17,6 +17,7 @@ struct ParseResult: Identifiable {
     let title: String
     let author: String
     let options: [QualityOption]
+    var images: [String] = []          // 图文作品图片直链（ifphp type=image）
 }
 
 enum GError: LocalizedError {

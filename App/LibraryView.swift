@@ -59,6 +59,10 @@ struct LibraryView: View {
 
                 chipRow
 
+                if !favOnly && !app.albums.isEmpty {
+                    albumsStrip
+                }
+
                 content
             }
             .navigationTitle(favOnly ? "收藏" : "视频库")
@@ -129,6 +133,67 @@ struct LibraryView: View {
                     }
                 }
                 .padding()
+            }
+        }
+    }
+
+    private var albumsStrip: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label("图集 (\(app.albums.count))", systemImage: "photo.stack")
+                .font(.subheadline).foregroundStyle(.secondary)
+                .padding(.horizontal)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(app.albums) { a in
+                        Button { app.openAlbum = a } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                AlbumThumb(url: a.cover)
+                                    .frame(width: 108, height: 144)
+                                    .background(Color.gray.opacity(0.15))
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    .overlay(alignment: .bottomTrailing) {
+                                        Text("\(a.count)图")
+                                            .font(.caption2).foregroundStyle(.white)
+                                            .padding(4).background(.black.opacity(0.5), in: Capsule())
+                                            .padding(4)
+                                    }
+                                Text(a.title).font(.caption).lineLimit(1)
+                                    .frame(width: 108, alignment: .leading)
+                                    .foregroundStyle(.primary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .contextMenu {
+                            Button(role: .destructive) {
+                                try? FileManager.default.removeItem(at: a.url)
+                                app.refresh()
+                            } label: { Label("删除整本", systemImage: "trash") }
+                        }
+                    }
+                }.padding(.horizontal)
+            }
+        }
+    }
+}
+
+struct AlbumThumb: View {
+    let url: URL?
+    @State private var img: UIImage?
+
+    var body: some View {
+        ZStack {
+            if let i = img {
+                Image(uiImage: i).resizable().scaledToFill()
+            } else {
+                Image(systemName: "photo.on.rectangle.angled").font(.title2).foregroundStyle(.secondary)
+            }
+        }
+        .clipped()
+        .task(id: url) {
+            if let u = url, img == nil {
+                img = await Task.detached(priority: .utility) {
+                    UIImage(contentsOfFile: u.path)
+                }.value
             }
         }
     }

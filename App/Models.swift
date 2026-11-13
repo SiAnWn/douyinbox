@@ -21,6 +21,23 @@ struct Series: Identifiable, Hashable {
     let cover: URL?
 }
 
+struct AlbumItem: Identifiable, Hashable {
+    let id: String          // 文件夹路径
+    let title: String       // 去前缀后的名字
+    let count: Int
+    let cover: URL?         // 首图
+    let modDate: Date
+    let url: URL
+    static func == (l: AlbumItem, r: AlbumItem) -> Bool { l.id == r.id }
+    func hash(into h: inout Hasher) { h.combine(id) }
+}
+
+enum ImgKinds {
+    static let exts = ["jpg", "jpeg", "png", "webp", "heic", "gif", "bmp"]
+    static let prefixes = ["图集_"]     // 库根下图集文件夹识别前缀
+    static func isImage(_ u: URL) -> Bool { exts.contains(u.pathExtension.lowercased()) }
+}
+
 enum Library {
     static func root() -> URL { FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0] }
 
@@ -54,6 +71,38 @@ enum Library {
 
     static func scanRootByDate() -> [VideoItem] {
         scan(in: root()).sorted { $0.modDate > $1.modDate }
+    }
+
+    // 图集：库根下 "图集_xxx" 文件夹，每夹一本
+    static func imageFiles(in dir: URL) -> [URL] {
+        let urls = (try? FileManager.default.contentsOfDirectory(
+            at: dir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+        return urls.filter { ImgKinds.isImage($0) && ($0.lastPathComponent != "说明.txt") }
+            .sorted { a, b in
+                let na = numKey(a.deletingPathExtension().lastPathComponent)
+                let nb = numKey(b.deletingPathExtension().lastPathComponent)
+                if na != nb { return na < nb }
+                return a.lastPathComponent < b.lastPathComponent
+            }
+    }
+
+    static func scanAlbums() -> [AlbumItem] {
+        let subs = (try? FileManager.default.contentsOfDirectory(
+            at: root(), includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles])) ?? []
+        var out: [AlbumItem] = []
+        for d in subs {
+            var isDir: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: d.path, isDirectory: &isDir), isDir.boolValue,
+                  d.lastPathComponent.hasPrefix("图集_") else { continue }
+            let files = imageFiles(in: d)
+            guard !files.isEmpty else { continue }
+            let mod = (try? d.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+            let name = String(d.lastPathComponent.dropFirst("图集_".count))
+            out.append(AlbumItem(id: d.path, title: name, count: files.count,
+                                 cover: files.first, modDate: mod, url: d))
+        }
+        return out.sorted { $0.modDate > $1.modDate }
     }
 
     // 按文件名中的数字升序（无数字排最后）

@@ -131,8 +131,20 @@ func ifphpParse(endpoint: String, key: String, link: String) async throws -> Par
                 sizeBytes: intOf(b["size"]) ?? 0, isOriginal: false))
         }
     }
-    if opts.isEmpty { throw GError.noStream }
-    return ParseResult(videoID: vid.isEmpty ? u : vid, title: title, author: author, options: opts)
+    // 图文作品：data.images = [直链字符串]（个别站可能回对象，都兼容）
+    var imgs: [String] = []
+    if let arr = d["images"] as? [Any] {
+        for it in arr {
+            if let s = it as? String, !s.isEmpty { imgs.append(s) }
+            else if let mo = it as? [String: Any] {
+                if let s = mo["url"] as? String, !s.isEmpty { imgs.append(s) }
+                else if let list = mo["url_list"] as? [String], let f = list.first, !f.isEmpty { imgs.append(f) }
+            }
+        }
+    }
+    if opts.isEmpty && imgs.isEmpty { throw GError.noStream }
+    return ParseResult(videoID: vid.isEmpty ? u : vid, title: title, author: author,
+                       options: opts, images: imgs)
 }
 
 // MARK: - 浏览器引擎（移植自 DouyinGrab 初版，已验证）
