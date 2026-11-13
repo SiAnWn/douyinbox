@@ -243,13 +243,7 @@ struct ParseView: View {
         var handed = false
         defer { if !handed { app.keepAlive.stop() } }   // 一键流没走到下载就收音轨
         if autoPickAfterParse {
-            app.keepAlive.start()                        // 先开续命，回跳后解析照跑
-            if app.autoReturn {
-                Task { @MainActor in
-                    try? await Task.sleep(nanoseconds: 600_000_000)
-                    Self.launchDouyin()                  // 拿到链接立刻回抖音，别急着看戏
-                }
-            }
+            app.keepAlive.start()                        // 先开续命（回跳后解析照跑）
         }
         do {
             // 站点规则·boat 系小站（实测过，直连 playback API，不开浏览器不耗配额）
@@ -292,7 +286,20 @@ struct ParseView: View {
                 status = "画质对比探测…"
                 let old = EngineStore.current
                 EngineStore.current = .web
-                let webR = try? await ParseRouter.parse(link: link)
+                // 9 秒超时保险：浏览器引擎在后台会被挂起，绝不许拖死主流程
+                let webR: ParseResult? = await withTaskGroup(of: ParseResult?.self) { g in
+                    g.addTask {
+                        if let r = try? await ParseRouter.parse(link: link) { return r }
+                        return nil
+                    }
+                    g.addTask {
+                        try? await Task.sleep(nanoseconds: 9_000_000_000)
+                        return nil
+                    }
+                    let first = await g.next() ?? nil
+                    g.cancelAll()
+                    return first
+                }
                 EngineStore.current = old
                 if let wi = webR?.options.first, wi.url != apiOpt.url {
                     let sA = await Self.headSize(apiOpt.url)
@@ -321,6 +328,12 @@ struct ParseView: View {
                     $0.phase = "parsing"; $0.link = link; $0.pct = 0
                     $0.title = String(r.title.prefix(40)); $0.author = String(r.author.prefix(16))
                     $0.quality = o.label; $0.note = "已开始下载"
+                }
+                if app.autoReturn {            // 下载已开跑才回抖音（41 的节奏，稳）
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 1_500_000_000)
+                        Self.launchDouyin()
+                    }
                 }
                 await pick(r, o, idx: 0)
                 app.keepAlive.stop()
