@@ -60,7 +60,7 @@ struct BoxLiveActivity: Widget {
             .padding(12)
         } dynamicIsland: { ctx in
             let s = ctx.state
-            DynamicIsland {
+            return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(s.author.isEmpty ? "抖音盒子" : s.author)
@@ -108,7 +108,6 @@ struct BoxLiveActivity: Widget {
             } minimal: {
                 Image(systemName: "square.stack.3d.down.right.fill")
             }
-            .keylineTint(.orange)
         }
     }
 }
