@@ -240,11 +240,6 @@ struct ParseView: View {
         busy = true; savedLink = link; lastAutoClip = link
         defer { busy = false; refreshQuota() }
         defer { autoPickAfterParse = false }
-        var handed = false
-        defer { if !handed { app.keepAlive.stop() } }   // 一键流没走到下载就收音轨
-        if autoPickAfterParse {
-            app.keepAlive.start()                        // 先开续命（回跳后解析照跑）
-        }
         do {
             // 站点规则·boat 系小站（实测过，直连 playback API，不开浏览器不耗配额）
             if let vid = BoatSite.videoID(from: link) {
@@ -281,55 +276,18 @@ struct ParseView: View {
             }
             status = "解析中（\(engine == .web ? "浏览器引擎较慢…" : "API 直连…")）"
             result = try await ParseRouter.parse(link: link)
-            // 一键流防糊保险：API“原画”有时只是 720p，顺手免费探一把浏览器流，谁大用谁
-            if autoPickAfterParse, engine.isIfphp, let apiR = result, let apiOpt = apiR.options.first {
-                status = "画质对比探测…"
-                let old = EngineStore.current
-                EngineStore.current = .web
-                // 9 秒超时保险：浏览器引擎在后台会被挂起，绝不许拖死主流程
-                let webR: ParseResult? = await withTaskGroup(of: ParseResult?.self) { g in
-                    g.addTask {
-                        if let r = try? await ParseRouter.parse(link: link) { return r }
-                        return nil
-                    }
-                    g.addTask {
-                        try? await Task.sleep(nanoseconds: 9_000_000_000)
-                        return nil
-                    }
-                    let first = await g.next() ?? nil
-                    g.cancelAll()
-                    return first
-                }
-                EngineStore.current = old
-                if let wi = webR?.options.first, wi.url != apiOpt.url {
-                    let sA = await Self.headSize(apiOpt.url)
-                    let sW = await Self.headSize(wi.url)
-                    if sW > sA, let wr = webR {
-                        let better = QualityOption(label: wi.label, url: wi.url,
-                                                   width: wi.width, height: wi.height,
-                                                   sizeBytes: sW,
-                                                   isOriginal: wi.isOriginal, isHLS: wi.isHLS)
-                        result = ParseResult(videoID: wr.videoID, title: wr.title,
-                                             author: wr.author,
-                                             options: [better] + Array(wr.options.dropFirst()),
-                                             images: wr.images)
-                        status = "浏览器流更大(\(Naming.fmtSize(sW)))，用它"
-                    }
-                }
-            }
             if autoPickAfterParse, let r = result, let o = r.options.first {
                 status = "一键下载：\(o.label)"
                 islandFrac = 0
                 islandPct = 0
                 islandLastPush = .distantPast
-                handed = true
-                app.keepAlive.rearm()          // 下载开跑：续期后台时限+复活静音轨
+                app.keepAlive.start()          // 静音续命：被抖音顶到后台也不冻结搬运
                 BoxIsland.update {
                     $0.phase = "parsing"; $0.link = link; $0.pct = 0
                     $0.title = String(r.title.prefix(40)); $0.author = String(r.author.prefix(16))
                     $0.quality = o.label; $0.note = "已开始下载"
                 }
-                if app.autoReturn {            // 下载已开跑才回抖音（41 的节奏，稳）
+                if app.autoReturn {
                     Task { @MainActor in
                         try? await Task.sleep(nanoseconds: 1_500_000_000)
                         Self.launchDouyin()
@@ -351,38 +309,26 @@ struct ParseView: View {
         }
     }
 
-    // 进度中继：页内进度条 + 灵动岛（后台节流：≥3秒间隔 + 25/50/75/90/100 里程碑必发）
+    // 进度中继：页内进度条 + 灵动岛（≥3秒节拍 + 25/50/75/90/100 里程碑必发）
     private func reportFrac(_ frac: Double, _ sps: Double) {
         Task { @MainActor in
             self.progress = frac
             self.speedText = Naming.fmtSpeed(sps)
             let pct = Int(frac * 100)
             let sp = Naming.fmtSpeed(sps)
-            let now = Date()
-            let step = frac - self.islandFrac
-            let done = frac >= 0.999 && self.islandFrac < 0.999
             let crossed = { () -> Bool in
                 for m in [25, 50, 75, 90] where self.islandPct < m && pct >= m { return true }
                 return false
             }()
-            let timeOk = now.timeIntervalSince(self.islandLastPush) > 3.0
-            if (step > 0.02 && timeOk) || done || crossed {
+            let done = frac >= 0.999 && self.islandPct < 100
+            let timeOk = Date().timeIntervalSince(self.islandLastPush) > 3.0
+            if (frac - self.islandFrac > 0.02 && timeOk) || crossed || done {
                 self.islandFrac = frac
                 self.islandPct = pct
-                self.islandLastPush = now
+                self.islandLastPush = Date()
                 BoxIsland.update { $0.phase = "parsing"; $0.pct = pct; $0.note = "下载 \(pct)% · \(sp)" }
             }
         }
-    }
-
-    // HEAD 探真实文件大小（探测失败回 0，绝不抛）
-    static func headSize(_ url: URL) async -> Int {
-        var req = URLRequest(url: url, timeoutInterval: 8)
-        req.httpMethod = "HEAD"
-        req.setValue(DouyinAPI.ua, forHTTPHeaderField: "User-Agent")
-        guard let (_, resp) = try? await URLSession.shared.data(for: req),
-              let h = resp as? HTTPURLResponse else { return 0 }
-        return h.value(forHTTPHeaderField: "Content-Length").flatMap { Int($0) } ?? 0
     }
 
     // 一键流完成动作：跳回抖音，盒子退居后台继续传输
