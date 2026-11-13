@@ -99,6 +99,12 @@ struct ParseView: View {
         return url
     }
 
+    // 剪贴板里只要有 http 链接就取出来（不论站点支不支持）
+    private func clipAnyURL() -> String? {
+        guard let clip = UIPasteboard.general.string else { return nil }
+        return DouyinAPI.extractURL(clip)
+    }
+
     private func autoFillAndParse() {
         guard input.isEmpty, !busy else { return }
         guard let url = clipURL() else { return }
@@ -109,9 +115,17 @@ struct ParseView: View {
 
     private func pasteAndParse() async {
         guard !busy else { return }
-        guard let url = clipURL() else { status = "剪贴板里没有支持的链接"; return }
-        input = url
-        await doParse(link: url)
+        if let url = clipURL() {
+            input = url
+            await doParse(link: url)
+            return
+        }
+        if let any = clipAnyURL() {          // 有链接但站点不支持：照样粘进输入框
+            input = any
+            status = "已粘贴，但当前引擎[\(engine.label)]不认这个站点——可切引擎再解析"
+            return
+        }
+        status = "剪贴板里没有链接"
     }
 
     private func parseWithFreshClip() async {
@@ -119,11 +133,14 @@ struct ParseView: View {
         if let url = clipURL() {
             input = url
             await doParse(link: url)
+        } else if let any = clipAnyURL(), any != input {
+            input = any
+            status = "已粘贴，但当前引擎[\(engine.label)]不认这个站点——可切引擎再解析"
         } else if !input.isEmpty {
             status = "剪贴板没有新链接，用框内现有链接解析"
             await doParse(link: input)
         } else {
-            status = "剪贴板没有支持的链接，输入框也是空"
+            status = "剪贴板没有链接，输入框也是空"
         }
     }
 

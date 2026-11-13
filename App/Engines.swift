@@ -47,7 +47,7 @@ enum Support {
         switch e {
         case .web: return url.contains("douyin.com")
         case .dyjx: return url.contains("douyin.com")
-        case .svparse: return url.contains("douyin.com") || url.contains("bilibili.com") || url.contains("kuaishou.com")
+        case .svparse: return url.contains("douyin.com") || url.contains("bilibili.com") || url.contains("kuaishou.com") || url.contains("weixin.qq.com")
         }
     }
 }
