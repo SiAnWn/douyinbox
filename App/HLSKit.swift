@@ -245,9 +245,9 @@ enum HLS {
         return m
     }
 
-    // 拉取+解密+合并写成一个 .ts（分波下载控内存，每波 24 片）
+    // 拉取+解密+合并写成一个 .ts；返回实际保存的相对路径
     static func download(m3u8URLString: String, tok: HLSToken, destRel: String,
-                         progress: @escaping @Sendable (Double, Double) -> Void) async throws {
+                         progress: @escaping @Sendable (Double, Double) -> Void) async throws -> String {
         try AES.ensureReady()
         guard let first = URL(string: m3u8URLString) else { throw GError.noStream }
         let m = try await loadMedia(m3u8URL: first, tok: tok)
@@ -340,6 +340,7 @@ enum HLS {
             throw GError.failed("保存到库失败")
         }
         try? FileManager.default.removeItem(at: outFile)
+        return destRel
     }
 
     static func ivFromSeq(_ seq: Int) -> [UInt8] {

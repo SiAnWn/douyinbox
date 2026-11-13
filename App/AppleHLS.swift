@@ -58,8 +58,7 @@ final class AppleHLS: NSObject, AVAssetDownloadDelegate {
         let loader = HLSResLoader(referer: referer, cookie: cookie)
         asset.resourceLoader.setDelegate(loader, queue: DispatchQueue(label: "dsh.hlsrl"))
         guard let task = session.makeAssetDownloadTask(asset: asset,
-            assetTitle: destRel, assetMetadata: nil,
-            acceptedManualTrackSelection: false) else {
+            assetTitle: destRel, assetMetadata: nil) else {
             throw GError.failed("系统未能创建 HLS 下载任务")
         }
         let tid = task.taskIdentifier
@@ -93,7 +92,7 @@ final class AppleHLS: NSObject, AVAssetDownloadDelegate {
         p.lastBytes = recv
         p.lastTime = now
         table[tid] = p
-        p.progress(Double(t.progress?.fractionCompleted ?? 0), p.speed)
+        p.progress(Double(t.progress.fractionCompleted), p.speed)
         return false
     }
 
@@ -153,7 +152,7 @@ final class HLSResLoader: NSObject, AVAssetResourceLoaderDelegate {
 
     func resourceLoader(_ resourceLoader: AVAssetResourceLoader,
                         shouldWaitForLoadingOfRequestedResource loadingRequest: AVAssetResourceLoadingRequest) -> Bool {
-        guard let url = loadingRequest.request?.url else { return false }
+        guard let url = loadingRequest.request.url else { return false }
         var req = URLRequest(url: url)
         req.setValue(DouyinAPI.ua, forHTTPHeaderField: "User-Agent")
         if !referer.isEmpty { req.setValue(referer, forHTTPHeaderField: "Referer") }
