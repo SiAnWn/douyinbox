@@ -283,7 +283,7 @@ enum HLS {
 
         while waveStart < total && failures <= 3 {
             let waveEnd = min(waveStart + 24, total)
-            try await withTaskGroup(of: (Int, [UInt8], String?).self) { group in
+            await withTaskGroup(of: (Int, [UInt8], String?).self) { group in
                 for idx in waveStart ..< waveEnd {
                     group.addTask {
                         do {
@@ -301,7 +301,7 @@ enum HLS {
                         }
                     }
                 }
-                for try await (idx, bytes, errStr) in group {
+                for await (idx, bytes, errStr) in group {
                     if errStr != nil { failures += 1 } else { buf[idx] = bytes }
                     while flushed < idx + 1 && buf[flushed] != nil {
                         let b = buf[flushed]!
