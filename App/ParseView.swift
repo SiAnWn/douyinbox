@@ -14,6 +14,8 @@ struct ParseView: View {
     @State private var showSettings = false
     @State private var quota = Quota.zero
     @State private var saveTarget = UserDefaults.standard.integer(forKey: "saveTarget")   // 0库 1私密 2短剧
+    @State private var showSniff = false
+    @State private var savedLink = ""
     @FocusState private var linkFocused: Bool
 
     private var engine: Engine { EngineStore.current }
@@ -74,6 +76,9 @@ struct ParseView: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button { showSettings = true } label: { Image(systemName: "gearshape") }
                 }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button { showSniff = true } label: { Image(systemName: "globe") }
+                }
             }
             .navigationTitle("视频解析")
             .sheet(item: $result) { res in
@@ -81,11 +86,14 @@ struct ParseView: View {
                              target: Binding(get: { saveTarget },
                                              set: { saveTarget = $0; UserDefaults.standard.set($0, forKey: "saveTarget") }),
                              downloaded: { opt in isDownloaded(res, opt) },
-                             onPick: { opt in Task { await pick(res, opt) } })
+                             onPick: { opt, idx in Task { await pick(res, opt, idx) } })
             }
             .sheet(isPresented: $showSettings) { SettingsView() }
             .fullScreenCover(item: $mix) { m in
                 BatchSheet(mix: m).environmentObject(app)
+            }
+            .fullScreenCover(isPresented: $showSniff) {
+                SniffView().environmentObject(app)
             }
             .onAppear { refreshQuota(); autoFillAndParse() }
         }
@@ -137,8 +145,33 @@ struct ParseView: View {
             status = "已达限制：\(r)"
             return
         }
-        busy = true; defer { busy = false; refreshQuota() }
+        busy = true; savedLink = link; defer { busy = false; refreshQuota() }
         do {
+            // 站点规则·boat 系小站（实测过，直连 playback API，不开浏览器不耗配额）
+            if let vid = BoatSite.videoID(from: link) {
+                status = "站点规则命中(boat)，查询播放流…"
+                let st = try await BoatSite.streams(pageURL: link)
+                let t = await PageTitle.fetch(link)
+                result = ParseResult(videoID: "boat_\(vid)",
+                    title: t.isEmpty ? "boat 视频 \(vid)" : t, author: "",
+                    options: st.map { QualityOption(label: $0.label,
+                        url: URL(string: $0.m3u8) ?? URL(string: "https://placeholder.local")!,
+                        width: 0, height: 0, sizeBytes: 0, isOriginal: true, isHLS: true) }
+                status = "流地址已就绪（时效很短，请尽快选档）"
+                return
+            }
+            // 直接粘贴 .m3u8 直链 → 走通用 HLS 管线
+            if link.lowercased().contains(".m3u8") {
+                let rawName = URL(string: link)?.deletingPathExtension().lastPathComponent ?? "m3u8"
+                let t = Naming.sanitize(rawName)
+                result = ParseResult(videoID: "hls_\(String(link.prefix(90)))",
+                    title: t.isEmpty ? "m3u8 视频" : t, author: "",
+                    options: [QualityOption(label: "m3u8 直链（通用）",
+                        url: URL(string: link) ?? URL(string: "https://placeholder.local")!,
+                        width: 0, height: 0, sizeBytes: 0, isOriginal: true, isHLS: true)])
+                status = "选一个清晰度下载（走 HLS 管线）"
+                return
+            }
             status = "识别链接类型…"
             let resolved = await MixAPI.resolve(link) ?? link
             if let mixID = MixAPI.mixID(from: resolved) {
@@ -156,10 +189,41 @@ struct ParseView: View {
     }
 
     @MainActor
-    private func pick(_ res: ParseResult, _ opt: QualityOption) async {
+    private func pick(_ res: ParseResult, _ opt: QualityOption, idx: Int) async {
         let dkey = "\(res.videoID)|\(opt.label)"
         result = nil
         busy = true; defer { busy = false; refreshQuota() }
+        if opt.isHLS {
+            showProgress = true; progress = 0; speedText = ""
+            do {
+                var m3u8 = opt.url.absoluteString
+                if savedLink.contains("/videos/") || m3u8.contains("placeholder.local") {
+                    status = "刷新流地址（token 时效短）…"
+                    let st = try await BoatSite.streams(pageURL: savedLink)
+                    if idx < st.count { m3u8 = st[idx].m3u8 }
+                }
+                let name0 = Naming.fileName(res.author, res.title, opt)
+                let name = name0.replacingOccurrences(of: ".mp4", with: ".ts")
+                let (base, sub) = relDirFor(res.author)
+                let rel = base.isEmpty ? name : "\(base)/\(sub)/\(name)"
+                status = "下载 m3u8（并发+AES 解密+合并）…"
+                try await HLS.download(m3u8URLString: m3u8,
+                    tok: HLSToken(referer: savedLink.isEmpty ? m3u8 : savedLink, cookie: "", headers: [:]),
+                    destRel: rel) { frac, sps in
+                        Task { @MainActor in self.progress = frac; self.speedText = Naming.fmtSpeed(sps) }
+                    }
+                showProgress = false
+                DownloadStore.set(dkey, rel)
+                app.refresh()
+                if base == "私密" { app.refreshPrivateSeries() }
+                if base == "短剧" { app.refreshDramaSeries() }
+                status = "已保存：\(rel)"
+            } catch {
+                showProgress = false
+                status = "m3u8 下载失败：\(error.localizedDescription)"
+            }
+            return
+        }
         do {
             status = "下载 \(opt.label)…"
             showProgress = true; progress = 0; speedText = ""
@@ -207,9 +271,10 @@ struct QualitySheet: View {
     let result: ParseResult
     @Binding var target: Int
     let downloaded: (QualityOption) -> Bool
-    let onPick: (QualityOption) -> Void
+    let onPick: (QualityOption, Int) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var confirmOpt: QualityOption?
+    @State private var confirmIdx = 0
 
     private var author: String { Naming.sanitize(result.author.isEmpty ? "未命名" : result.author) }
 
@@ -225,9 +290,9 @@ struct QualitySheet: View {
                     .pickerStyle(.segmented)
                 }
                 Section {
-                    ForEach(Array(result.options.enumerated()), id: \.offset) { _, opt in
+                    ForEach(Array(result.options.enumerated()), id: \.offset) { idx, opt in
                         Button {
-                            if downloaded(opt) { confirmOpt = opt } else { onPick(opt) }
+                            if downloaded(opt) { confirmIdx = idx; confirmOpt = opt } else { onPick(opt, idx) }
                         } label: {
                             HStack {
                                 VStack(alignment: .leading, spacing: 2) {
@@ -249,7 +314,7 @@ struct QualitySheet: View {
                    isPresented: Binding(get: { confirmOpt != nil }, set: { if !$0 { confirmOpt = nil } }),
                    presenting: confirmOpt) { opt in
                 Button("取消", role: .cancel) {}
-                Button("重新下载") { onPick(opt) }
+                Button("重新下载") { onPick(opt, confirmIdx) }
             } message: { _ in
                 Text("这个清晰度之前已下载过（按当前存入位置判断），要重新下载吗？")
             }

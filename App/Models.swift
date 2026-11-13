@@ -42,7 +42,7 @@ enum Library {
         for u in urls {
             guard let v = try? u.resourceValues(forKeys: Set(keys)), v.isRegularFile == true else { continue }
             let ok = v.contentType.map { $0.conforms(to: .movie) || $0.conforms(to: .video) }
-                ?? (u.pathExtension.lowercased() == "mp4")
+                ?? ["mp4", "mov", "m4v", "ts", "tsv", "video"].contains(u.pathExtension.lowercased())
             guard ok else { continue }
             items.append(VideoItem(id: u.path, url: u,
                                    title: u.deletingPathExtension().lastPathComponent,
@@ -122,6 +122,15 @@ actor ThumbCache {
 }
 
 // MARK: - 应用内标签（key=文件路径；改名自动跟随；跨引擎位置无关仅库根）
+extension VideoItem {
+    static func fromURLString(_ s: String, kind: String) -> VideoItem? {
+        guard let u = URL(string: s) else { return nil }
+        return VideoItem(id: "web_\(s)", url: u,
+                         title: u.deletingPathExtension().lastPathComponent,
+                         modDate: Date(), size: 0)
+    }
+}
+
 enum TagStore {
     private static let key = "videoTags"
     static let suggestions = ["跳舞", "搞笑", "知识", "音乐", "游戏", "生活", "影视", "其他"]

@@ -117,9 +117,12 @@ final class BatchTransfer: NSObject, URLSessionDownloadDelegate {
         return URLSession(configuration: cfg, delegate: self, delegateQueue: nil)
     }()
 
-    func download(_ url: URL) async throws -> URL {
+    func download(_ url: URL, referer: String = "", cookie: String = "",
+                  extra: [String: String] = [:]) async throws -> URL {
         var req = URLRequest(url: url)
-        req.setValue(DouyinAPI.referer(for: url), forHTTPHeaderField: "Referer")
+        req.setValue(referer.isEmpty ? DouyinAPI.referer(for: url) : referer, forHTTPHeaderField: "Referer")
+        if !cookie.isEmpty { req.setValue(cookie, forHTTPHeaderField: "Cookie") }
+        for (k, v) in extra where k.lowercased() != "referer" { req.setValue(v, forHTTPHeaderField: k) }
         return try await withCheckedThrowingContinuation { (c: CheckedContinuation<URL, Error>) in
             let t = session.downloadTask(with: req)
             reg(t.taskIdentifier, Pending(cont: c))

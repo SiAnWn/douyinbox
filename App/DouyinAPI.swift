@@ -8,6 +8,7 @@ struct QualityOption {
     let height: Int
     let sizeBytes: Int
     let isOriginal: Bool
+    var isHLS = false          // true=清单流(走 HLS 管线下载，url 仅作占位/真实 m3u8)
 }
 
 struct ParseResult: Identifiable {
