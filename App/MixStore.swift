@@ -217,7 +217,10 @@ final class BatchRunner: ObservableObject {
                         await self?.showCur(ep)
                         var dlURL: URL?
                         var useEngNow = realEngine
-                        if useEngNow { useEngNow = !await health.dead() }
+                        if useEngNow {
+                            let dead = await health.dead()
+                            useEngNow = !dead
+                        }
                         if useEngNow {
                             while CallStats.current().minute >= CallStats.limits.minute {
                                 if self?.shouldStop() == true { break }
