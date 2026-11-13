@@ -155,16 +155,6 @@ struct ParseView: View {
         }
     }
 
-    // 0 视频库 / 1 私密/作者 / 2 短剧/作者
-    private func relDirFor(_ author: String) -> (String, String) {
-        let sub = Naming.sanitize(author.isEmpty ? "未命名" : author)
-        switch saveTarget {
-        case 1: return ("私密", sub)
-        case 2: return ("短剧", sub)
-        default: return ("", "")
-        }
-    }
-
     @MainActor
     private func pick(_ res: ParseResult, _ opt: QualityOption) async {
         let dkey = "\(res.videoID)|\(opt.label)"

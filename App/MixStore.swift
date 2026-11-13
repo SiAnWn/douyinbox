@@ -105,7 +105,10 @@ enum MixManifest {
 final class BatchRunner: ObservableObject {
     enum Phase { case ready, running, done, failed }
     @Published var phase: Phase = .ready
-    @Published var total = 0, got = 0, skipped = 0, failed = 0
+    @Published var total = 0
+    @Published var got = 0
+    @Published var skipped = 0
+    @Published var failed = 0
     @Published var current = ""
 
     private var cancelled = false
