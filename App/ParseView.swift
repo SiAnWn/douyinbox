@@ -14,7 +14,6 @@ struct ParseView: View {
     @State private var showSettings = false
     @State private var quota = Quota.zero
     @State private var saveTarget = UserDefaults.standard.integer(forKey: "saveTarget")   // 0库 1私密 2短剧
-    @State private var showSniff = false
     @State private var savedLink = ""
     @FocusState private var linkFocused: Bool
 
@@ -76,9 +75,6 @@ struct ParseView: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button { showSettings = true } label: { Image(systemName: "gearshape") }
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button { showSniff = true } label: { Image(systemName: "globe") }
-                }
             }
             .navigationTitle("视频解析")
             .sheet(item: $result) { res in
@@ -91,9 +87,6 @@ struct ParseView: View {
             .sheet(isPresented: $showSettings) { SettingsView() }
             .fullScreenCover(item: $mix) { m in
                 BatchSheet(mix: m).environmentObject(app)
-            }
-            .fullScreenCover(isPresented: $showSniff) {
-                SniffView().environmentObject(app)
             }
             .onAppear { refreshQuota(); autoFillAndParse() }
         }
