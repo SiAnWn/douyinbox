@@ -1,29 +1,6 @@
 import SwiftUI
 import Foundation
 
-// MARK: - “已看完”标记（播放进度 ≥92% 时播放器自动标记）
-enum WatchStore {
-    private static let key = "watchedIDs"
-    static func all() -> Set<String> {
-        Set(UserDefaults.standard.stringArray(forKey: key) ?? [])
-    }
-    static func mark(_ id: String) {
-        var s = all()
-        guard !s.contains(id) else { return }
-        s.insert(id)
-        UserDefaults.standard.set(Array(s), forKey: key)
-    }
-    static func unmark(_ id: String) {
-        var s = all(); s.remove(id)
-        UserDefaults.standard.set(Array(s), forKey: key)
-    }
-    static func removeMany(_ ids: [String]) {
-        var s = all()
-        for i in ids { s.remove(i) }
-        UserDefaults.standard.set(Array(s), forKey: key)
-    }
-}
-
 // MARK: - 合集追更订阅
 struct SubData: Codable, Identifiable, Hashable {
     let mixID: String

@@ -28,7 +28,6 @@ struct LibraryView: View {
     private var vidCount: Int { app.videos.filter { !$0.isAudio }.count }
     private var audCount: Int { app.videos.filter { $0.isAudio }.count }
     private var favCount: Int { app.videos.count { app.favorites.contains($0.id) } }
-    private var watchedInLib: Int { let w = WatchStore.all(); return app.videos.count { w.contains($0.id) } }
     private var tagChips: [String] { TagStore.chips(ids: Set(app.videos.map { $0.id })) }
 
     private var poolSizeText: String {
@@ -102,15 +101,6 @@ struct LibraryView: View {
                         Button("最新") { sort = 0 }
                         Button("名称") { sort = 1 }
                         Button("大小") { sort = 2 }
-                        if watchedInLib > 0 {
-                            Divider()
-                            Button(role: .destructive) {
-                                let n = app.wipeWatched()
-                                app.extractNote = n > 0 ? "已清理 \(n) 个看完的视频" : "没有可清理的"
-                            } label: {
-                                Label("清理已看完 (\(watchedInLib))", systemImage: "checkmark.circle.trash")
-                            }
-                        }
                     } label: { Image(systemName: "arrow.up.arrow.down") }
                 }
             }
@@ -147,14 +137,6 @@ struct LibraryView: View {
                                         }
                                     }
                                     .clipShape(RoundedRectangle(cornerRadius: 8))
-                                    .overlay(alignment: .topTrailing) {
-                                        if WatchStore.all().contains(v.id) {
-                                            Image(systemName: "eye.fill")
-                                                .font(.caption).foregroundStyle(.white)
-                                                .padding(5).background(.black.opacity(0.35), in: Circle())
-                                                .padding(4)
-                                        }
-                                    }
                                 Text(v.title).font(.caption).lineLimit(1).foregroundStyle(.primary)
                             }
                         }
@@ -169,12 +151,6 @@ struct LibraryView: View {
                                     Label("提取音频", systemImage: "music.note.list")
                                 }
                                 .disabled(app.exportingID != nil && app.exportingID != v.id)
-                            }
-                            Button {
-                                if WatchStore.all().contains(v.id) { WatchStore.unmark(v.id) }
-                                else { WatchStore.mark(v.id) }
-                            } label: {
-                                Label(WatchStore.all().contains(v.id) ? "取消已看完" : "标记已看完", systemImage: "eye")
                             }
                             ShareLink(item: v.url) { Label("分享文件", systemImage: "square.and.arrow.up") }
                             Button { app.beginRename(v) } label: { Label("改名", systemImage: "pencil") }

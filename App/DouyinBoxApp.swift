@@ -66,25 +66,6 @@ final class AppState: ObservableObject {
         subs = list
     }
 
-    // MARK: 清理已看完（只清库根，不动短剧/私密集合文件夹）
-    @discardableResult
-    func wipeWatched() -> Int {
-        let w = WatchStore.all()
-        guard !w.isEmpty else { return 0 }
-        let doomed = videos.filter { w.contains($0.id) }
-        var ids = [String]()
-        for v in doomed {
-            try? FileManager.default.removeItem(at: v.url)
-            ProgressStore.clear(v.id)
-            if favorites.contains(v.id) { favorites.remove(v.id) }
-            ids.append(v.id)
-        }
-        WatchStore.removeMany(ids)
-        saveFav()
-        refresh()
-        return doomed.count
-    }
-
     func loadFav() { favorites = Set(UserDefaults.standard.stringArray(forKey: favKey) ?? []) }
     private func saveFav() { UserDefaults.standard.set(Array(favorites), forKey: favKey) }
 
