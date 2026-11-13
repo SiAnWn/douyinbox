@@ -153,7 +153,7 @@ struct SniffView: View {
                     let refer = vm.pageURL.isEmpty ? s.id : vm.pageURL
                     let tok = HLSToken(referer: refer, cookie: cookie, headers: [:])
                     let saved = try await HLSSmart.download(baseName: "\(title)_\(stamp)",
-                        m3u8Str: s.id, tok: tok, preferApple: true) { frac, sps in
+                        m3u8Str: s.id, tok: tok, preferApple: false) { frac, sps in
                             Task { @MainActor in
                                 self.vm.update(s.id) { cur in
                                     cur.frac = frac

@@ -104,14 +104,18 @@ final class AppleHLS: NSObject, AVAssetDownloadDelegate {
         guard let p = p, !p.finished else { return }
         var rel = p.destRel
         if !rel.lowercased().hasSuffix(".mov") { rel += ".mov" }
-        let ok = Self.extractPackage(at: location, rel: rel)
+        let size = Self.extractPackage(at: location, rel: rel)
+        let expected = assetDownloadTask.totalBytesExpectedToWrite
+        let hollow = size < 512 * 1024 && expected > 2_000_000
         lock.lock(); if var q = table[tid] { q.finished = true; table[tid] = q }; lock.unlock()
         keepLoaders.removeValue(forKey: tid)
-        if ok { p.cont.resume(returning: rel) }
-        else { p.cont.resume(throwing: GError.failed("原生下载完成但保存失败")) }
+        if size == 0 { p.cont.resume(throwing: GError.failed("原生下载完成但保存失败")) }
+        else if hollow { p.cont.resume(throwing: GError.failed("原生引擎只拿到空壳(\(size/1024)KB)")) }
+        else { p.cont.resume(returning: rel) }
     }
 
-    private static func extractPackage(at pkg: URL, rel: String) -> Bool {
+    // 返回输出文件字节数; 0=失败
+    private static func extractPackage(at pkg: URL, rel: String) -> Int {
         let fm = FileManager.default
         let dest = SavePaths.docs.appendingPathComponent(rel)
         try? fm.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -122,9 +126,11 @@ final class AppleHLS: NSObject, AVAssetDownloadDelegate {
         defer { try? fm.removeItem(at: pkg) }
         for c in candidates where fm.fileExists(atPath: c.path) {
             try? fm.removeItem(at: dest)
-            if (try? fm.copyItem(at: c, to: dest)) != nil { return true }
+            if (try? fm.copyItem(at: c, to: dest)) != nil {
+                return (try? fm.attributesOfItem(atPath: dest.path))?[.size] as? Int ?? 0
+            }
         }
-        return false
+        return 0
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {

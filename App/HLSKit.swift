@@ -295,6 +295,7 @@ enum HLS {
                                 let iv = baseIV ?? HLS.ivFromSeq(seq0 + idx)
                                 bytes = AES.cbcDecrypt(bytes, key: kk, iv: iv)
                             }
+                            bytes = TSRestuff.fix(bytes)          // 非标 TS 自动整形(ovod 类)
                             return (idx, bytes, nil)
                         } catch {
                             return (idx, [], error.localizedDescription)
