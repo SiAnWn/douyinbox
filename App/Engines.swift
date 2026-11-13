@@ -11,7 +11,7 @@ enum Engine: String, CaseIterable {
         switch self {
         case .web: return "浏览器直连（免费·约4K30·慢）"
         case .dyjx: return "抖音原画 API（4K60·耗配额）"
-        case .svparse: return "多平台 API（抖音/B站/快手）"
+        case .svparse: return "多平台 API（30+站·聚合）"
         }
     }
     var isIfphp: Bool { self != .web }
