@@ -152,15 +152,16 @@ struct SniffView: View {
                     let cookie = await sniffCookies(host: u.host ?? "")
                     let refer = vm.pageURL.isEmpty ? s.id : vm.pageURL
                     let tok = HLSToken(referer: refer, cookie: cookie, headers: [:])
-                    try await HLS.download(m3u8URLString: s.id, tok: tok, destRel: destRel) { frac, sps in
-                        Task { @MainActor in
-                            self.vm.update(s.id) { cur in
-                                cur.frac = frac
-                                cur.note = "\(Int(frac * 100))% · \(Naming.fmtSpeed(sps))"
+                    let saved = try await HLSSmart.download(baseName: "\(title)_\(stamp)",
+                        m3u8Str: s.id, tok: tok, preferApple: true) { frac, sps in
+                            Task { @MainActor in
+                                self.vm.update(s.id) { cur in
+                                    cur.frac = frac
+                                    cur.note = "\(Int(frac * 100))% · \(Naming.fmtSpeed(sps))"
+                                }
                             }
                         }
-                    }
-                    vm.update(s.id) { $0.frac = 1; $0.done = true; $0.downloaded = true; $0.note = "已存入视频库(\(destRel))" }
+                    vm.update(s.id) { $0.frac = 1; $0.done = true; $0.downloaded = true; $0.note = "已存入视频库(\(saved))" }
                     app.refresh()
                 } else {
                     let file = try await DouyinAPI.download(u, referer: vm.pageURL) { frac, sps in

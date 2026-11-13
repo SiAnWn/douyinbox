@@ -203,20 +203,34 @@ struct ParseView: View {
                     if idx < st.count { m3u8 = st[idx].m3u8 }
                 }
                 let name0 = Naming.fileName(res.author, res.title, opt)
-                let name = name0.replacingOccurrences(of: ".mp4", with: ".ts")
-                let (base, sub) = relDirFor(res.author)
-                let rel = base.isEmpty ? name : "\(base)/\(sub)/\(name)"
-                status = "下载 m3u8（并发+AES 解密+合并）…"
-                try await HLS.download(m3u8URLString: m3u8,
+                let baseName = name0.hasSuffix(".mp4") ? String(name0.dropLast(4)) : name0
+                let (baseDir, sub) = relDirFor(res.author)
+                let nameNoExt = baseName
+                status = "下载 m3u8（自动选择引擎，必要时重封装）…"
+                let saved = try await HLSSmart.download(
+                    baseName: baseName, m3u8Str: m3u8,
                     tok: HLSToken(referer: savedLink.isEmpty ? m3u8 : savedLink, cookie: "", headers: [:]),
-                    destRel: rel) { frac, sps in
+                    preferApple: false) { frac, sps in
                         Task { @MainActor in self.progress = frac; self.speedText = Naming.fmtSpeed(sps) }
                     }
+                let rel = baseDir.isEmpty ? saved : "\(baseDir)/\(sub)/\(saved)"
+                if baseDir.isEmpty {
+                    // saved 已是相对根路径
+                } else {
+                    // HLSSmart/HLS 写的是相对路径，位置前缀需在写盘时带上 → 这里直接移动到位
+                    let fm = FileManager.default
+                    let src = fm.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(saved)
+                    let dst = fm.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(rel)
+                    try? fm.createDirectory(at: dst.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    try? fm.removeItem(at: dst)
+                    if (try? fm.moveItem(at: src, to: dst)) == nil { throw GError.failed("移动到目标位置失败") }
+                }
+                _ = nameNoExt
                 showProgress = false
                 DownloadStore.set(dkey, rel)
                 app.refresh()
-                if base == "私密" { app.refreshPrivateSeries() }
-                if base == "短剧" { app.refreshDramaSeries() }
+                if baseDir == "私密" { app.refreshPrivateSeries() }
+                if baseDir == "短剧" { app.refreshDramaSeries() }
                 status = "已保存：\(rel)"
             } catch {
                 showProgress = false

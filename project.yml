@@ -7,8 +7,8 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.9"
-    MARKETING_VERSION: "1.3.3"
-    CURRENT_PROJECT_VERSION: "13"
+    MARKETING_VERSION: "1.3.4"
+    CURRENT_PROJECT_VERSION: "14"
     TARGETED_DEVICE_FAMILY: "1"
     ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
 targets:
@@ -30,4 +30,5 @@ targets:
           - background-transfer
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
+
 
