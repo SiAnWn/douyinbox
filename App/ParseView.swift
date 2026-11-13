@@ -289,6 +289,7 @@ struct ParseView: View {
                 status = "一键下载：\(o.label)"
                 islandFrac = 0
                 handed = true
+                app.keepAlive.rearm()          // 下载开跑：续期后台时限+复活静音轨
                 BoxIsland.update {
                     $0.phase = "parsing"; $0.link = link; $0.pct = 0
                     $0.title = String(r.title.prefix(40)); $0.author = String(r.author.prefix(16))
