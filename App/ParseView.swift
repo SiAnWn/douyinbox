@@ -461,18 +461,27 @@ struct ParseView: View {
                     self.reportFrac(baseFrac + f / Double(n), sps)
                 }
                 var savedOK = false
-                if prb.playback.protected, let ck = prb.contentKey?.key, !ck.isEmpty {
-                    if let data = try? Data(contentsOf: tmp), let clear = CencMP4.decrypt(data, keyHex: ck) {
+                var keyMissing = false
+                if prb.playback.protected {
+                    if let ck = prb.contentKey?.key, !ck.isEmpty,
+                       let data = try? Data(contentsOf: tmp), let clear = CencMP4.decrypt(data, keyHex: ck) {
                         let dest = SavePaths.docs.appendingPathComponent(rel)
                         try? FileManager.default.createDirectory(at: dest.deletingLastPathComponent(),
                                                                  withIntermediateDirectories: true)
                         try? FileManager.default.removeItem(at: dest)
                         savedOK = (try? clear.write(to: dest)) != nil
+                    } else {
+                        keyMissing = true
                     }
                 } else {
                     savedOK = SavePaths.write(tmp, rel: rel)
                 }
                 try? FileManager.default.removeItem(at: tmp)
+                if keyMissing {
+                    showProgress = false
+                    status = "拿不到红果内容密钥（风控）：去 设置→红果短剧→重置红果匿名设备，或换节点后重下"
+                    return
+                }
                 if savedOK { okN += 1 } else { failN += 1 }
                 progress = Double(i + 1) / Double(n)
                 DownloadStore.set("hg|\(sid)|\(num)|\(def)", rel)

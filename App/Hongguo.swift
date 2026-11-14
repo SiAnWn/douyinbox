@@ -101,6 +101,9 @@ enum Hongguo {
         let eps = try await attempt(c) { try await episodes(sid) }
         guard let first = eps.first else { throw GError.failed("红果这部剧没有分集") }
         let pr = try await attempt(c) { try await c.resolvePlayback(first.id) }
+        if pr.playback.protected, (pr.contentKey?.key.isEmpty ?? true) {
+            throw GError.failed("拿不到红果内容密钥（风控掐了密钥）：去 设置→红果短剧 重置设备，或换节点再试")
+        }
         let ladder = pr.playback.streams
             .filter { !$0.url.isEmpty && !$0.hls && !$0.dash }
             .sorted { a, b in (a.height * a.bitrate) > (b.height * b.bitrate) }
@@ -329,11 +332,20 @@ enum CencMP4 {
             out[data.startIndex + t.entry.start + 6] = rename[2]
             out[data.startIndex + t.entry.start + 7] = rename[3]
             stcoPatches.append((t.stco.start, u32(data, t.stco.start + 8 + 4)))
-            if let sinf = t.sinf {
-                let sz = sinf.size
+            // 摘 sinf + stbl 里全部加密描述盒（senc/saiz/saio/sbgp/sgpd）——
+            // AVPlayer 见到残留会当加密流处理导致无声无画，ffmpeg 才会容忍
+            var victims: [(BoxRef, [BoxRef])] = []
+            if let sinf = t.sinf { victims.append((sinf, t.chain)) }
+            let cryptoKinds: Set<String> = ["senc", "saiz", "saio", "sbgp", "sgpd"]
+            for k in children(d, t.stbl.start + 8, t.stbl.start + t.stbl.size)
+                where cryptoKinds.contains(k.type) {
+                victims.append((k, Array(t.chain[2...])))
+            }
+            for (vb, chain) in victims {
+                let sz = vb.size
                 totalRemoved += sz
-                removals.append((sinf.start, sz))
-                for anc in t.chain {   // entry/stsd/stbl/minf/mdia/trak 逐级收缩
+                removals.append((vb.start, sz))
+                for anc in chain {   // 逐级收缩（sinf: entry/stsd/stbl/minf/mdia/trak；其余: stbl 往下）
                     let cur = u32(out, anc.start)
                     let ns = cur - sz
                     out[data.startIndex + anc.start] = UInt8((ns >> 24) & 0xFF)
