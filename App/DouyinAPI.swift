@@ -193,8 +193,8 @@ final class Downloader: NSObject, URLSessionDownloadDelegate {
     init(progress: @escaping @Sendable (Double, Double) -> Void) { self.progress = progress }
 
     func start(_ url: URL, referer: String, ua: String, cookie: String = "",
-               resumeData rd: Data? = nil, stallOff: Bool = false) async throws -> URL {
-        stallOff = stallOff
+               resumeData rd: Data? = nil, stallOff off: Bool = false) async throws -> URL {
+        stallOff = off
         let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
         let task: URLSessionDownloadTask
         if let rd = rd {
