@@ -325,14 +325,15 @@ enum CencMP4 {
                 if !ctrXOR(&out, off, len, iv16, key) { ok = false; break }
             }
             guard ok else { return nil }
-            // 1b) 明文质检：抽前几个视频样本验 NAL 长度字段（密钥被风控调包时字节仍随机，必挂）
+            // 1b) 明文质检：抽前几个视频样本验 NAL 长度字段 + NAL 头字节（0x40~0x7E=H.265 类型域）
             if entryType == "encv" {
                 var anyGood = false
                 for m in 0..<min(3, tab.offsets.count) {
                     let (off, len) = tab.offsets[m]
                     guard len > 8 else { continue }
                     let nl = u32(out, off)
-                    if nl > 0 && Int(nl) + 4 <= len && out[data.startIndex + off + 4] < 64 { anyGood = true; break }
+                    let b4 = out[data.startIndex + off + 4]
+                    if nl > 0 && nl + 4 <= len && b4 >= 0x40 && b4 < 0x80 { anyGood = true; break }
                 }
                 guard anyGood else { return nil }
             }
