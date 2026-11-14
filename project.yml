@@ -11,8 +11,9 @@ packages:
 settings:
   base:
     SWIFT_VERSION: "5.9"
+    # ⚠️ 此文件只用 write/edit 工具改（PS 管道替换必坏中文）
     MARKETING_VERSION: "1.3.62"
-    CURRENT_PROJECT_VERSION: "78"
+    CURRENT_PROJECT_VERSION: "79"
     TARGETED_DEVICE_FAMILY: "1"
     ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
 targets:
@@ -35,7 +36,7 @@ targets:
     info:
       path: Generated/ShareInfo.plist
       properties:
-        CFBundleDisplayName: 鎶栭煶鐩掑瓙
+        CFBundleDisplayName: 抖音盒子
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
@@ -63,7 +64,8 @@ targets:
     info:
       path: Generated/IslandInfo.plist
       properties:
-        CFBundleDisplayName: 鎶栭煶鐩掑瓙鐏靛姩宀?        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleDisplayName: 抖音盒子灵动岛
+        CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
@@ -81,9 +83,9 @@ targets:
     info:
       path: Generated/Info.plist
       properties:
-        CFBundleDisplayName: 鎶栭煶鐩掑瓙
+        CFBundleDisplayName: 抖音盒子
         CFBundleDevelopmentRegion: zh_CN
-        NSFaceIDUsageDescription: 鐢ㄤ簬瑙ｉ攣绉佸瘑瑙嗛
+        NSFaceIDUsageDescription: 用于解锁私密视频
         NSSupportsLiveActivities: true
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
