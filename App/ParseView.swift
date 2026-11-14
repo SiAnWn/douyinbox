@@ -450,39 +450,52 @@ struct ParseView: View {
                     continue
                 }
                 status = String(format: "红果 %d/%d 集 · %@", i + 1, n, def)
-                let prbOpt: PlaybackResult?
-                do { prbOpt = try await Hongguo.attempt(c) { try await c.resolvePlayback(ep.id) } }
-                catch { prbOpt = nil }
-                guard let prb = prbOpt,
-                      let st = Hongguo.chooseStream(prb.playback, def: def),
-                      let su = Hongguo.streamURL(st) else { failN += 1; continue }
-                let baseFrac = Double(i) / Double(n)
-                let tmp = try await DouyinAPI.download(su) { f, sps in
-                    self.reportFrac(baseFrac + f / Double(n), sps)
-                }
                 var savedOK = false
-                var keyMissing = false
-                if prb.playback.protected {
-                    if let ck = prb.contentKey?.key, !ck.isEmpty,
-                       let data = try? Data(contentsOf: tmp), let clear = CencMP4.decrypt(data, keyHex: ck) {
-                        let dest = SavePaths.docs.appendingPathComponent(rel)
-                        try? FileManager.default.createDirectory(at: dest.deletingLastPathComponent(),
-                                                                 withIntermediateDirectories: true)
-                        try? FileManager.default.removeItem(at: dest)
-                        savedOK = (try? clear.write(to: dest)) != nil
-                    } else {
-                        keyMissing = true
+                var tried = 0
+                while !savedOK && tried < 3 {
+                    tried += 1
+                    if tried > 1 {
+                        try? await c.resetDevice()
+                        status = String(format: "红果第 %d 集密钥被掐，换设备重试 %d/3…", i + 1, tried)
+                        try? await Task.sleep(nanoseconds: 1_500_000_000)
                     }
-                } else {
-                    savedOK = SavePaths.write(tmp, rel: rel)
+                    let prbOpt: PlaybackResult?
+                    do { prbOpt = try await Hongguo.attempt(c) { try await c.resolvePlayback(ep.id) } }
+                    catch { prbOpt = nil }
+                    guard let prb = prbOpt,
+                          let st = Hongguo.chooseStream(prb.playback, def: def),
+                          let su = Hongguo.streamURL(st) else { continue }
+                    let baseFrac = Double(i) / Double(n)
+                    let tmp: URL
+                    do {
+                        tmp = try await DouyinAPI.download(su) { f, sps in
+                            self.reportFrac(baseFrac + f / Double(n), sps)
+                        }
+                    } catch { continue }
+                    if prb.playback.protected {
+                        if let ck = prb.contentKey?.key, !ck.isEmpty,
+                           let data = try? Data(contentsOf: tmp),
+                           let clear = CencMP4.decrypt(data, keyHex: ck) {
+                            let dest = SavePaths.docs.appendingPathComponent(rel)
+                            try? FileManager.default.createDirectory(at: dest.deletingLastPathComponent(),
+                                                                     withIntermediateDirectories: true)
+                            try? FileManager.default.removeItem(at: dest)
+                            savedOK = (try? clear.write(to: dest)) != nil
+                        }
+                    } else {
+                        savedOK = SavePaths.write(tmp, rel: rel)
+                    }
+                    try? FileManager.default.removeItem(at: tmp)
                 }
-                try? FileManager.default.removeItem(at: tmp)
-                if keyMissing {
+                if savedOK { okN += 1 }
+                else {
                     showProgress = false
-                    status = "拿不到红果内容密钥（风控）：去 设置→红果短剧→重置红果匿名设备，或换节点后重下"
-                    return
+                    failN += 1
+                    app.refresh()
+                    app.refreshDramaSeries()
+                    status = "红果风控（密钥与流不匹配）：已下 \(okN)/\(n) 集保留；歇几分钟换节点可续传重下"
+                    break
                 }
-                if savedOK { okN += 1 } else { failN += 1 }
                 progress = Double(i + 1) / Double(n)
                 DownloadStore.set("hg|\(sid)|\(num)|\(def)", rel)
                 if i + 1 < n { try? await Task.sleep(nanoseconds: 700_000_000) }   // 温和限速防风控
