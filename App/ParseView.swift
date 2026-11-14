@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import Openhongguo
 
 struct ParseView: View {
     @EnvironmentObject var app: AppState
