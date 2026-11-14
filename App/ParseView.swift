@@ -433,8 +433,10 @@ struct ParseView: View {
             status = "红果列全集…"
             let all = try await Hongguo.episodes(sid)
             let play = all.filter { $0.playable }
-            let list = play.isEmpty ? all : play
+            var list = play.isEmpty ? all : play
             guard !list.isEmpty else { status = "红果没有可播分集"; return }
+            let single = opt.url.query?.contains("one") == true
+            if single { list = Array(list.prefix(1)) }
             let n = list.count
             let seriesName = Naming.sanitize(res.title)
             var okN = 0, failN = 0
@@ -519,6 +521,17 @@ struct QualitySheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var confirmOpt: QualityOption?
     @State private var confirmIdx = 0
+    @State private var hgAll = true          // 红果专用：true=全集 false=仅第1集
+
+    private var isHg: Bool { result.videoID.hasPrefix("hg_") }
+
+    private func scoped(_ opt: QualityOption) -> QualityOption {
+        guard isHg && !hgAll else { return opt }
+        let u = URL(string: opt.url.absoluteString + "?one") ?? opt.url
+        return QualityOption(label: opt.label + " · 仅第1集", url: u,
+                             width: opt.width, height: opt.height,
+                             sizeBytes: opt.sizeBytes / 40, isOriginal: opt.isOriginal)
+    }
 
     private var author: String { Naming.sanitize(result.author.isEmpty ? "未命名" : result.author) }
 
@@ -559,10 +572,20 @@ struct QualitySheet: View {
                         }
                         .pickerStyle(.segmented)
                     }
+                    if isHg {
+                        Section("下载范围") {
+                            Picker("范围", selection: $hgAll) {
+                                Text("全集").tag(true)
+                                Text("仅第1集（试看）").tag(false)
+                            }
+                            .pickerStyle(.segmented)
+                            .labelsHidden()
+                        }
+                    }
                     Section {
                         ForEach(Array(result.options.enumerated()), id: \.offset) { idx, opt in
                             Button {
-                                if downloaded(opt) { confirmIdx = idx; confirmOpt = opt } else { onPick(opt, idx) }
+                                if downloaded(opt) { confirmIdx = idx; confirmOpt = opt } else { onPick(scoped(opt), idx) }
                             } label: {
                                 HStack {
                                     VStack(alignment: .leading, spacing: 2) {
