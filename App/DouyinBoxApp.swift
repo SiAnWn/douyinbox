@@ -2,35 +2,26 @@ import SwiftUI
 import AVFoundation
 import UIKit
 
-// 方向策略：默认全站竖屏；进播放器页临时放开全向，最后一个播放器退场后锁回竖屏并归位
+// 方向策略（iOS16 SwiftUI 通道）：主窗按 tab 动态放开；播放器 cover 自带 .all
 enum Orient {
-    private static var players = 0
-    static func playerOn() {
-        players += 1
-        BoxAppDelegate.mask = .all
-        geom(.all)
+    private static var scene: UIWindowScene? {
+        UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
     }
-    static func playerOff() {
-        if players > 0 { players -= 1 }
-        guard players == 0 else { return }
-        BoxAppDelegate.mask = .portrait
-        geom(.portrait)
+    // 离开播放 tab 时强制归位竖屏
+    static func forcePortrait() {
+        scene?.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait))
         UIDevice.current.setValue(UIDeviceOrientation.portrait.rawValue, forKey: "orientation")
     }
-    private static func geom(_ m: UIInterfaceOrientationMask) {
-        for s in UIApplication.shared.connectedScenes {
-            if let ws = s as? UIWindowScene {
-                ws.requestGeometryUpdate(.iOS(interfaceOrientations: m))
-            }
-        }
+    static var isLandscape: Bool {
+        scene?.interfaceOrientation.isLandscape ?? false
     }
-}
-
-final class BoxAppDelegate: NSObject, UIApplicationDelegate {
-    static var mask: UIInterfaceOrientationMask = .portrait
-    func application(_ application: UIApplication,
-                     supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
-        BoxAppDelegate.mask
+    // 手动横竖切换（旋转锁定开着也生效）
+    static func toggle() {
+        if isLandscape { forcePortrait() }
+        else {
+            scene?.requestGeometryUpdate(.iOS(interfaceOrientations: .landscapeRight))
+            UIDevice.current.setValue(UIDeviceOrientation.landscapeLeft.rawValue, forKey: "orientation")
+        }
     }
 }
 
@@ -246,7 +237,6 @@ final class AppState: ObservableObject {
 
 @main
 struct DouyinBoxApp: App {
-    @UIApplicationDelegateAdaptor(BoxAppDelegate.self) private var appDelegate
     @StateObject private var app = AppState.shared
     var body: some Scene {
         WindowGroup {
@@ -279,6 +269,10 @@ struct RootView: View {
                 .badge(app.subsBadge)
             PrivateView()
                 .tabItem { Label("私密", systemImage: "lock.fill") }.tag(Tab.privacy)
+        }
+        .supportedInterfaceOrientations(app.selection == .play ? .all : .portrait)
+        .onChange(of: app.selection) { sel in
+            if sel != .play { Orient.forcePortrait() }
         }
         .fullScreenCover(item: $app.coverVideo) { v in
             InlinePlayer(video: v).environmentObject(app)

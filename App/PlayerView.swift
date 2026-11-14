@@ -202,7 +202,6 @@ struct PlayerView: View {
             }
         }
         .onAppear {
-            Orient.playerOn()
             app.revealUI = false
             app.refresh()
             if app.current == nil && !app.videos.isEmpty { app.startShuffle() }
@@ -212,7 +211,7 @@ struct PlayerView: View {
         .onChange(of: app.selection) { sel in
             if sel == .play { pc.player.playImmediately(atRate: pc.rate) } else { pc.pause() }
         }
-        .onDisappear { pc.pause(); pc.removeObs(); Orient.playerOff() }
+        .onDisappear { pc.pause(); pc.removeObs() }
         .background(TabBarAccessor(hidden: app.immersive))
         .statusBarHidden(app.immersive)
     }
@@ -245,6 +244,11 @@ struct PlayerView: View {
                     .font(.title2).foregroundStyle(.white).shadow(radius: 3)
             }
             Spacer()
+            Button { Orient.toggle() } label: {
+                Text(Orient.isLandscape ? "竖屏" : "横屏").font(.subheadline).foregroundStyle(.white)
+                    .padding(.horizontal, 14).padding(.vertical, 7)
+                    .background(Capsule().fill(.black.opacity(0.45)))
+            }
             Button { app.autoAdvance.toggle() } label: {
                 Text(app.autoAdvance ? "自动" : "手动").font(.subheadline).foregroundStyle(.white)
                     .padding(.horizontal, 14).padding(.vertical, 7)
@@ -312,6 +316,12 @@ struct InlinePlayer: View {
                         Image(systemName: "chevron.down").font(.title2).foregroundStyle(.white).shadow(radius: 3)
                     }
                     Spacer()
+                    Button { Orient.toggle() } label: {
+                        Text(Orient.isLandscape ? "竖屏" : "横屏")
+                            .font(.subheadline).foregroundStyle(.white)
+                            .padding(.horizontal, 14).padding(.vertical, 7)
+                            .background(Capsule().fill(.black.opacity(0.45)))
+                    }
                     Button { app.toggleFav(video.id) } label: {
                         Image(systemName: app.favorites.contains(video.id) ? "star.fill" : "star")
                             .font(.title2).foregroundStyle(.white).shadow(radius: 3)
@@ -328,8 +338,8 @@ struct InlinePlayer: View {
             }
         }
         .statusBarHidden()
-        .onAppear { Orient.playerOn() }
-        .onDisappear { Orient.playerOff() }
+        .supportedInterfaceOrientations(.all)
+        .onDisappear { Orient.forcePortrait() }
     }
 }
 
