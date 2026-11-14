@@ -1,5 +1,6 @@
 import SwiftUI
 import AVFoundation
+import UIKit
 
 // 每个视频（按路径）记住播放进度，下次续播
 enum ProgressStore {

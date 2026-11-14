@@ -256,6 +256,12 @@ struct DouyinBoxApp: App {
 struct RootView: View {
     @EnvironmentObject var app: AppState
     @Environment(\.scenePhase) private var scenePhase
+
+    private var tabOrientMask: UIInterfaceOrientationMask {
+        if app.selection == .play { return .all }
+        return .portrait
+    }
+
     var body: some View {
         TabView(selection: $app.selection) {
             ParseView()
@@ -270,7 +276,7 @@ struct RootView: View {
             PrivateView()
                 .tabItem { Label("私密", systemImage: "lock.fill") }.tag(Tab.privacy)
         }
-        .supportedInterfaceOrientations(app.selection == .play ? .all : .portrait)
+        .supportedInterfaceOrientations(tabOrientMask)
         .onChange(of: app.selection) { sel in
             if sel != .play { Orient.forcePortrait() }
         }
