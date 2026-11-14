@@ -29,13 +29,25 @@ struct BoxControl: ControlWidget {
     }
 }
 
-// 胶囊图标：parsing 且已有进度时改用下载箭头（环+箭头组合），否则按阶段
+// 胶囊图标按阶段：等待=循环箭头，下载中=下载箭头，完成=绿勾，失败=红叹号
 private func islandIcon(_ phase: String, _ pct: Int) -> String {
     switch phase {
-    case "parsing": return pct > 0 ? "arrow.down.circle.fill" : "arrow.triangle.2.circlepath"
+    case "parsing": return "arrow.triangle.2.circlepath"
+    case "down":    return "arrow.down.circle.fill"
     case "parsed":  return "checkmark.circle.fill"
     case "fail":    return "exclamationmark.circle.fill"
     default:        return "arrow.down.circle"
+    }
+}
+
+// 状态词（极简岛：环和百分比全部退役）
+private func islandWord(_ s: BoxActivity.ContentState) -> String {
+    switch s.phase {
+    case "parsing": return "等待"
+    case "down":    return "下载中"
+    case "parsed":  return "完成"
+    case "fail":    return "失败"
+    default:        return "待命"
     }
 }
 
@@ -65,6 +77,7 @@ private func islandMark(_ s: BoxActivity.ContentState) -> String {
 private func islandSub(_ s: BoxActivity.State) -> String {
     switch s.phase {
     case "parsing": return "正在解析剪贴板…"
+    case "down":    return "下载中…"
     case "parsed":  return [s.quality, s.note].filter { !$0.isEmpty }.joined(separator: " · ")
     case "fail":    return s.note
     default:        return "复制抖音链接后点我"
@@ -138,23 +151,10 @@ struct BoxLiveActivity: Widget {
                     .foregroundStyle(s.phase == "parsed" ? Color.green
                                        : s.phase == "fail" ? Color.red : Color.orange)
             } compactTrailing: {
-                if s.phase == "parsing" && s.pct > 0 {
-                    ZStack {
-                        Circle()
-                            .stroke(Color.white.opacity(0.25), lineWidth: 1.5)
-                            .frame(width: 18, height: 18)
-                        Circle()
-                            .trim(from: 0, to: CGFloat(s.pct) / 100.0)
-                            .stroke(Color.orange,
-                                    style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
-                            .rotationEffect(.degrees(-90))
-                            .frame(width: 18, height: 18)
-                        Text("\(s.pct)")
-                            .font(.system(size: 6.5, weight: .bold))
-                            .monospacedDigit()
-                            .foregroundStyle(.orange)
-                    }
-                }
+                Text(islandWord(s))
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(s.phase == "parsed" ? Color.green
+                                       : s.phase == "fail" ? Color.red : Color.orange)
             } minimal: {
                 Image(systemName: "square.stack.3d.down.right.fill")
             }
