@@ -73,16 +73,64 @@ enum BoxIsland {
         }
     }
 
-    // 完成收尾：不 end（end 后重建要再吃创建配额，无 push 每天配额很少）。
-    // 只 update 成终态，靠 ensureStandby 的前台保险丝超时自动回待命，一条岛永生。
+    // 完成收尾：update + 正牌后台时间窗（蹭音频宽限期不可靠），失败留诊断
+    struct FinalInfo { let ok: Bool; let note: String; let ts: TimeInterval }
+    static var lastFinal: FinalInfo?
+
+    @discardableResult
+    private static func diag(_ s: String) -> String {
+        UserDefaults.standard.set("\(Date()) \(s)", forKey: "boxIslandDiag")
+        return s
+    }
+
+    @MainActor
     static func finish(ok: Bool, note: String) {
-        guard let act = current() else { return }
+        lastFinal = FinalInfo(ok: ok, note: ok ? "✓" : String(note.prefix(60)),
+                              ts: Date().timeIntervalSince1970)
+        guard let act = current() else { diag("finish: no activity"); return }
         var s = act.contentState
         s.phase = ok ? "parsed" : "fail"
         s.pct = 0
         s.note = ok ? "✓" : String(note.prefix(60))
         s.stamp = Date().timeIntervalSince1970
-        Task { try? await act.update(using: s) }
+        var token: UIBackgroundTaskIdentifier = .invalid
+        token = UIApplication.shared.beginBackgroundTask(withName: "islandFinish") {
+            UIApplication.shared.endBackgroundTask(token)
+        }
+        Task {
+            do {
+                try await act.update(using: s)
+                diag("finish update OK phase=\(s.phase)")
+            } catch {
+                diag("finish update ERR \(error)")
+            }
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            UIApplication.shared.endBackgroundTask(token)
+        }
+    }
+
+    // 前台补刀：岛卡在下载中/等待但本地已有结果 → 立刷终态；完成挂机超2分钟 → 回待命
+    @MainActor
+    static func checkStale() {
+        ensureStandby()
+        guard let act = current() else { return }
+        let s = act.contentState
+        if (s.phase == "down" || s.phase == "parsing"), let f = lastFinal {
+            var n = s
+            n.phase = f.ok ? "parsed" : "fail"
+            n.pct = 0
+            n.note = f.note
+            n.stamp = Date().timeIntervalSince1970
+            lastFinal = nil
+            Task { try? await act.update(using: n) }
+        } else if s.phase == "parsed" || s.phase == "fail" {
+            if Date().timeIntervalSince1970 - s.stamp > 120 {
+                var fresh = BoxActivity.State()
+                fresh.stamp = Date().timeIntervalSince1970
+                lastFinal = nil
+                Task { try? await act.update(using: fresh) }
+            }
+        }
     }
 
     // 后台多通道读剪贴板：string 通道被 iOS 后台限制卡掉时，试 url/原始数据通道

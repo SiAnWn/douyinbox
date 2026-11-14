@@ -338,6 +338,7 @@ struct ParseView: View {
         let dkey = "\(res.videoID)|\(opt.label)"
         result = nil
         islandDownAnnounced = false
+        BoxIsland.lastFinal = nil
         busy = true
         defer {
             busy = false; refreshQuota()

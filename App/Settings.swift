@@ -27,6 +27,12 @@ struct SettingsView: View {
                     Text("合集列表始终免费（公开接口）；批量原画仅 API 引擎支持。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
+                if let dbg = UserDefaults.standard.string(forKey: "boxIslandDiag") {
+                    Section("岛诊断") {
+                        Text(dbg).font(.caption2).foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                }
                 Section("红果短剧") {
                     Button("重置红果匿名设备（被风控时空结果再用）") {
                         hgBusy = true

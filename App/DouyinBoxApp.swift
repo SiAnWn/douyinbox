@@ -289,7 +289,8 @@ struct RootView: View {
             if sel != .privacy { app.privateUnlocked = false }
         }
         .onChange(of: scenePhase) { p in
-            if p == .active || p == .background { BoxIsland.ensureStandby() }   // 前台/后台都补建，岛永不失踪
+            if p == .active { BoxIsland.checkStale() }        // 前台补刀：卡"下载中"立刷终态
+            else { BoxIsland.ensureStandby() }
         }
         .alert("重命名",
                isPresented: Binding(get: { app.renameTarget != nil },
