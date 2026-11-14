@@ -12,8 +12,8 @@ settings:
   base:
     SWIFT_VERSION: "5.9"
     # ⚠️ 此文件只用 write/edit 工具改（PS 管道替换必坏中文）
-    MARKETING_VERSION: "1.3.74"
-    CURRENT_PROJECT_VERSION: "103"
+    MARKETING_VERSION: "1.3.75"
+    CURRENT_PROJECT_VERSION: "104"
     TARGETED_DEVICE_FAMILY: "1"
     ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
 targets:

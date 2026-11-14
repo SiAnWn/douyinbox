@@ -106,6 +106,21 @@ enum BoxIsland {
     static func finish(ok: Bool, note: String) {
         lastFinal = FinalInfo(ok: ok, note: ok ? "✓" : String(note.prefix(60)),
                               ts: Date().timeIntervalSince1970)
+        #if !ISLANDAPP
+        // 横幅独立于岛存在与否（关常驻岛也要有播报）
+        if UserDefaults.standard.object(forKey: "doneNotify") as? Bool ?? true {
+            let un = UNMutableNotificationContent()
+            un.title = ok ? "抖音盒子 · 下载完成" : "抖音盒子 · 下载失败"
+            un.body = ok ? (note.hasPrefix("已保存：") ? String(note.dropFirst(4)) : "已存入")
+                         : String(note.prefix(100))
+            un.sound = .default
+            Task {
+                try? await UNUserNotificationCenter.current().add(
+                    UNNotificationRequest(identifier: "boxfin_\(Int(Date().timeIntervalSince1970))",
+                                          content: un, trigger: nil))
+            }
+        }
+        #endif
         guard let act = current() else { diag("finish: no activity"); return }
         var s = act.contentState
         s.phase = ok ? "parsed" : "fail"
@@ -125,18 +140,6 @@ enum BoxIsland {
             } catch {
                 diag("finish update ERR \(error)")
             }
-            #if !ISLANDAPP
-            if UserDefaults.standard.object(forKey: "doneNotify") as? Bool ?? true {
-                let un = UNMutableNotificationContent()
-                un.title = ok ? "抖音盒子 · 下载完成" : "抖音盒子 · 下载失败"
-                un.body = ok ? (note.hasPrefix("已保存：") ? String(note.dropFirst(4)) : "已存入")
-                             : String(note.prefix(100))
-                un.sound = .default
-                try? await UNUserNotificationCenter.current().add(
-                    UNNotificationRequest(identifier: "boxfin_\(Int(Date().timeIntervalSince1970))",
-                                          content: un, trigger: nil))
-            }
-            #endif
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             #if !ISLANDAPP
             UIApplication.shared.endBackgroundTask(token)
