@@ -1,0 +1,50 @@
+name: Sign Dump
+on:
+  workflow_dispatch: {}
+jobs:
+  dump:
+    runs-on: macos-latest
+    steps:
+      - name: dump signatures
+        run: |
+          HDR=$(find /Applications/Xcode_26.6.app -name CommonCryptor.h -path "*iphonesimulator*" 2>/dev/null | head -1)
+          [ -z "$HDR" ] && HDR=$(find /Applications/Xcode*.app -name CommonCryptor.h | head -1)
+          echo "header: $HDR"
+          echo "==== raw C decls (CCCrypt / CreateWithMode) ===="
+          grep -A 16 "extern OSStatus" "$HDR" | grep -B 2 -A 16 "CCCrypt(" | head -60
+          echo "==== swift overlay if any ===="
+          find /Applications/Xcode*.app -path "*CommonCrypto*" -name "*.swiftinterface" 2>/dev/null | head -3
+          MOD=$(find /Applications/Xcode_26.6.app -path "*iPhoneOS.platform*usr*include*" -name module.modulemap -exec grep -l CommonCrypto {} \; 2>/dev/null | head -1)
+          echo "modmap: $MOD"
+          SWIFT=$(find /Applications/Xcode_26.6.app -name "*.swiftinterface" -path "*CommonCrypto*" | head -1)
+          if [ -n "$SWIFT" ]; then grep -A 14 "func CCCrypt" "$SWIFT" | head -40; else echo "no swiftinterface"; fi
+          echo "==== try real swift compile probe ===="
+          SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+          cat > /tmp/probe.swift <<'EOF'
+          import CommonCrypto
+          func probe() -> Int {
+              var key = [UInt8](repeating: 0, count: 16)
+              var iv = [UInt8](repeating: 0, count: 16)
+              var din = [UInt8](repeating: 0, count: 32)
+              var dout = [UInt8](repeating: 0, count: 32)
+              var moved = 0
+              let r = CCCrypt(kCCEncrypt, kCCAlgorithmAES, kCCOptionECBMode, &key, 16, &iv, &din, 32, &dout, &moved)
+              _ = r
+              return moved
+          }
+          EOF
+          xcrun swiftc -sdk "$SDK" -target arm64-apple-ios17.0 -typecheck /tmp/probe.swift && echo "PROBE10_OK(&dout,&moved)" || echo "PROBE10_FAIL"
+          cat > /tmp/probe2.swift <<'EOF'
+          import CommonCrypto
+          func probe() -> Int {
+              var key = [UInt8](repeating: 0, count: 16)
+              var iv = [UInt8](repeating: 0, count: 16)
+              var din = [UInt8](repeating: 0, count: 32)
+              var dout = [UInt8](repeating: 0, count: 32)
+              var moved = 0
+              let r = CCCrypt(kCCEncrypt, kCCAlgorithmAES, kCCOptionECBMode, &key, 16, &iv, &din, 32, &dout, 32, &moved)
+              _ = r
+              return moved
+          }
+          EOF
+          xcrun swiftc -sdk "$SDK" -target arm64-apple-ios17.0 -typecheck /tmp/probe2.swift && echo "PROBE11_OK(&dout,32,&moved)" || echo "PROBE11_FAIL"
