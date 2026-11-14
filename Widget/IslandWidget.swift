@@ -49,33 +49,69 @@ private struct CatFace: View {
             // 每 3.3 秒眨一下眼（0.25s 闭眼帧）
             let blink = Int(ctx.date.timeIntervalSince1970 * 4) % 13 == 0
             ZStack {
-                // 耳朵（外橙内粉）
-                Tri().fill(Color.orange).frame(width: size * 0.36, height: size * 0.36)
-                    .offset(x: -size * 0.30, y: -size * 0.62)
-                Tri().fill(Color.orange).frame(width: size * 0.36, height: size * 0.36)
-                    .offset(x: size * 0.30, y: -size * 0.62)
-                Tri().fill(Color.pink.opacity(0.85)).frame(width: size * 0.18, height: size * 0.18)
-                    .offset(x: -size * 0.30, y: -size * 0.55)
-                Tri().fill(Color.pink.opacity(0.85)).frame(width: size * 0.18, height: size * 0.18)
-                    .offset(x: size * 0.30, y: -size * 0.55)
-                // 脑袋
-                Circle().fill(Color.orange)
-                    .frame(width: size, height: size)
-                // 腮帮淡斑
-                Circle().fill(Color.white.opacity(0.22))
-                    .frame(width: size * 0.72, height: size * 0.5)
-                    .offset(y: size * 0.18)
-                // 眼睛
+                // ── 耳朵：大三角外橙内粉
+                Tri().fill(LinearGradient(colors: [.orange, Color(red: 0.9, green: 0.5, blue: 0.1)],
+                                          startPoint: .top, endPoint: .bottom))
+                    .frame(width: size * 0.46, height: size * 0.46)
+                    .rotationEffect(.degrees(-10))
+                    .offset(x: -size * 0.34, y: -size * 0.60)
+                Tri().fill(LinearGradient(colors: [.orange, Color(red: 0.9, green: 0.5, blue: 0.1)],
+                                          startPoint: .top, endPoint: .bottom))
+                    .frame(width: size * 0.46, height: size * 0.46)
+                    .rotationEffect(.degrees(10))
+                    .offset(x: size * 0.34, y: -size * 0.60)
+                Tri().fill(Color(red: 1.0, green: 0.72, blue: 0.75))
+                    .frame(width: size * 0.24, height: size * 0.24)
+                    .rotationEffect(.degrees(-10))
+                    .offset(x: -size * 0.33, y: -size * 0.52)
+                Tri().fill(Color(red: 1.0, green: 0.72, blue: 0.75))
+                    .frame(width: size * 0.24, height: size * 0.24)
+                    .rotationEffect(.degrees(10))
+                    .offset(x: size * 0.33, y: -size * 0.52)
+                // ── 脑袋
+                Circle()
+                    .fill(LinearGradient(colors: [Color(red: 1.0, green: 0.66, blue: 0.25),
+                                                  Color(red: 0.93, green: 0.52, blue: 0.10)],
+                                         startPoint: .top, endPoint: .bottom))
+                    .frame(width: size, height: size * 0.96)
+                // 头顶虎斑三道
+                ForEach(-1...1, id: \.self) { i in
+                    Capsule()
+                        .fill(Color(red: 0.72, green: 0.35, blue: 0.03))
+                        .frame(width: size * 0.055, height: size * 0.16)
+                        .rotationEffect(.degrees(Double(i) * 18))
+                        .offset(x: CGFloat(i) * size * 0.14, y: -size * 0.38)
+                }
+                // ── 白色口鼻双球
+                HStack(spacing: -size * 0.02) {
+                    Circle().fill(Color.white).frame(width: size * 0.40, height: size * 0.32)
+                    Circle().fill(Color.white).frame(width: size * 0.40, height: size * 0.32)
+                }
+                .offset(y: size * 0.20)
+                // ── 眼睛（大黑瞳+双高光的亮闪）
                 HStack(spacing: size * 0.30) {
-                    eye(blink, size * 0.13)
-                    eye(blink, size * 0.13)
+                    eye(blink, size * 0.15)
+                    eye(blink, size * 0.15)
                 }
                 .offset(y: -size * 0.06)
-                // 鼻嘴：小 ω
-                Text(blink ? "‿" : "ω")
-                    .font(.system(size: size * 0.26, weight: .bold))
-                    .foregroundStyle(Color.brown)
-                    .offset(y: size * 0.24)
+                // ── 粉鼻头（小圆三角）
+                Tri()
+                    .fill(Color(red: 1.0, green: 0.45, blue: 0.52))
+                    .frame(width: size * 0.14, height: size * 0.11)
+                    .rotationEffect(.degrees(180))
+                    .offset(y: size * 0.12)
+                // ── 嘴：白色球缝 + w
+                Capsule().fill(Color(red: 0.85, green: 0.55, blue: 0.5))
+                    .frame(width: size * 0.03, height: size * 0.10)
+                    .offset(y: size * 0.22)
+                // ── 腮红
+                HStack(spacing: size * 0.72) {
+                    Circle().fill(Color(red: 1.0, green: 0.45, blue: 0.5).opacity(0.45))
+                        .frame(width: size * 0.16, height: size * 0.10)
+                    Circle().fill(Color(red: 1.0, green: 0.45, blue: 0.5).opacity(0.45))
+                        .frame(width: size * 0.16, height: size * 0.10)
+                }
+                .offset(y: size * 0.14)
             }
             .frame(width: size, height: size)
         }
@@ -85,12 +121,15 @@ private struct CatFace: View {
     @ViewBuilder private func eye(_ blink: Bool, _ d: CGFloat) -> some View {
         if blink {
             Capsule().fill(Color.black.opacity(0.85))
-                .frame(width: d * 2.2, height: d * 0.5)
+                .frame(width: d * 2.4, height: d * 0.5)
         } else {
             ZStack {
-                Circle().fill(Color.black.opacity(0.85)).frame(width: d * 2, height: d * 2)
-                Circle().fill(Color.white).frame(width: d * 0.7, height: d * 0.7)
-                    .offset(x: -d * 0.3, y: -d * 0.3)
+                Ellipse().fill(Color.black.opacity(0.88))
+                    .frame(width: d * 1.9, height: d * 2.3)
+                Circle().fill(Color.white).frame(width: d * 0.75, height: d * 0.75)
+                    .offset(x: -d * 0.35, y: -d * 0.45)
+                Circle().fill(Color.white.opacity(0.8)).frame(width: d * 0.35, height: d * 0.35)
+                    .offset(x: d * 0.30, y: d * 0.35)
             }
         }
     }

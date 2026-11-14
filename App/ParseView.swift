@@ -290,7 +290,7 @@ struct ParseView: View {
                 }
                 if app.autoReturn {
                     Task { @MainActor in
-                        try? await Task.sleep(nanoseconds: 1_500_000_000)
+                        try? await Task.sleep(nanoseconds: 400_000_000)
                         Self.launchDouyin()
                     }
                 }
