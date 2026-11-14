@@ -48,13 +48,23 @@ enum BoxIsland {
     static func ensureStandby() {
         guard enabled() else { endAll(); return }
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
-        if current() == nil {
-            do {
-                _ = try Activity<BoxActivity>.request(attributes: BoxActivity(),
-                                                      contentState: BoxActivity.State(),
-                                                      pushType: nil)
-            } catch { /* 次数上限/未授权：静默 */ }
+        if let act = current() {
+            // 终态挂机超过 2 分钟 → 回待命（永生岛复用，不新建不吃配额）
+            let s = act.contentState
+            if s.phase == "parsed" || s.phase == "fail" {
+                if Date().timeIntervalSince1970 - s.stamp > 120 {
+                    var fresh = BoxActivity.State()
+                    fresh.stamp = Date().timeIntervalSince1970
+                    Task { try? await act.update(using: fresh) }
+                }
+            }
+            return
         }
+        do {
+            _ = try Activity<BoxActivity>.request(attributes: BoxActivity(),
+                                                  contentState: BoxActivity.State(),
+                                                  pushType: nil)
+        } catch { /* 次数上限/未授权：静默 */ }
     }
 
     static func endAll() {
@@ -63,7 +73,8 @@ enum BoxIsland {
         }
     }
 
-    // 完成收尾：走 end() 高优通道（后台送达率远高于 update），岛显最终状态词后自动离场
+    // 完成收尾：不 end（end 后重建要再吃创建配额，无 push 每天配额很少）。
+    // 只 update 成终态，靠 ensureStandby 的前台保险丝超时自动回待命，一条岛永生。
     static func finish(ok: Bool, note: String) {
         guard let act = current() else { return }
         var s = act.contentState
@@ -71,11 +82,7 @@ enum BoxIsland {
         s.pct = 0
         s.note = ok ? "✓" : String(note.prefix(60))
         s.stamp = Date().timeIntervalSince1970
-        Task {
-            try? await act.end(using: s, dismissalPolicy: .default)
-            try? await Task.sleep(nanoseconds: 2_500_000_000)   // 短窗：音频断后的宽限期还活着
-            ensureStandby()   // 复活待命岛；若仍被冻结，下方前台保险丝会补
-        }
+        Task { try? await act.update(using: s) }
     }
 
     // 后台多通道读剪贴板：string 通道被 iOS 后台限制卡掉时，试 url/原始数据通道
