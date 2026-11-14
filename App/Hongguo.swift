@@ -99,7 +99,7 @@ enum Hongguo {
         let base = "dbg_\(ep)"
         try? bytes.write(to: dir.appendingPathComponent(base + ".enc.mp4"))
         let meta = "sid=\(sid)\nep=\(ep)\ndef=\(def)\nstage=\(stage)\nprotected=\(prot)\nkey=\(key)\nkver=\(kver)\nckErr=\(ckErr)\nbytes=\(bytes.count)\nts=\(Date())\n"
-        try? meta.write(to: dir.appendingPathComponent(base + ".txt"), encoding: .utf8, atomically: false)
+        try? meta.write(to: dir.appendingPathComponent(base + ".txt"), atomically: false, encoding: .utf8)
     }
 
     // 解析成清晰度列表（hg:// 占位链接，pick 时特判走整剧批量）
