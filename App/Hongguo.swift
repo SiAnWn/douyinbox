@@ -314,12 +314,12 @@ enum CencMP4 {
                 key.withUnsafeBytes { kk in
                     CCCrypt(CCOperation(kCCEncrypt), CCAlgorithm(kCCAlgorithmAES),
                             CCOptions(kCCOptionECBMode),
-                            kk.baseAddress!, 16, cp.baseAddress!, nblk * 16,
-                            kp.baseAddress!, nblk * 16, &ksLen)
+                            kk.baseAddress!, 16, cp.baseAddress!,
+                            nblk * 16, kp.baseAddress!, &ksLen)
                 }
             }
         }
-        guard st == CCCryptorStatus(kCCSuccess), ksLen >= len else { return false }
+        guard st == CCCryptorStatus(kCCSuccess), ksLen == nblk * 16, ksLen >= len else { return false }
         return out.withUnsafeMutableBytes { raw in
             let p = raw.bindMemory(to: UInt8.self).baseAddress!.advanced(by: off)
             for j in 0..<len { p[j] ^= ks[j] }
