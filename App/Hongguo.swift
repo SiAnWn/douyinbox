@@ -314,8 +314,11 @@ enum CencMP4 {
                 key.withUnsafeBytes { kk in
                     CCCrypt(CCOperation(kCCEncrypt), CCAlgorithm(kCCAlgorithmAES),
                             CCOptions(kCCOptionECBMode),
-                            kk.baseAddress!, 16, cp.baseAddress!,
-                            nblk * 16, kp.baseAddress!, &ksLen)
+                            kk.baseAddress!, 16,
+                            nil,
+                            cp.baseAddress!, nblk * 16,
+                            kp.baseAddress!, nblk * 16,
+                            &ksLen)
                 }
             }
         }
