@@ -50,9 +50,25 @@ enum DouyinAPI {
     static func download(_ url: URL, referer: String = "", cookie: String = "",
                          uaOverride: String = "",
                          progress: @escaping @Sendable (Double, Double) -> Void) async throws -> URL {
-        let d = Downloader(progress: progress)
-        return try await d.start(url, referer: referer.isEmpty ? DouyinAPI.referer(for: url) : referer,
-                                 ua: uaOverride.isEmpty ? ua : uaOverride, cookie: cookie)
+        let ref = referer.isEmpty ? DouyinAPI.referer(for: url) : referer
+        let ua2 = uaOverride.isEmpty ? ua : uaOverride
+        var rd: Data? = nil
+        var lastErr: Error? = nil
+        var stallTries = 0
+        for attempt in 0..<8 {
+            let d = Downloader(progress: progress)
+            let final = stallTries >= 3          // 连续3次确认是慢线路后不再掐，认命下完
+            do {
+                return try await d.start(url, referer: ref, ua: ua2, cookie: cookie,
+                                         resumeData: rd, stallOff: final)
+            } catch {
+                lastErr = error
+                rd = d.resumeDataOut
+                if d.isStall { stallTries += 1 }
+                if attempt == 7 { break }
+            }
+        }
+        throw lastErr ?? GError.failed("下载失败")
     }
 }
 
@@ -157,23 +173,39 @@ enum Naming {
     }
 }
 
-// MARK: - 下载代理（进度/速度回调）
+// MARK: - 下载代理（进度/速度回调 + 限速断线自动续传重连）
+struct StallError: Error {}
+
 final class Downloader: NSObject, URLSessionDownloadDelegate {
     private let progress: @Sendable (Double, Double) -> Void
     private var cont: CheckedContinuation<URL, Error>?
     private var lastBytes: Int64 = 0
     private var lastTime = Date()
     private var smooth: Double = 0
+    private var slowSince: Date?
+    private var stalled = false
+    private var stallOff = false
+    private var resumeData: Data?
+
+    var resumeDataOut: Data? { resumeData }
+    var isStall: Bool { stalled }
 
     init(progress: @escaping @Sendable (Double, Double) -> Void) { self.progress = progress }
 
-    func start(_ url: URL, referer: String, ua: String, cookie: String = "") async throws -> URL {
-        var req = URLRequest(url: url)
-        req.setValue(referer, forHTTPHeaderField: "Referer")
-        req.setValue(ua, forHTTPHeaderField: "User-Agent")
-        if !cookie.isEmpty { req.setValue(cookie, forHTTPHeaderField: "Cookie") }
+    func start(_ url: URL, referer: String, ua: String, cookie: String = "",
+               resumeData rd: Data? = nil, stallOff: Bool = false) async throws -> URL {
+        stallOff = stallOff
         let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
-        let task = session.downloadTask(with: req)
+        let task: URLSessionDownloadTask
+        if let rd = rd {
+            task = session.downloadTask(withResumeData: rd)
+        } else {
+            var req = URLRequest(url: url)
+            req.setValue(referer, forHTTPHeaderField: "Referer")
+            req.setValue(ua, forHTTPHeaderField: "User-Agent")
+            if !cookie.isEmpty { req.setValue(cookie, forHTTPHeaderField: "Cookie") }
+            task = session.downloadTask(with: req)
+        }
         return try await withCheckedThrowingContinuation { (c: CheckedContinuation<URL, Error>) in
             self.cont = c; self.lastTime = Date(); task.resume()
         }
@@ -185,6 +217,17 @@ final class Downloader: NSObject, URLSessionDownloadDelegate {
         let frac = totalBytesExpectedToWrite > 0 ? Double(totalBytesWritten) / Double(totalBytesExpectedToWrite) : 0
         if dt > 0 { let inst = Double(totalBytesWritten - lastBytes) / dt; smooth = smooth == 0 ? inst : smooth * 0.8 + inst * 0.2 }
         lastBytes = totalBytesWritten; lastTime = now
+        // 限速猎手：平滑速度连续 8 秒低于 120KB/s → 主动掐线产断点（新连接=新配额）
+        if !stallOff, bytesWritten > 0, smooth > 1024, smooth < 122_880 {
+            if slowSince == nil { slowSince = now }
+            if let t0 = slowSince, now.timeIntervalSince(t0) > 8 {
+                stalled = true
+                downloadTask.cancel(byProducingResumeData: { [weak self] rd in self?.resumeData = rd } )
+                return
+            }
+        } else {
+            slowSince = nil
+        }
         progress(frac, smooth)
     }
 
@@ -197,6 +240,9 @@ final class Downloader: NSObject, URLSessionDownloadDelegate {
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        if let e = error, cont != nil { cont?.resume(throwing: e); cont = nil; session.finishTasksAndInvalidate() }
+        guard let e = error, cont != nil else { return }
+        if let rd = (e as NSError).userInfo[NSURLSessionDownloadTaskResumeData] as? Data { resumeData = rd }
+        cont?.resume(throwing: stalled ? StallError() : e)
+        cont = nil; session.finishTasksAndInvalidate()
     }
 }

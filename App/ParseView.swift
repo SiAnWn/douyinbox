@@ -277,7 +277,8 @@ struct ParseView: View {
             result = Hongguo.isHongguo(link)
                 ? try await Hongguo.parseWithHeal(link)
                 : try await ParseRouter.parse(link: link)
-            if autoPickAfterParse, let r = result, let o = r.options.first {
+            if autoPickAfterParse, let r = result, let o = r.options.first,
+               !r.videoID.hasPrefix("hg_") {
                 status = "一键下载：\(o.label)"
                 islandFrac = 0
                 app.keepAlive.start()          // 静音续命：被抖音顶到后台也不冻结搬运
@@ -301,6 +302,10 @@ struct ParseView: View {
                     $0.note = fin.hasPrefix("已保存") ? "✓ 已存入视频库" : String(fin.prefix(60))
                 }
                 return
+            }
+            if autoPickAfterParse, let r = result, r.videoID.hasPrefix("hg_") {
+                // 红果一键流：不自动下、不跳抖音，就地弹面板等选
+                BoxIsland.update { $0.phase = "parsed"; $0.pct = 0; $0.note = "已解析，请选画质开始" }
             }
             status = "选一个清晰度下载"
         } catch {
@@ -515,6 +520,8 @@ struct ParseView: View {
             }
             showProgress = false
             if okN > 0 {
+                try? FileManager.default.removeItem(
+                    at: SavePaths.docs.appendingPathComponent("HongguoDebug", isDirectory: true))   // 成功即清黑匣子
                 app.refresh()
                 app.refreshDramaSeries()
                 status = failN > 0
