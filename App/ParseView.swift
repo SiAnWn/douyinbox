@@ -83,6 +83,13 @@ struct ParseView: View {
                 }
             }
             .navigationTitle("视频解析")
+            .overlay(alignment: .bottom) {
+                Text("DouyinBox v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?") · build \(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?")")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary.opacity(0.55))
+                    .padding(.bottom, 34)
+                    .allowsHitTesting(false)
+            }
             .sheet(item: $result) { res in
                 QualitySheet(result: res,
                              target: Binding(get: { saveTarget },
@@ -275,6 +282,17 @@ struct ParseView: View {
                 return
             }
             status = "解析中（\(engine == .web ? "浏览器引擎较慢…" : "API 直连…")）"
+            // 拿到链接立刻回抖音：API 引擎后台可继续解析（续命音频先开），
+            // 网页引擎会被挂起所以维持"下载启动后再走"的老节奏；红果要留面板也不早退
+            var earlyReturn = false
+            if autoPickAfterParse && app.autoReturn && engine != .web && !Hongguo.isHongguo(link) {
+                app.keepAlive.start()
+                earlyReturn = true
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 250_000_000)
+                    Self.launchDouyin()
+                }
+            }
             result = Hongguo.isHongguo(link)
                 ? try await Hongguo.parseWithHeal(link)
                 : try await ParseRouter.parse(link: link)
@@ -282,13 +300,15 @@ struct ParseView: View {
                !r.videoID.hasPrefix("hg_") {
                 status = "一键下载：\(o.label)"
                 islandFrac = 0
-                app.keepAlive.start()          // 静音续命：被抖音顶到后台也不冻结搬运
+                if !earlyReturn {
+                    app.keepAlive.start()      // 静音续命：被抖音顶到后台也不冻结搬运
+                }
                 BoxIsland.update {
                     $0.phase = "parsing"; $0.link = link; $0.pct = 0
                     $0.title = String(r.title.prefix(40)); $0.author = String(r.author.prefix(16))
                     $0.quality = o.label; $0.note = "已开始下载"
                 }
-                if app.autoReturn {
+                if app.autoReturn && !earlyReturn {
                     Task { @MainActor in
                         try? await Task.sleep(nanoseconds: 400_000_000)
                         Self.launchDouyin()
