@@ -14,7 +14,7 @@ struct IslandBundle: WidgetBundle {
     }
 }
 
-// 控制中心磁贴：一按=后台解析剪贴板并上岛（iOS18+）
+// 控制中心磁贴：一按=后台解析剪贴板（iOS18+）
 @available(iOS 18.0, *)
 struct BoxControl: ControlWidget {
     static let kind = "com.sian.DouyinBox.parse-clip"
@@ -25,62 +25,74 @@ struct BoxControl: ControlWidget {
             }
         }
         .displayName("盒子：解析剪贴板")
-        .description("读取剪贴板里的抖音链接，后台解析并送上灵动岛，无需打开App")
+        .description("读取剪贴板里的抖音链接，后台解析并下载，完成时横幅通知")
     }
 }
 
-// 胶囊图标按阶段：等待=循环箭头，下载中=下载箭头，完成=绿勾，失败=红叹号
-private func islandIcon(_ phase: String, _ pct: Int) -> String {
-    switch phase {
-    case "parsing": return "arrow.triangle.2.circlepath"
-    case "down":    return "arrow.down.circle.fill"
-    case "parsed":  return "checkmark.circle.fill"
-    case "fail":    return "exclamationmark.circle.fill"
-    default:        return "arrow.down.circle"
+// MARK: - 喵星人手办（纯手绘，会眨眼，岛永不更新所以随便动）
+
+private struct Tri: Shape {
+    func path(in r: CGRect) -> Path {
+        var p = Path()
+        p.move(to: CGPoint(x: r.midX, y: r.minY))
+        p.addLine(to: CGPoint(x: r.minX, y: r.maxY))
+        p.addLine(to: CGPoint(x: r.maxX, y: r.maxY))
+        p.closeSubpath()
+        return p
     }
 }
 
-// 状态词（极简岛：环和百分比全部退役）
-private func islandWord(_ s: BoxActivity.ContentState) -> String {
-    switch s.phase {
-    case "parsing": return "等待"
-    case "down":    return "下载中"
-    case "parsed":  return "完成"
-    case "fail":    return "失败"
-    default:        return "待命"
-    }
-}
-
-// 胶囊底边进度线（左右两段拼接）：track 淡灰 + 橙色已下载段
-private func islandBar(_ frac: Double) -> some View {
-    ZStack(alignment: .leading) {
-        RoundedRectangle(cornerRadius: 1.5, style: .continuous)
-            .fill(Color.white.opacity(0.30))
-        GeometryReader { g in
-            RoundedRectangle(cornerRadius: 1.5, style: .continuous)
-                .fill(Color.orange)
-                .frame(width: max(0, min(1, CGFloat(frac))) * g.size.width)
+private struct CatFace: View {
+    let size: CGFloat
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 3.3)) { ctx in
+            // 每 3.3 秒眨一下眼（0.25s 闭眼帧）
+            let blink = Int(ctx.date.timeIntervalSince1970 * 4) % 13 == 0
+            ZStack {
+                // 耳朵（外橙内粉）
+                Tri().fill(Color.orange).frame(width: size * 0.36, height: size * 0.36)
+                    .offset(x: -size * 0.30, y: -size * 0.62)
+                Tri().fill(Color.orange).frame(width: size * 0.36, height: size * 0.36)
+                    .offset(x: size * 0.30, y: -size * 0.62)
+                Tri().fill(Color.pink.opacity(0.85)).frame(width: size * 0.18, height: size * 0.18)
+                    .offset(x: -size * 0.30, y: -size * 0.55)
+                Tri().fill(Color.pink.opacity(0.85)).frame(width: size * 0.18, height: size * 0.18)
+                    .offset(x: size * 0.30, y: -size * 0.55)
+                // 脑袋
+                Circle().fill(Color.orange)
+                    .frame(width: size, height: size)
+                // 腮帮淡斑
+                Circle().fill(Color.white.opacity(0.22))
+                    .frame(width: size * 0.72, height: size * 0.5)
+                    .offset(y: size * 0.18)
+                // 眼睛
+                HStack(spacing: size * 0.30) {
+                    eye(blink, size * 0.13)
+                    eye(blink, size * 0.13)
+                }
+                .offset(y: -size * 0.06)
+                // 鼻嘴：小 ω
+                Text(blink ? "‿" : "ω")
+                    .font(.system(size: size * 0.26, weight: .bold))
+                    .foregroundStyle(Color.brown)
+                    .offset(y: size * 0.24)
+            }
+            .frame(width: size, height: size)
         }
+        .frame(width: size, height: size)
     }
-    .frame(height: 3)
-}
 
-private func islandMark(_ s: BoxActivity.ContentState) -> String {
-    switch s.phase {
-    case "parsing": return s.pct > 0 ? "\(s.pct)%" : "…"
-    case "parsed":  return "✓"
-    case "fail":    return "!"
-    default:        return "待"
-    }
-}
-
-private func islandSub(_ s: BoxActivity.State) -> String {
-    switch s.phase {
-    case "parsing": return "正在解析剪贴板…"
-    case "down":    return "下载中…"
-    case "parsed":  return [s.quality, s.note].filter { !$0.isEmpty }.joined(separator: " · ")
-    case "fail":    return s.note
-    default:        return "复制抖音链接后点我"
+    @ViewBuilder private func eye(_ blink: Bool, _ d: CGFloat) -> some View {
+        if blink {
+            Capsule().fill(Color.black.opacity(0.85))
+                .frame(width: d * 2.2, height: d * 0.5)
+        } else {
+            ZStack {
+                Circle().fill(Color.black.opacity(0.85)).frame(width: d * 2, height: d * 2)
+                Circle().fill(Color.white).frame(width: d * 0.7, height: d * 0.7)
+                    .offset(x: -d * 0.3, y: -d * 0.3)
+            }
+        }
     }
 }
 
@@ -88,17 +100,17 @@ struct BoxLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: BoxActivity.self) { ctx in
             HStack(spacing: 10) {
-                Image(systemName: islandIcon(ctx.state.phase, ctx.state.pct))
-                    .font(.title3)
-                    .foregroundStyle(ctx.state.phase == "parsed" ? Color.green
-                                       : ctx.state.phase == "fail" ? Color.red : Color.orange)
+                Image(systemName: "arrow.down.circle.fill")
+                    .font(.title3).foregroundStyle(.green)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(ctx.state.title.isEmpty ? "抖音盒子 · 待命" : ctx.state.title)
+                    Text(ctx.state.title.isEmpty ? "抖音盒子" : ctx.state.title)
                         .font(.headline).lineLimit(1)
-                    Text(islandSub(ctx.state))
+                    Text(ctx.state.note.isEmpty ? "点一下岛开始下载" : ctx.state.note)
                         .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer()
+                CatFace(size: 30)
+                    .padding(.trailing, 4)
                 if ctx.state.phase == "parsed" {
                     Button("下载", intent: IslandDownloadIntent(link: ctx.state.link))
                         .buttonStyle(.borderedProminent).tint(.orange)
@@ -112,18 +124,17 @@ struct BoxLiveActivity: Widget {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(s.author.isEmpty ? "抖音盒子" : s.author)
                             .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-                        Text(s.title.isEmpty ? "待命中" : s.title)
+                        Text(s.title.isEmpty ? "点我进盒子" : s.title)
                             .font(.headline).lineLimit(2)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    VStack(alignment: .trailing) {
-                        if !s.quality.isEmpty {
-                            Text(s.quality).font(.caption).foregroundStyle(.orange)
-                        }
+                    HStack {
+                        Spacer()
+                        CatFace(size: 40)
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     VStack(spacing: 4) {
@@ -146,93 +157,17 @@ struct BoxLiveActivity: Widget {
                     .frame(maxWidth: .infinity)
                 }
             } compactLeading: {
-                Image(systemName: islandIcon(s.phase, s.pct))
+                Image(systemName: "arrow.down.circle.fill")
                     .font(.system(size: 14))
-                    .foregroundStyle(s.phase == "parsed" ? Color.green
-                                       : s.phase == "fail" ? Color.red : Color.orange)
+                    .foregroundStyle(.green)
             } compactTrailing: {
-                Text(islandWord(s))
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(s.phase == "parsed" ? Color.green
-                                       : s.phase == "fail" ? Color.red : Color.orange)
+                CatFace(size: 16)
+                    .padding(.trailing, 2)
             } minimal: {
-                Image(systemName: "square.stack.3d.down.right.fill")
+                CatFace(size: 18)
             }
-        }
-    }
-}
-
-// 环+中心状态（给进度专属岛用：小圆气泡里完整可见）
-private struct ProgRing: View {
-    let pct: Int
-    let done: Bool
-    let failed: Bool
-    var body: some View {
-        ZStack {
-            Circle().stroke(Color.white.opacity(0.28), lineWidth: 2.4)
-            Circle()
-                .trim(from: 0, to: done ? 1 : CGFloat(max(2, pct)) / 100.0)
-                .stroke(done ? Color.green : failed ? Color.red : Color.orange,
-                        style: StrokeStyle(lineWidth: 2.4, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-            if done {
-                Image(systemName: "checkmark")
-                    .font(.system(size: 9, weight: .bold)).foregroundStyle(.green)
-            } else if failed {
-                Image(systemName: "xmark")
-                    .font(.system(size: 8, weight: .bold)).foregroundStyle(.red)
-            } else {
-                Text("\(pct)")
-                    .font(.system(size: 8, weight: .bold)).monospacedDigit()
-            }
-        }
-        .frame(width: 26, height: 26)
-    }
-}
-
-// 进度专属岛：与主岛并存时，系统把它挂成独立小圆气泡（minimal 展示）——镜头完全挡不到
-struct BoxProgressLiveActivity: Widget {
-    var body: some WidgetConfiguration {
-        ActivityConfiguration(for: BoxProgressActivity.self) { ctx in
-            let s = ctx.state
-            VStack(alignment: .leading, spacing: 8) {
-                Text(s.title.isEmpty ? "盒子下载" : s.title)
-                    .font(.headline).lineLimit(1)
-                ProgressView(value: Double(s.pct), total: 100)
-                    .tint(s.done ? Color.green : s.failed ? Color.red : Color.orange)
-                Text(s.done ? "✓ 下载完成" : s.failed ? "✗ 下载失败" : "下载中 \(s.pct)%")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            .padding(12)
-        } dynamicIsland: { ctx in
-            let s = ctx.state
-            return DynamicIsland {
-                DynamicIslandExpandedRegion(.leading) {
-                    Text(s.title).font(.caption).lineLimit(1)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                DynamicIslandExpandedRegion(.trailing) {
-                    Text(s.done ? "完成" : s.failed ? "失败" : "\(s.pct)%")
-                        .font(.system(size: 12, weight: .bold).monospacedDigit())
-                        .foregroundStyle(s.done ? Color.green : s.failed ? Color.red : Color.orange)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                }
-                DynamicIslandExpandedRegion(.bottom) {
-                    ProgressView(value: Double(s.pct), total: 100)
-                        .tint(s.done ? Color.green : s.failed ? Color.red : Color.orange)
-                }
-            } compactLeading: {
-                ProgRing(pct: s.pct, done: s.done, failed: s.failed)
-            } compactTrailing: {
-                if !s.done && !s.failed {
-                    Text("\(s.pct)%")
-                        .font(.system(size: 10, weight: .bold))
-                        .monospacedDigit()
-                        .foregroundStyle(Color.orange)
-                }
-            } minimal: {
-                ProgRing(pct: s.pct, done: s.done, failed: s.failed)
-            }
+            // 长按岛 = 直接唤起盒子（进 app 自动读剪贴板 → 解析 → 秒跳回抖音）
+            .widgetURL(URL(string: "douyinbox://go"))
         }
     }
 }

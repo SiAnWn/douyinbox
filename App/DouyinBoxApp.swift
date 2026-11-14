@@ -290,6 +290,12 @@ struct RootView: View {
         .fullScreenCover(item: $app.openAlbum) { a in
             AlbumViewer(album: a).environmentObject(app)
         }
+        .onOpenURL { _ in
+            // 岛/深链唤起：立刻用剪贴板链接触发一键流
+            if let t = BoxIsland.clipText(), let u = DouyinAPI.extractURL(t) {
+                app.islandPending = u
+            }
+        }
         .onChange(of: app.selection) { sel in
             if sel != .privacy { app.privateUnlocked = false }
         }
