@@ -443,11 +443,12 @@ struct ParseView: View {
             let q = opt.url.query ?? ""
             if q.contains("one") {
                 list = Array(list.prefix(1))
-            } else if q.contains("range=") {
-                let raw = String(q.dropFirst(q.firstIndex(of: "=")! + 1)).removingPercentEncoding ?? ""
-                let want = epRangeSet(raw)
-                if !want.isEmpty {
-                    list = list.filter { want.contains($0.number) }
+            } else {
+                let rg = URLComponents(url: opt.url, resolvingAgainstBaseURL: false)?
+                    .queryItems?.first(where: { $0.name == "range" })?.value ?? ""
+                if !rg.isEmpty {
+                    let want = epRangeSet(rg)
+                    if !want.isEmpty { list = list.filter { want.contains($0.number) } }
                 }
             }
             let n = list.count
@@ -597,6 +598,13 @@ struct QualitySheet: View {
     // "1-5,8,11-13" → 排序去重集合（借用文件级 epRangeSet）
     private var hgPicked: [Int] { isHg && hgScope == 2 ? Array(epRangeSet(hgRange)).sorted() : [] }
 
+    private var hgHintText: String {
+        if !hgPicked.isEmpty { return "将下载 \(hgPicked.count) 集 · 最大 \(hgPicked.last!)" }
+        return hgRange.trimmingCharacters(in: .whitespaces).isEmpty
+            ? "输入集数或区间，逗号分隔；空=按全集"
+            : "格式不对，将按全集下载"
+    }
+
     private func scoped(_ opt: QualityOption) -> QualityOption {
         guard isHg, hgScope != 0 else { return opt }
         if hgScope == 1 {
@@ -667,12 +675,9 @@ struct QualitySheet: View {
                                     .textInputAutocapitalization(.never)
                                     .autocorrectionDisabled(true)
                                     .keyboardType(.numbersAndPunctuation)
-                                Text(hgPicked.isEmpty
-                                     ? (hgRange.trimmingCharacters(in: .whitespaces).isEmpty
-                                        ? "输入集数或区间，逗号分隔；空=按全集"
-                                        : "格式不对，将按全集下载")
-                                     : "将下载 \(hgPicked.count) 集 · 最大 \(hgPicked.last!)")
-                                    .font(.caption).foregroundStyle(hgPicked.isEmpty ? .secondary : .blue)
+                                Text(hgHintText)
+                                    .font(.caption)
+                                    .foregroundStyle(hgPicked.isEmpty ? Color.secondary : Color.blue)
                             }
                         }
                     }
