@@ -245,11 +245,6 @@ struct PlayerView: View {
                     .font(.title2).foregroundStyle(.white).shadow(radius: 3)
             }
             Spacer()
-            Button { Orient.toggle() } label: {
-                Text(Orient.isLandscape ? "竖屏" : "横屏").font(.subheadline).foregroundStyle(.white)
-                    .padding(.horizontal, 14).padding(.vertical, 7)
-                    .background(Capsule().fill(.black.opacity(0.45)))
-            }
             Button { app.autoAdvance.toggle() } label: {
                 Text(app.autoAdvance ? "自动" : "手动").font(.subheadline).foregroundStyle(.white)
                     .padding(.horizontal, 14).padding(.vertical, 7)
@@ -267,8 +262,20 @@ struct PlayerView: View {
     @ViewBuilder private func bottomBar(_ cur: VideoItem) -> some View {
         VStack(spacing: 10) {
             PlayerScrubber(pc: pc)
-            Text(cur.title).font(.headline).foregroundStyle(.white).lineLimit(2)
-                .multilineTextAlignment(.center).padding(.horizontal)
+            HStack(spacing: 8) {
+                Button { Orient.toggle() } label: {
+                    Text(Orient.isLandscape ? "竖屏" : "横屏")
+                        .font(.subheadline).foregroundStyle(.white)
+                        .padding(.horizontal, 14).padding(.vertical, 7)
+                        .background(Capsule().fill(.black.opacity(0.45)))
+                }
+                Spacer()
+                Text(cur.title).font(.headline).foregroundStyle(.white).lineLimit(1)
+                    .multilineTextAlignment(.center).frame(maxWidth: .infinity)
+                Spacer()
+                Color.clear.frame(width: 60, height: 1)
+            }
+            .padding(.horizontal)
         }
         .padding(.bottom, 56)
     }
@@ -317,12 +324,6 @@ struct InlinePlayer: View {
                         Image(systemName: "chevron.down").font(.title2).foregroundStyle(.white).shadow(radius: 3)
                     }
                     Spacer()
-                    Button { Orient.toggle() } label: {
-                        Text(Orient.isLandscape ? "竖屏" : "横屏")
-                            .font(.subheadline).foregroundStyle(.white)
-                            .padding(.horizontal, 14).padding(.vertical, 7)
-                            .background(Capsule().fill(.black.opacity(0.45)))
-                    }
                     Button { app.toggleFav(video.id) } label: {
                         Image(systemName: app.favorites.contains(video.id) ? "star.fill" : "star")
                             .font(.title2).foregroundStyle(.white).shadow(radius: 3)
@@ -335,7 +336,20 @@ struct InlinePlayer: View {
                 }.padding()
                 Spacer()
                 PlayerScrubber(pc: pc)
-                Text(video.title).font(.headline).foregroundStyle(.white).lineLimit(2).padding()
+                HStack(spacing: 8) {
+                    Button { Orient.toggle() } label: {
+                        Text(Orient.isLandscape ? "竖屏" : "横屏")
+                            .font(.subheadline).foregroundStyle(.white)
+                            .padding(.horizontal, 14).padding(.vertical, 7)
+                            .background(Capsule().fill(.black.opacity(0.45)))
+                    }
+                    Spacer()
+                    Text(video.title).font(.headline).foregroundStyle(.white).lineLimit(1)
+                        .frame(maxWidth: .infinity)
+                    Spacer()
+                    Color.clear.frame(width: 60, height: 1)
+                }
+                .padding(.horizontal)
             }
         }
         .statusBarHidden()

@@ -293,6 +293,9 @@ struct ParseView: View {
                         Self.launchDouyin()
                     }
                 }
+                // 一键流（非红果）固定落"视频库"，不吃面板里的位置记忆，
+                // 免得手滑选过一次"短剧"后所有单视频都被塞进短剧夹
+                saveTarget = 0
                 await pick(r, o, idx: 0)
                 app.keepAlive.stop()
                 let fin = status
