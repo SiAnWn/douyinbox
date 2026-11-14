@@ -202,6 +202,7 @@ struct PlayerView: View {
             }
         }
         .onAppear {
+            Orient.playerOn()
             app.revealUI = false
             app.refresh()
             if app.current == nil && !app.videos.isEmpty { app.startShuffle() }
@@ -211,7 +212,7 @@ struct PlayerView: View {
         .onChange(of: app.selection) { sel in
             if sel == .play { pc.player.playImmediately(atRate: pc.rate) } else { pc.pause() }
         }
-        .onDisappear { pc.pause(); pc.removeObs() }
+        .onDisappear { pc.pause(); pc.removeObs(); Orient.playerOff() }
         .background(TabBarAccessor(hidden: app.immersive))
         .statusBarHidden(app.immersive)
     }
@@ -327,6 +328,8 @@ struct InlinePlayer: View {
             }
         }
         .statusBarHidden()
+        .onAppear { Orient.playerOn() }
+        .onDisappear { Orient.playerOff() }
     }
 }
 

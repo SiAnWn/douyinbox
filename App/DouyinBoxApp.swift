@@ -1,5 +1,38 @@
 import SwiftUI
 import AVFoundation
+import UIKit
+
+// 方向策略：默认全站竖屏；进播放器页临时放开全向，最后一个播放器退场后锁回竖屏并归位
+enum Orient {
+    private static var players = 0
+    static func playerOn() {
+        players += 1
+        BoxAppDelegate.mask = .all
+        geom(.all)
+    }
+    static func playerOff() {
+        if players > 0 { players -= 1 }
+        guard players == 0 else { return }
+        BoxAppDelegate.mask = .portrait
+        geom(.portrait)
+        UIDevice.current.setValue(UIDeviceOrientation.portrait.rawValue, forKey: "orientation")
+    }
+    private static func geom(_ m: UIInterfaceOrientationMask) {
+        for s in UIApplication.shared.connectedScenes {
+            if let ws = s as? UIWindowScene {
+                ws.requestGeometryUpdate(.iOS(interfaceOrientations: m))
+            }
+        }
+    }
+}
+
+final class BoxAppDelegate: NSObject, UIApplicationDelegate {
+    static var mask: UIInterfaceOrientationMask = .portrait
+    func application(_ application: UIApplication,
+                     supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
+        BoxAppDelegate.mask
+    }
+}
 
 enum Tab: Hashable { case parse, play, drama, privacy, library }
 
@@ -213,6 +246,7 @@ final class AppState: ObservableObject {
 
 @main
 struct DouyinBoxApp: App {
+    @UIApplicationDelegateAdaptor(BoxAppDelegate.self) private var appDelegate
     @StateObject private var app = AppState.shared
     var body: some Scene {
         WindowGroup {
