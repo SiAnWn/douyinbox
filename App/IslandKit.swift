@@ -76,6 +76,22 @@ enum BoxIsland {
         }
     }
 
+    // 通用横幅（本地通知，即时达）：受设置页"下载完成发横幅通知"开关控制
+    #if !ISLANDAPP
+    static func banner(_ title: String, _ body: String) {
+        guard UserDefaults.standard.object(forKey: "doneNotify") as? Bool ?? true else { return }
+        let un = UNMutableNotificationContent()
+        un.title = title
+        un.body = body
+        un.sound = .default
+        Task {
+            try? await UNUserNotificationCenter.current().add(
+                UNNotificationRequest(identifier: "boxbnr_\(Int(Date().timeIntervalSince1970))",
+                                      content: un, trigger: nil))
+        }
+    }
+    #endif
+
     // 完成收尾：update + 正牌后台时间窗（蹭音频宽限期不可靠），失败留诊断
     struct FinalInfo { let ok: Bool; let note: String; let ts: TimeInterval }
     static var lastFinal: FinalInfo?

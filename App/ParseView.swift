@@ -287,6 +287,10 @@ struct ParseView: View {
                 status = "是合集！拉剧集列表（免费）…"
                 mix = try await MixAPI.fetch(mixID: mixID)
                 status = "合集已就绪，开始批量"
+                if earlyReturn, let m = mix {
+                    BoxIsland.banner("抖音盒子 · 合集已备好",
+                                     "\(m.name.prefix(24)) 共\(m.eps.count)集，点通知回来选集下载")
+                }
                 return
             }
             status = "解析中（\(engine == .web ? "浏览器引擎较慢…" : "API 直连…")）"
