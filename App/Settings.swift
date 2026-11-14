@@ -1,4 +1,5 @@
 import SwiftUI
+import UserNotifications
 
 // Key 存本机（Engines.swift 的 KeyStore 读写），不写进代码/仓库
 // ——别人拉仓库构建不会消耗你的额度
@@ -50,7 +51,14 @@ struct SettingsView: View {
                 Section("灵动岛") {
                     Toggle("切到后台时常驻待命", isOn: $app.islandOn)
                     Toggle("一键下载后自动跳回抖音", isOn: $app.autoReturn)
-                    Text("复制链接→点一下岛→盒子自动解析、自动下最高画质、1.5秒后把你送回抖音，下载在后台继续。")
+                    Toggle("下载完成发横幅通知", isOn: Binding(
+                        get: { UserDefaults.standard.object(forKey: "doneNotify") as? Bool ?? true },
+                        set: { v in
+                            UserDefaults.standard.set(v, forKey: "doneNotify")
+                            if v { UNUserNotificationCenter.current()
+                                    .requestAuthorization(options: [.alert, .sound]) { _, _ in } }
+                        }))
+                    Text("岛状态词由系统择机刷新；横幅通知则当下即达。复制链接→点一下岛→盒子自动解析、自动下最高画质、1.5秒后把你送回抖音，下载在后台继续。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("接口 Key（各产品独立，只存本机）") {

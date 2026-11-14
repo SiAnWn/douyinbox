@@ -2,6 +2,9 @@ import Foundation
 import UIKit
 import ActivityKit
 import AppIntents
+#if !ISLANDAPP
+import UserNotifications
+#endif
 
 // MARK: - 灵动岛数据（App 与扩展共同编译）
 struct BoxActivity: ActivityAttributes {
@@ -106,6 +109,18 @@ enum BoxIsland {
             } catch {
                 diag("finish update ERR \(error)")
             }
+            #if !ISLANDAPP
+            if UserDefaults.standard.object(forKey: "doneNotify") as? Bool ?? true {
+                let un = UNMutableNotificationContent()
+                un.title = ok ? "抖音盒子 · 下载完成" : "抖音盒子 · 下载失败"
+                un.body = ok ? (note.hasPrefix("已保存") ? String(note.dropFirst(4)) : "已存入")
+                             : String(note.prefix(100))
+                un.sound = .default
+                UNUserNotificationCenter.current().add(
+                    UNNotificationRequest(identifier: "boxfin_\(Int(Date().timeIntervalSince1970))",
+                                          content: un, trigger: nil))
+            }
+            #endif
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             #if !ISLANDAPP
             UIApplication.shared.endBackgroundTask(token)

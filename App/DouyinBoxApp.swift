@@ -1,6 +1,7 @@
 import SwiftUI
 import AVFoundation
 import UIKit
+import UserNotifications
 
 // 方向策略（iOS16 SwiftUI 通道）：主窗按 tab 动态放开；播放器 cover 自带 .all
 enum Orient {
@@ -248,6 +249,10 @@ struct DouyinBoxApp: App {
                     app.loadSubs()
                     if !app.subs.isEmpty { Task { await app.checkSubs() } }
                     if app.islandOn { BoxIsland.ensureStandby() }
+                    if UserDefaults.standard.object(forKey: "doneNotify") as? Bool ?? true {
+                        UNUserNotificationCenter.current()
+                            .requestAuthorization(options: [.alert, .sound]) { _, _ in }
+                    }
                 }
         }
     }
