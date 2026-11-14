@@ -71,7 +71,7 @@ enum BoxIsland {
         s.pct = 0
         s.note = ok ? "✓" : String(note.prefix(60))
         s.stamp = Date().timeIntervalSince1970
-        Task { try? await act.end(using: s, dismissalPolicy: .afterUpdates) }
+        Task { try? await act.end(using: s, dismissalPolicy: .default) }
     }
 
     // 后台多通道读剪贴板：string 通道被 iOS 后台限制卡掉时，试 url/原始数据通道
