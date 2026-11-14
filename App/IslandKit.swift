@@ -93,10 +93,12 @@ enum BoxIsland {
         s.pct = 0
         s.note = ok ? "✓" : String(note.prefix(60))
         s.stamp = Date().timeIntervalSince1970
+        #if !ISLANDAPP
         var token: UIBackgroundTaskIdentifier = .invalid
         token = UIApplication.shared.beginBackgroundTask(withName: "islandFinish") {
             UIApplication.shared.endBackgroundTask(token)
         }
+        #endif
         Task {
             do {
                 try await act.update(using: s)
@@ -105,7 +107,9 @@ enum BoxIsland {
                 diag("finish update ERR \(error)")
             }
             try? await Task.sleep(nanoseconds: 2_000_000_000)
+            #if !ISLANDAPP
             UIApplication.shared.endBackgroundTask(token)
+            #endif
         }
     }
 
