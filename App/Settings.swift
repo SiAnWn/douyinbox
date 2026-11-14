@@ -10,6 +10,8 @@ struct SettingsView: View {
     @State private var engine = EngineStore.current
     @State private var dyjxInput = ""
     @State private var svInput = ""
+    @State private var hgBusy = false
+    @State private var hgMsg = ""
 
     var body: some View {
         NavigationStack {
@@ -23,6 +25,20 @@ struct SettingsView: View {
                     .pickerStyle(.inline)
                     .labelsHidden()
                     Text("合集列表始终免费（公开接口）；批量原画仅 API 引擎支持。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Section("红果短剧") {
+                    Button("重置红果匿名设备（被风控时空结果再用）") {
+                        hgBusy = true
+                        Task {
+                            if let c = Hongguo.client { try? await c.resetDevice() }
+                            hgMsg = "已换新匿名设备，可重试红果链接"
+                            hgBusy = false
+                        }
+                    }
+                    .disabled(hgBusy)
+                    if !hgMsg.isEmpty { Text(hgMsg).font(.caption).foregroundStyle(.secondary) }
+                    Text("红果走专属引擎：链接粘贴即自动识别，免登录不耗 API 配额；出口 IP 被风控换节点即可。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("灵动岛") {

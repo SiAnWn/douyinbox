@@ -447,7 +447,10 @@ struct ParseView: View {
                     continue
                 }
                 status = String(format: "红果 %d/%d 集 · %@", i + 1, n, def)
-                guard let prb = try? await c.resolvePlayback(ep.id),
+                let prbOpt: PlaybackResult?
+                do { prbOpt = try await Hongguo.attempt(c) { try await c.resolvePlayback(ep.id) } }
+                catch { prbOpt = nil }
+                guard let prb = prbOpt,
                       let st = Hongguo.chooseStream(prb.playback, def: def),
                       let su = Hongguo.streamURL(st) else { failN += 1; continue }
                 let baseFrac = Double(i) / Double(n)

@@ -49,6 +49,33 @@ enum Hongguo {
         return all
     }
 
+    // 把 SDK 英文报错翻译成人话+操作指引
+    static func friendly(_ e: Error) -> String {
+        let m = e.localizedDescription
+        if m.contains("anonymous response was empty") {
+            return "红果风控：当前网络出口被回了空结果。请在 Clash 换个节点（大陆/港优）重试；反复不行就在设置里重置红果设备"
+        }
+        if m.contains("rate limited") { return "红果限流：歇一两分钟再试" }
+        if m.contains("signature") { return "红果签名被拒：重置红果设备后重试" }
+        if m.contains("authentication") { return "这部剧需要登录红果账号才能匿名取流" }
+        if m.contains("transport") { return "红果网络不通：检查代理后重试" }
+        return "红果失败：" + m
+    }
+
+    // 遇到"匿名空结果"风控：自动换一台匿名设备重试一次，仍败则中文报错
+    static func attempt<T>(_ c: OpenhongguoClient, _ op: () async throws -> T) async throws -> T {
+        do { return try await op() }
+        catch {
+            let e1 = error
+            if e1.localizedDescription.contains("anonymous") {
+                try? await c.resetDevice()
+                do { return try await op() }
+                catch { throw GError.failed(friendly(e1)) }
+            }
+            throw GError.failed(friendly(e1))
+        }
+    }
+
     // 解析成清晰度列表（hg:// 占位链接，pick 时特判走整剧批量）
     static func parse(_ link: String) async throws -> ParseResult {
         guard let sid = await seriesID(from: link) else {
@@ -56,9 +83,9 @@ enum Hongguo {
         }
         guard let c = client else { throw GError.failed("红果引擎初始化失败") }
         let s = try? await c.getSeries(sid)
-        let eps = try await episodes(sid)
+        let eps = try await attempt(c) { try await episodes(sid) }
         guard let first = eps.first else { throw GError.failed("红果这部剧没有分集") }
-        let pr = try await c.resolvePlayback(first.id)
+        let pr = try await attempt(c) { try await c.resolvePlayback(first.id) }
         let ladder = pr.playback.streams
             .filter { !$0.url.isEmpty && !$0.hls && !$0.dash }
             .sorted { a, b in (a.height * a.bitrate) > (b.height * b.bitrate) }
