@@ -76,6 +76,21 @@ enum Hongguo {
         }
     }
 
+    // 红果每集密钥并非全局固定：episode07 实测与 01/27 不同。
+    // 匿名设备档案被风控标记会导致拿到"错密钥组"（画面可解、声音花屏）。
+    // 对策：解析阶段失败即换设备重试；仍失败则要求重置档案。
+    static func parseWithHeal(_ link: String) async throws -> ParseResult {
+        guard let c = client else { throw GError.failed("红果引擎初始化失败") }
+        do {
+            let r = try await parse(link)
+            return r
+        } catch let e where e is GError {
+            // 网络/风控类失败：重置匿名设备后再试一次
+            try? await c.resetDevice()
+            return try await parse(link)
+        }
+    }
+
     // 解析成清晰度列表（hg:// 占位链接，pick 时特判走整剧批量）
     static func parse(_ link: String) async throws -> ParseResult {
         guard let sid = await seriesID(from: link) else {
@@ -187,10 +202,11 @@ enum CencMP4 {
                   let stsc = kids.first(where: { $0.type == "stsc" })
             else { continue }
             guard let entry = children(d, stsd.start + 16, stsd.start + stsd.size).first else { continue }
+            // 样本描述子盒起点（实测校准）：visual 盒起 entry+86，audio 盒起 entry+36
+            let csBase = entry.start + (entry.type == "encv" ? 86 : 36)
             var sinf: BoxRef?
-            for pre in [94, 44, 86, 36, 8, 20] {   // 视觉/音频样本描述固定前导长，兜底多试
-                let cs = children(d, entry.start + 8 + pre, entry.start + entry.size)
-                if let s = cs.first(where: { $0.type == "sinf" }) { sinf = s; break }
+            if entry.type == "encv" || entry.type == "enca" {
+                sinf = children(d, csBase, entry.start + entry.size).first { $0.type == "sinf" }
             }
             let chain = [entry, stsd, stbl, minf, mdia, trak]
             res.append(StblRefs(trakBox: trak, stsd: stsd, stsz: stsz, stco: stco, stsc: stsc,
@@ -328,7 +344,17 @@ enum CencMP4 {
             }
         }
 
-        // 3) stco 条目值：mdat 整体左移 totalRemoved（趁删除前按原位置写值）
+        // 3) moov 整体尺寸收缩（AVPlayer 严格校验盒边界，漏这个会整段拒播）
+        if totalRemoved > 0 {
+            let cur = u32(out, moov.start)
+            let nv = cur - totalRemoved
+            out[data.startIndex + moov.start] = UInt8((nv >> 24) & 0xFF)
+            out[data.startIndex + moov.start + 1] = UInt8((nv >> 16) & 0xFF)
+            out[data.startIndex + moov.start + 2] = UInt8((nv >> 8) & 0xFF)
+            out[data.startIndex + moov.start + 3] = UInt8(nv & 0xFF)
+        }
+
+        // 4) stco 条目值：mdat 整体左移 totalRemoved（趁删除前按原位置写值）
         for (boxStart, n) in stcoPatches {
             let nb = boxStart + 8 + 8
             for k in 0..<n {

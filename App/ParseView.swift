@@ -275,7 +275,7 @@ struct ParseView: View {
             }
             status = "解析中（\(engine == .web ? "浏览器引擎较慢…" : "API 直连…")）"
             result = Hongguo.isHongguo(link)
-                ? try await Hongguo.parse(link)
+                ? try await Hongguo.parseWithHeal(link)
                 : try await ParseRouter.parse(link: link)
             if autoPickAfterParse, let r = result, let o = r.options.first {
                 status = "一键下载：\(o.label)"
