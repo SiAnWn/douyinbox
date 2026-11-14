@@ -290,27 +290,38 @@ enum CencMP4 {
         return out
     }
 
+    // AES-CTR 钝实现：ECB 批量加密计数器阵列 → XOR 进样本（CommonCrypto CTR 流模式在真机上
+    // 各种边角，ECB one-shot 最笨但零陷阱）；计数器 = iv16 全 128 位大端逐块 +1
     static func ctrXOR(_ out: inout Data, _ off: Int, _ len: Int, _ iv16: Data, _ key: Data) -> Bool {
-        guard off >= 0, off + len <= out.count, len > 0 else { return false }
+        guard off >= 0, off + len <= out.count, len > 0, key.count == 16, iv16.count == 16 else { return false }
+        let nblk = (len + 15) / 16
+        var counters = [UInt8](repeating: 0, count: nblk * 16)
+        var ctr = [UInt8](iv16)
+        for b in 0..<nblk {
+            for k in 0..<16 { counters[b * 16 + k] = ctr[k] }
+            // 128-bit BE +1
+            var i = 15
+            while i >= 0 {
+                ctr[i] = ctr[i] &+ 1
+                if ctr[i] != 0 { break }
+                i -= 1
+            }
+        }
+        var ks = [UInt8](repeating: 0, count: nblk * 16)
+        var ksLen = 0
+        let st = counters.withUnsafeBytes { cp in
+            ks.withUnsafeMutableBytes { kp in
+                CCCrypt(CCOperation(kCCEncrypt), CCAlgorithm(kCCAlgorithmAES),
+                        CCOptions(kCCOptionECBMode),
+                        key.baseAddress!, 16, cp.baseAddress!, nblk * 16,
+                        kp.baseAddress!, nblk * 16, &ksLen)
+            }
+        }
+        guard st == CCCryptorStatus(kCCSuccess), ksLen >= len else { return false }
         return out.withUnsafeMutableBytes { raw in
             let p = raw.bindMemory(to: UInt8.self).baseAddress!.advanced(by: off)
-            var ccc: CCCryptorRef?
-            let st = iv16.withUnsafeBytes { ivp in
-                key.withUnsafeBytes { kp in
-                    CCCryptorCreateWithMode(CCOperation(kCCDecrypt), CCMode(kCCModeCTR),
-                                            CCAlgorithm(kCCAlgorithmAES), CCPadding(ccNoPadding),
-                                            nil, kp.baseAddress!, key.count,
-                                            ivp.baseAddress!, 16, 0,
-                                            CCModeOptions(kCCModeOptionCTR_BE), &ccc)
-                }
-            }
-            guard st == CCCryptorStatus(kCCSuccess), let ccc else { return false }
-            defer { CCCryptorRelease(ccc) }
-            var moved = 0
-            let s2 = CCCryptorUpdate(ccc, p, len, p, len, &moved)
-            var fin = 0
-            let s3 = CCCryptorFinal(ccc, p + moved, len - moved, &fin)
-            return s2 == CCCryptorStatus(kCCSuccess) && s3 == CCCryptorStatus(kCCSuccess) && moved + fin == len
+            for j in 0..<len { p[j] ^= ks[j] }
+            return true
         }
     }
 
