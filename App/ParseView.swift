@@ -451,6 +451,10 @@ struct ParseView: View {
                     if !want.isEmpty { list = list.filter { want.contains($0.number) } }
                 }
             }
+            if list.isEmpty {
+                status = "自选的集数这部剧里没有或不可播（该剧有效编号 1–\(all.count)）"
+                return
+            }
             let n = list.count
             let seriesName = Naming.sanitize(res.title)
             var okN = 0, failN = 0
@@ -511,6 +515,7 @@ struct ParseView: View {
                         }
                     } else {
                         savedOK = SavePaths.write(tmp, rel: rel)
+                        if !savedOK { lastWhy = "save: 明文写入失败（存储满?）" }
                     }
                     try? FileManager.default.removeItem(at: tmp)
                 }
