@@ -247,6 +247,14 @@ struct ParseView: View {
         busy = true; savedLink = link; lastAutoClip = link
         defer { busy = false; refreshQuota() }
         defer { autoPickAfterParse = false }
+        // 一键流极速闪回：进 doParse 的第一毫秒就跳回抖音，
+        // 跳转解析/合集判断/解析/下载全部在后台完成（API 引擎；网页引擎与红果走老节奏）
+        var earlyReturn = false
+        if autoPickAfterParse && app.autoReturn && engine != .web && !Hongguo.isHongguo(link) {
+            app.keepAlive.start()
+            earlyReturn = true
+            Task { @MainActor in Self.launchDouyin() }
+        }
         do {
             // 站点规则·boat 系小站（实测过，直连 playback API，不开浏览器不耗配额）
             if let vid = BoatSite.videoID(from: link) {
@@ -282,17 +290,6 @@ struct ParseView: View {
                 return
             }
             status = "解析中（\(engine == .web ? "浏览器引擎较慢…" : "API 直连…")）"
-            // 拿到链接立刻回抖音：API 引擎后台可继续解析（续命音频先开），
-            // 网页引擎会被挂起所以维持"下载启动后再走"的老节奏；红果要留面板也不早退
-            var earlyReturn = false
-            if autoPickAfterParse && app.autoReturn && engine != .web && !Hongguo.isHongguo(link) {
-                app.keepAlive.start()
-                earlyReturn = true
-                Task { @MainActor in
-                    try? await Task.sleep(nanoseconds: 250_000_000)
-                    Self.launchDouyin()
-                }
-            }
             result = Hongguo.isHongguo(link)
                 ? try await Hongguo.parseWithHeal(link)
                 : try await ParseRouter.parse(link: link)
