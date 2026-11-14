@@ -63,6 +63,17 @@ enum BoxIsland {
         }
     }
 
+    // 完成收尾：走 end() 高优通道（后台送达率远高于 update），岛显最终状态词后自动离场
+    static func finish(ok: Bool, note: String) {
+        guard let act = current() else { return }
+        var s = act.contentState
+        s.phase = ok ? "parsed" : "fail"
+        s.pct = 0
+        s.note = ok ? "✓" : String(note.prefix(60))
+        s.stamp = Date().timeIntervalSince1970
+        Task { try? await act.end(using: s, dismissalPolicy: .afterUpdates) }
+    }
+
     // 后台多通道读剪贴板：string 通道被 iOS 后台限制卡掉时，试 url/原始数据通道
     nonisolated static func clipText() -> String? {
         let pb = UIPasteboard.general
