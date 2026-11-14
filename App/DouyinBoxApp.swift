@@ -276,7 +276,6 @@ struct RootView: View {
             PrivateView()
                 .tabItem { Label("私密", systemImage: "lock.fill") }.tag(Tab.privacy)
         }
-        .supportedInterfaceOrientations(tabOrientMask)
         .onChange(of: app.selection) { sel in
             if sel != .play { Orient.forcePortrait() }
         }

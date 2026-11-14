@@ -339,7 +339,6 @@ struct InlinePlayer: View {
             }
         }
         .statusBarHidden()
-        .supportedInterfaceOrientations(.all)
         .onDisappear { Orient.forcePortrait() }
     }
 }
