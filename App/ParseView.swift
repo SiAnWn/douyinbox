@@ -452,6 +452,7 @@ struct ParseView: View {
                 status = String(format: "红果 %d/%d 集 · %@", i + 1, n, def)
                 var savedOK = false
                 var tried = 0
+                var lastWhy = ""
                 while !savedOK && tried < 3 {
                     tried += 1
                     if tried > 1 {
@@ -460,18 +461,20 @@ struct ParseView: View {
                         try? await Task.sleep(nanoseconds: 1_500_000_000)
                     }
                     let prbOpt: PlaybackResult?
+                    var resolveErr = ""
                     do { prbOpt = try await Hongguo.attempt(c) { try await c.resolvePlayback(ep.id) } }
-                    catch { prbOpt = nil }
-                    guard let prb = prbOpt,
+                    catch let e { prbOpt = nil; resolveErr = e.localizedDescription }
+                    guard resolveErr.isEmpty, let prb = prbOpt,
                           let st = Hongguo.chooseStream(prb.playback, def: def),
-                          let su = Hongguo.streamURL(st) else { continue }
+                          let su = Hongguo.streamURL(st) else { lastWhy = "resolve: " + (resolveErr.isEmpty ? "no stream" : resolveErr); continue }
                     let baseFrac = Double(i) / Double(n)
                     let tmp: URL
                     do {
                         tmp = try await DouyinAPI.download(su) { f, sps in
                             self.reportFrac(baseFrac + f / Double(n), sps)
                         }
-                    } catch { continue }
+                    } catch let e { lastWhy = "download: " + e.localizedDescription; continue }
+                    var encSize = 0
                     if prb.playback.protected {
                         if let ck = prb.contentKey?.key, !ck.isEmpty,
                            let data = try? Data(contentsOf: tmp),
@@ -481,6 +484,16 @@ struct ParseView: View {
                                                                      withIntermediateDirectories: true)
                             try? FileManager.default.removeItem(at: dest)
                             savedOK = (try? clear.write(to: dest)) != nil
+                        } else { lastWhy = "decrypt-nil/keys" }
+                        if !savedOK, tried == 3,
+                           let data = try? Data(contentsOf: tmp) {
+                            encSize = data.count
+                            Hongguo.saveBlackBox(ep: ep.id, sid: sid, def: def, stage: lastWhy,
+                                                 prot: prb.playback.protected,
+                                                 key: prb.contentKey?.key ?? "",
+                                                 kver: prb.contentKey?.version ?? "",
+                                                 ckErr: prb.contentKeyError?.localizedDescription ?? "-",
+                                                 bytes: data)
                         }
                     } else {
                         savedOK = SavePaths.write(tmp, rel: rel)
@@ -493,7 +506,7 @@ struct ParseView: View {
                     failN += 1
                     app.refresh()
                     app.refreshDramaSeries()
-                    status = "红果风控（密钥与流不匹配）：已下 \(okN)/\(n) 集保留；歇几分钟换节点可续传重下"
+                    status = "红果失败于第 \(i + 1) 集 [\(lastWhy)]，黑匣子已存 HongguoDebug；已下 \(okN)/\(n)"
                     break
                 }
                 progress = Double(i + 1) / Double(n)
@@ -507,7 +520,7 @@ struct ParseView: View {
                 status = failN > 0
                     ? "已保存：短剧/\(seriesName)（\(okN)/\(n) 集，缺 \(failN) 集）"
                     : "已保存：短剧/\(seriesName)（共 \(n) 集）"
-            } else {
+            } else if !status.hasPrefix("红果失败于") {
                 status = "红果下载失败：没有一集成功（可能接口风控，稍后再试）"
             }
         } catch {

@@ -91,6 +91,17 @@ enum Hongguo {
         }
     }
 
+    // 失败黑匣子：加密原件 + 密钥/参数 sidecar，存 HongguoDebug/ 供离线解剖
+    static func saveBlackBox(ep: String, sid: String, def: String, stage: String,
+                             prot: Bool, key: String, kver: String, ckErr: String, bytes: Data) {
+        let dir = SavePaths.docs.appendingPathComponent("HongguoDebug", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let base = "dbg_\(ep)"
+        try? bytes.write(to: dir.appendingPathComponent(base + ".enc.mp4"))
+        let meta = "sid=\(sid)\nep=\(ep)\ndef=\(def)\nstage=\(stage)\nprotected=\(prot)\nkey=\(key)\nkver=\(kver)\nckErr=\(ckErr)\nbytes=\(bytes.count)\nts=\(Date())\n"
+        try? meta.write(to: dir.appendingPathComponent(base + ".txt"), encoding: .utf8)
+    }
+
     // 解析成清晰度列表（hg:// 占位链接，pick 时特判走整剧批量）
     static func parse(_ link: String) async throws -> ParseResult {
         guard let sid = await seriesID(from: link) else {
