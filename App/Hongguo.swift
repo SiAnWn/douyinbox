@@ -311,10 +311,12 @@ enum CencMP4 {
         var ksLen = 0
         let st = counters.withUnsafeBytes { cp in
             ks.withUnsafeMutableBytes { kp in
-                CCCrypt(CCOperation(kCCEncrypt), CCAlgorithm(kCCAlgorithmAES),
-                        CCOptions(kCCOptionECBMode),
-                        key.baseAddress!, 16, cp.baseAddress!, nblk * 16,
-                        kp.baseAddress!, nblk * 16, &ksLen)
+                key.withUnsafeBytes { kk in
+                    CCCrypt(CCOperation(kCCEncrypt), CCAlgorithm(kCCAlgorithmAES),
+                            CCOptions(kCCOptionECBMode),
+                            kk.baseAddress!, 16, cp.baseAddress!, nblk * 16,
+                            kp.baseAddress!, nblk * 16, &ksLen)
+                }
             }
         }
         guard st == CCCryptorStatus(kCCSuccess), ksLen >= len else { return false }
