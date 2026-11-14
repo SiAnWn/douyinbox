@@ -289,7 +289,7 @@ struct RootView: View {
             if sel != .privacy { app.privateUnlocked = false }
         }
         .onChange(of: scenePhase) { p in
-            if p == .background { BoxIsland.ensureStandby() }   // 退后台时岛若被收回则重建
+            if p == .active || p == .background { BoxIsland.ensureStandby() }   // 前台/后台都补建，岛永不失踪
         }
         .alert("重命名",
                isPresented: Binding(get: { app.renameTarget != nil },
