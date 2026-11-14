@@ -298,13 +298,15 @@ struct ParseView: View {
                 // 免得手滑选过一次"短剧"后所有单视频都被塞进短剧夹
                 saveTarget = 0
                 await pick(r, o, idx: 0)
-                app.keepAlive.stop()
                 let fin = status
                 BoxIsland.update {
                     $0.phase = fin.hasPrefix("已保存") ? "parsed" : "fail"
                     $0.pct = 0
                     $0.note = fin.hasPrefix("已保存") ? "✓ 已存入视频库" : String(fin.prefix(60))
                 }
+                // 岛写请求要在续命音频断掉之前落地，否则后台直接被挂起丢掉完成态
+                try? await Task.sleep(nanoseconds: 800_000_000)
+                app.keepAlive.stop()
                 return
             }
             if autoPickAfterParse, let r = result, r.videoID.hasPrefix("hg_") {
@@ -551,6 +553,7 @@ struct ParseView: View {
                 $0.phase = okN > 0 ? "parsed" : "fail"; $0.pct = 0
                 $0.note = okN > 0 ? "✓ 已存 \(okN) 集" : "下载失败"
             }
+            try? await Task.sleep(nanoseconds: 800_000_000)   // 岛写完再放音频断气
         } catch {
             showProgress = false
             status = "红果失败：\(error.localizedDescription)"
