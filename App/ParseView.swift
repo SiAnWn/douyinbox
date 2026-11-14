@@ -440,8 +440,16 @@ struct ParseView: View {
             let play = all.filter { $0.playable }
             var list = play.isEmpty ? all : play
             guard !list.isEmpty else { status = "红果没有可播分集"; return }
-            let single = opt.url.query?.contains("one") == true
-            if single { list = Array(list.prefix(1)) }
+            let q = opt.url.query ?? ""
+            if q.contains("one") {
+                list = Array(list.prefix(1))
+            } else if q.contains("range=") {
+                let raw = String(q.dropFirst(q.firstIndex(of: "=")! + 1)).removingPercentEncoding ?? ""
+                let want = epRangeSet(raw)
+                if !want.isEmpty {
+                    list = list.filter { want.contains($0.number) }
+                }
+            }
             let n = list.count
             let seriesName = Naming.sanitize(res.title)
             var okN = 0, failN = 0
@@ -553,6 +561,24 @@ struct ParseView: View {
     private func refreshQuota() { quota = CallStats.current() }
 }
 
+// 集数范围解析："1-5,8,11-13" → Set；坏片段整体返回空
+func epRangeSet(_ s: String) -> Set<Int> {
+    var out = Set<Int>()
+    for part in s.split(separator: ",") {
+        let t = part.trimmingCharacters(in: .whitespaces)
+        if t.isEmpty { continue }
+        if let dash = t.firstIndex(of: "-") {
+            let a = Int(t[t.startIndex..<dash]), b = Int(t[t.index(after: dash)...])
+            guard let a = a, let b = b, b >= a, b - a < 200 else { return [] }
+            for k in a...b { out.insert(k) }
+        } else {
+            guard let n = Int(t), n > 0 else { return [] }
+            out.insert(n)
+        }
+    }
+    return out
+}
+
 // MARK: - 清晰度选择（带存入位置）
 struct QualitySheet: View {
     let result: ParseResult
@@ -563,16 +589,29 @@ struct QualitySheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var confirmOpt: QualityOption?
     @State private var confirmIdx = 0
-    @State private var hgAll = true          // 红果专用：true=全集 false=仅第1集
+    @State private var hgScope = 0            // 红果：0全集 1仅第1集 2自定义
+    @State private var hgRange = ""           // 如 1-5,8,11-13
 
     private var isHg: Bool { result.videoID.hasPrefix("hg_") }
 
+    // "1-5,8,11-13" → 排序去重集合（借用文件级 epRangeSet）
+    private var hgPicked: [Int] { isHg && hgScope == 2 ? Array(epRangeSet(hgRange)).sorted() : [] }
+
     private func scoped(_ opt: QualityOption) -> QualityOption {
-        guard isHg && !hgAll else { return opt }
-        let u = URL(string: opt.url.absoluteString + "?one") ?? opt.url
-        return QualityOption(label: opt.label + " · 仅第1集", url: u,
+        guard isHg, hgScope != 0 else { return opt }
+        if hgScope == 1 {
+            let u = URL(string: opt.url.absoluteString + "?one") ?? opt.url
+            return QualityOption(label: opt.label + " · 仅第1集", url: u,
+                                 width: opt.width, height: opt.height,
+                                 sizeBytes: opt.sizeBytes / 40, isOriginal: opt.isOriginal)
+        }
+        let picked = hgPicked
+        guard !picked.isEmpty else { return opt }   // 自定义格式错：按全集兜底
+        let rs = picked.map(String.init).joined(separator: ",")
+        let u = URL(string: opt.url.absoluteString + "?range=" + rs.addingPercentEncoding(withAllowedCharacters: .alphanumerics)!) ?? opt.url
+        return QualityOption(label: opt.label + " · 自选\(picked.count)集", url: u,
                              width: opt.width, height: opt.height,
-                             sizeBytes: opt.sizeBytes / 40, isOriginal: opt.isOriginal)
+                             sizeBytes: opt.sizeBytes / 1000 * max(1, picked.count), isOriginal: opt.isOriginal)
     }
 
     private var author: String { Naming.sanitize(result.author.isEmpty ? "未命名" : result.author) }
@@ -616,12 +655,25 @@ struct QualitySheet: View {
                     }
                     if isHg {
                         Section("下载范围") {
-                            Picker("范围", selection: $hgAll) {
-                                Text("全集").tag(true)
-                                Text("仅第1集（试看）").tag(false)
+                            Picker("范围", selection: $hgScope) {
+                                Text("全集").tag(0)
+                                Text("仅第1集").tag(1)
+                                Text("自定义").tag(2)
                             }
                             .pickerStyle(.segmented)
                             .labelsHidden()
+                            if hgScope == 2 {
+                                TextField("如 1-5,8,11-13", text: $hgRange)
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled(true)
+                                    .keyboardType(.numbersAndPunctuation)
+                                Text(hgPicked.isEmpty
+                                     ? (hgRange.trimmingCharacters(in: .whitespaces).isEmpty
+                                        ? "输入集数或区间，逗号分隔；空=按全集"
+                                        : "格式不对，将按全集下载")
+                                     : "将下载 \(hgPicked.count) 集 · 最大 \(hgPicked.last!)")
+                                    .font(.caption).foregroundStyle(hgPicked.isEmpty ? .secondary : .blue)
+                            }
                         }
                     }
                     Section {
