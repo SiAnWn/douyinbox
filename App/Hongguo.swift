@@ -337,7 +337,8 @@ enum CencMP4 {
             var victims: [(BoxRef, [BoxRef])] = []
             if let sinf = t.sinf { victims.append((sinf, t.chain)) }
             let cryptoKinds: Set<String> = ["senc", "saiz", "saio", "sbgp", "sgpd"]
-            for k in children(d, t.stbl.start + 8, t.stbl.start + t.stbl.size)
+            let stblBox = t.chain[2]
+            for k in children(data, stblBox.start + 8, stblBox.start + stblBox.size)
                 where cryptoKinds.contains(k.type) {
                 victims.append((k, Array(t.chain[2...])))
             }
