@@ -214,29 +214,34 @@ struct TuoleiSheet: View {
                 ScrollView {
                     LazyVGrid(columns: cols, spacing: 6) {
                         ForEach(rows, id: \.self) { i in
-                            AsyncImage(url: URL(string: hit.urls[i])) { ph in
-                                switch ph {
-                                case .success(let img): img.resizable().scaledToFill()
-                                case .failure: Color.gray.opacity(0.15)
-                                default: Color.gray.opacity(0.08)
+                            VStack(spacing: 3) {
+                                HStack(spacing: 4) {
+                                    Text("\(i + 1)")
+                                        .font(.caption2.monospacedDigit())
+                                        .foregroundStyle(sel.contains(i) ? Color.accentColor : Color.secondary)
+                                    Spacer()
+                                    Image(systemName: sel.contains(i) ? "checkmark.circle.fill" : "circle")
+                                        .font(.body)
+                                        .foregroundStyle(sel.contains(i) ? Color.accentColor : Color.secondary)
                                 }
+                                .padding(.horizontal, 3)
+                                AsyncImage(url: URL(string: hit.urls[i])) { ph in
+                                    switch ph {
+                                    case .success(let img): img.resizable().scaledToFill()
+                                    case .failure: Color.gray.opacity(0.15)
+                                    default: Color.gray.opacity(0.08)
+                                    }
+                                }
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 132)
+                                .clipped()
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                .overlay(sel.contains(i) ? Color.accentColor.opacity(0.20) : Color.clear)
+                                .overlay(RoundedRectangle(cornerRadius: 8)
+                                    .strokeBorder(sel.contains(i) ? Color.accentColor : Color.black.opacity(0.22),
+                                                  lineWidth: sel.contains(i) ? 3 : 1))
                             }
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 132)
-                            .clipped()
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                            .overlay(sel.contains(i) ? Color.accentColor.opacity(0.20) : Color.clear)
-                            .overlay(alignment: .topTrailing) {
-                                Image(systemName: sel.contains(i) ? "checkmark.circle.fill" : "circle")
-                                    .font(.title3)
-                                    .foregroundStyle(sel.contains(i) ? Color.white : Color.white.opacity(0.9))
-                                    .background(Circle().fill(sel.contains(i) ? Color.accentColor : Color.black.opacity(0.4)))
-                                    .padding(6)
-                            }
-                            .overlay(RoundedRectangle(cornerRadius: 8)
-                                .strokeBorder(sel.contains(i) ? Color.accentColor : Color.black.opacity(0.22),
-                                              lineWidth: sel.contains(i) ? 3 : 1))
-                            .contentShape(RoundedRectangle(cornerRadius: 8))
+                            .contentShape(Rectangle())
                             .onTapGesture {
                                 if sel.contains(i) { sel.remove(i) } else { sel.insert(i) }
                             }

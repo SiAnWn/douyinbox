@@ -389,10 +389,11 @@ struct BoxBrowserView: View {
     }
 
     private var bottomBar: some View {
-        HStack(spacing: 24) {
+        HStack(spacing: 20) {
             Button { m.web.goBack() } label: { Image(systemName: "chevron.backward") }.disabled(!m.canBack)
             Button { m.web.goForward() } label: { Image(systemName: "chevron.forward") }.disabled(!m.canFwd)
             Button { m.web.reload() } label: { Image(systemName: "arrow.clockwise") }
+            Spacer(minLength: 4)
             Button { m.collect() } label: {
                 if m.collecting { ProgressView().controlSize(.small) }
                 else { Image(systemName: "wand.and.stars").foregroundStyle(.orange) }
@@ -401,7 +402,7 @@ struct BoxBrowserView: View {
             Button {
                 markName = m.web.title?.isEmpty == false ? (m.web.title ?? "") : m.currentURL
                 showMark = true
-            } label: { Image(systemName: "bookmark.plus") }
+            } label: { Image(systemName: "bookmark") }
             .disabled(m.currentURL.isEmpty)
             Button { showJobs = true } label: {
                 Image(systemName: "square.and.arrow.down")
@@ -416,15 +417,16 @@ struct BoxBrowserView: View {
                         }
                     }
             }
-            Spacer()
+            .disabled(jobs.list.isEmpty)
             Menu {
                 Button("在 Safari 打开") {
                     if let u = m.web.url { UIApplication.shared.open(u) }
                 }
+                Button("书签列表") { showBookmarks = true }
             } label: { Image(systemName: "ellipsis.circle") }
         }
         .font(.title3)
-        .padding(.horizontal, 22).padding(.vertical, 10)
+        .padding(.horizontal, 18).padding(.vertical, 10)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
         .padding(.horizontal, 10)
         .opacity(m.barsShown ? 1 : 0)
