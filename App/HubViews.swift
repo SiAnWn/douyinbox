@@ -96,6 +96,19 @@ struct BoxView: View {
             List {
                 Section {
                     NavigationLink {
+                        DyFeedView()
+                    } label: {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("抖音 · 原生刷流")
+                                Text("隐藏天线收推荐 → 原生竖滑播放；♥ 一键存无水印原画")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "play.tv").foregroundStyle(.pink)
+                        }
+                    }
+                    NavigationLink {
                         BoxBrowserView(seed: "https://www.douyin.com/?recommend=1")
                     } label: {
                         Label {
