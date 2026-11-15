@@ -97,7 +97,7 @@ final class DySkinModel: NSObject, ObservableObject {
         cfg.allowsInlineMediaPlayback = true
         cfg.mediaTypesRequiringUserActionForPlayback = []
         cfg.defaultWebpagePreferences.allowsContentJavaScript = true
-        cfg.userContentController.addUserScript(WKUserScript(script: DySkinJS.inlinePatch,
+        cfg.userContentController.addUserScript(WKUserScript(source: DySkinJS.inlinePatch,
                                                              injectionTime: .atDocumentStart,
                                                              forMainFrameOnly: true))
         web = WKWebView(frame: CGRect(x: 0, y: 0, width: UIScreen.main.bounds.width, height: UIScreen.main.bounds.height), configuration: cfg)
