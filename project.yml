@@ -80,8 +80,6 @@ targets:
       - target: DouyinBoxShare
       - package: openhongguo
         product: Openhongguo
-    entitlements:
-      path: App/DouyinBox.entitlements
     info:
       path: Generated/Info.plist
       properties:
