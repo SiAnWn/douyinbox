@@ -99,6 +99,11 @@ final class DyFeedModel: NSObject, ObservableObject {
     private var started = false
     private var appRef: AppState?
     @Published var loggedIn = false
+    private var forcedRecommend = false
+
+    func goRecommend() {
+        web.evaluateJavaScript("location.href='https://www.douyin.com/?recommend=1'", completionHandler: nil)
+    }
 
     func retryIfEmpty() {
         if started, items.isEmpty { web.reload() }
@@ -181,6 +186,13 @@ extension DyFeedModel: WKNavigationDelegate, WKScriptMessageHandler {
                 self.loggedIn = ok
                 if self.items.isEmpty {
                     self.status = ok ? "已登录 ✓ 抄写员工作中…" : "未检测到登录态（请展开天线登录）"
+                }
+                // 登录后容易被抖音带去"我的"页 → 一鞭子抽回推荐流（只抽头一次）
+                if ok, !self.forcedRecommend {
+                    self.forcedRecommend = true
+                    if !(sv.url?.absoluteString.contains("recommend") ?? false) {
+                        sv.evaluateJavaScript("location.href='https://www.douyin.com/?recommend=1'", completionHandler: nil)
+                    }
                 }
             }
         }
@@ -308,9 +320,11 @@ struct DyFeedView: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    Button("刷新推荐") {
-                        feed.web.reload()
+                    Button("回推荐流") { feed.goRecommend() }
+                    Button("抄我喜欢页（收藏搬运）") {
+                        feed.web.evaluateJavaScript("location.href='https://www.douyin.com/user/self?tab=like'", completionHandler: nil)
                     }
+                    Button("刷新天线") { feed.web.reload() }
                 } label: { Image(systemName: "ellipsis.circle") }
             }
         }
