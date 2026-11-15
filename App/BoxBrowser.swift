@@ -81,9 +81,8 @@ final class BrowserModel: NSObject, ObservableObject,
         }.resume()
     }
 
-    // MARK: delegates（Xcode26：Swift 名自动推的 OC 选择器和协议要求不同名，逐个钉死）
-    @objc(webView:didStartProvisionalNavigation:)
-    func webView(_ sv: WKWebView, didStart nav: WKNavigation!) {
+    // MARK: delegates（Xcode26 协议 Swift 名 = ObjC 全称，逐一贴齐）
+    @objc func webView(_ sv: WKWebView, didStartProvisionalNavigation nav: WKNavigation!) {
         loading = true; refreshState()
     }
     @objc(webView:didFinishNavigation:)
@@ -91,8 +90,7 @@ final class BrowserModel: NSObject, ObservableObject,
         loading = false; progress = 0; refreshState()
         sv.evaluateJavaScript(longJS, completionHandler: nil)
     }
-    @objc(webView:didFailNavigation:withError:)
-    func webView(_ sv: WKWebView, didFail nav: WKNavigation!, withError e: Error) {
+    @objc func webView(_ sv: WKWebView, didFail nav: WKNavigation!, withError e: Error) {
         loading = false; refreshState()
     }
     override func observeValue(forKeyPath k: String?, of o: Any?, change: [NSKeyValueChangeKey: Any]?, context: UnsafeMutableRawPointer?) {
