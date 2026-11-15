@@ -35,6 +35,7 @@ final class BrowserModel: NSObject, ObservableObject,
         web.navigationDelegate = self
         web.uiDelegate = self
         cfg.userContentController.add(self, name: "boxlong")
+        cfg.userContentController.add(self, name: "boxtuolei")
         web.allowsBackForwardNavigationGestures = true   // 右滑返回，浏览器基本礼貌
         web.addObserver(self, forKeyPath: "estimatedProgress", options: [.new], context: nil)
         web.scrollView.addObserver(self, forKeyPath: "contentOffset", options: [.new, .old], context: nil)
@@ -104,7 +105,7 @@ final class BrowserModel: NSObject, ObservableObject,
     // MARK: delegates（Xcode26 协议 Swift 名 = ObjC 全称，逐一贴齐）
     @objc func webView(_ sv: WKWebView, didStartProvisionalNavigation nav: WKNavigation!) {
         loading = true
-        if !barsShown { setBars(true) }   // 跳新页就把工具栏叫回来
+        setBars(true)   // 跳新页就把工具栏叫回来（并开始 3.5s 隐身倒计时）
         refreshState()
     }
     @objc(webView:didFinishNavigation:)
@@ -151,20 +152,29 @@ final class BrowserModel: NSObject, ObservableObject,
         }
     }
 
-    // 图叻：聚这页的图（结果走 tuolei / tuoleiMsg）
+    // 图叻：聚这页的图（结果走 boxtuolei 桥 → tuolei / tuoleiMsg）
+    private var tuoleiTimeout: Task<Void, Never>?
     func collect() {
         guard !collecting else { return }
         collecting = true
-        web.evaluateJavaScript(TuoleiJS.collect) { res, _ in
-            if let s = res as? String, let d = s.data(using: .utf8),
-               let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
-               let arr = j["u"] as? [String], !arr.isEmpty {
-                self.tuolei = TuoleiHit(title: (j["t"] as? String) ?? "",
-                                        urls: arr, page: (j["page"] as? String) ?? "")
-            } else {
-                self.tuoleiMsg = "这页没聚到图（换列表页或大图页再试）"
-            }
-            self.collecting = false
+        web.evaluateJavaScript(TuoleiJS.collect, completionHandler: nil)
+        tuoleiTimeout?.cancel()
+        tuoleiTimeout = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 10_000_000_000)
+            guard !Task.isCancelled else { return }
+            if collecting { collecting = false; tuoleiMsg = "这页没聚到图（换列表页或大图页再试）" }
+        }
+    }
+
+    private func tuoleiArrive(_ raw: Any?) {
+        tuoleiTimeout?.cancel()
+        collecting = false
+        if let s = raw as? String, let d = s.data(using: .utf8),
+           let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+           let arr = j["u"] as? [String], !arr.isEmpty {
+            tuolei = TuoleiHit(title: (j["t"] as? String) ?? "", urls: arr, page: (j["page"] as? String) ?? "")
+        } else {
+            tuoleiMsg = "这页没聚到图（换列表页或大图页再试）"
         }
     }
     @objc(webView:decidePolicyForNavigationAction:decisionHandler:)
@@ -189,6 +199,8 @@ final class BrowserModel: NSObject, ObservableObject,
     func userContentController(_ uc: WKUserContentController, didReceive msg: WKScriptMessage) {
         if msg.name == "boxlong", let s = msg.body as? String {
             DispatchQueue.main.async { self.longPressImage = s }
+        } else if msg.name == "boxtuolei" {
+            DispatchQueue.main.async { self.tuoleiArrive(msg.body) }
         }
     }
 }

@@ -12,31 +12,37 @@ struct TuoleiHit: Identifiable {
 
 enum TuoleiJS {
     // async IIFE：先分段滚到底喂懒加载，再收 <img> + 直链 <a>，去重保序，剔小图
+    // 结果走 messageHandlers 桥（WK 的 evaluateJavaScript 不等 Promise，必须 postMessage）
     static let collect = """
-    (async () => {
-      for (let i = 0; i < 24; i++) {
-        window.scrollBy(0, innerHeight * 0.9);
-        await new Promise(r => setTimeout(r, 280));
-        if ((window.innerHeight + window.scrollY) >= document.body.scrollHeight - 12) break;
-      }
-      window.scrollTo(0, 0);
-      await new Promise(r => setTimeout(r, 250));
-      const seen = new Set(); const urls = [];
-      for (const im of document.images) {
-        let s = im.currentSrc || im.src || '';
-        if (!s || s.startsWith('data:')) continue;
-        try { s = new URL(s, location.href).href.split('#')[0]; } catch (e) { continue; }
-        if (!/^https?:/i.test(s)) continue;
-        const w = im.naturalWidth || im.width || 0, h = im.naturalHeight || im.height || 0;
-        if (w && w < 220 && h < 220) continue;
-        if (seen.has(s)) continue;
-        seen.add(s); urls.push(s);
-      }
-      for (const a of document.links) {
-        const h0 = (a.href || '').split('#')[0];
-        if (/\\.(jpe?g|png|webp|gif)(\\?[^#]*)?$/i.test(h0) && !seen.has(h0)) { seen.add(h0); urls.push(h0); }
-      }
-      return JSON.stringify({ t: (document.title || location.hostname).trim(), u: urls, page: location.href });
+    (() => {
+      (async () => {
+        for (let i = 0; i < 24; i++) {
+          window.scrollBy(0, innerHeight * 0.9);
+          await new Promise(r => setTimeout(r, 280));
+          if ((window.innerHeight + window.scrollY) >= document.body.scrollHeight - 12) break;
+        }
+        window.scrollTo(0, 0);
+        await new Promise(r => setTimeout(r, 250));
+        const seen = new Set(); const urls = [];
+        for (const im of document.images) {
+          let s = im.currentSrc || im.src || '';
+          if (!s || s.startsWith('data:')) continue;
+          try { s = new URL(s, location.href).href.split('#')[0]; } catch (e) { continue; }
+          if (!/^https?:/i.test(s)) continue;
+          const w = im.naturalWidth || im.width || 0, h = im.naturalHeight || im.height || 0;
+          if (w && w < 120 && h < 120) continue;
+          if (seen.has(s)) continue;
+          seen.add(s); urls.push(s);
+        }
+        for (const a of document.links) {
+          const h0 = (a.href || '').split('#')[0];
+          if (/\\.(jpe?g|png|webp|gif)(\\?[^#]*)?$/i.test(h0) && !seen.has(h0)) { seen.add(h0); urls.push(h0); }
+        }
+        const og = document.querySelector('meta[property="og:image"], meta[name="og:image"]');
+        if (og && og.content) { try { const s0 = new URL(og.content, location.href).href; if (!seen.has(s0)) { seen.add(s0); urls.unshift(s0); } } catch (e) {} }
+        window.webkit.messageHandlers.boxtuolei.postMessage(JSON.stringify({ t: (document.title || location.hostname).trim(), u: urls, page: location.href }));
+      })();
+      return 'go';
     })()
     """
 }
