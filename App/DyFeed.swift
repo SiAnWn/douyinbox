@@ -35,26 +35,36 @@ enum DyAntennaJS {
           const img = card.querySelector ? card.querySelector('img') : null;
           add(m[1], (a.textContent || '').trim(), img ? (img.currentSrc || img.src || '') : '');
         }
-        // 通道2：页面内嵌数据（SSR/状态里的 aweme_id + 就近 desc/cover）
-        const html = document.documentElement.innerHTML;
-        const re = /"aweme_id":"(\\d{15,25})"(.{0,3000}?)(?="aweme_id"|$)/gs;
+        // 通道2：页面内嵌数据（SSR 的 RENDER_DATA 是 URL 编码的，先解码再捞）
+        let html = document.documentElement.innerHTML;
+        const rd = document.getElementById('RENDER_DATA');
+        let hay = html;
+        if (rd && rd.textContent) { try { hay = decodeURIComponent(rd.textContent) + "\\n" + html; } catch (e) {} }
+        const re = /"aweme_id":"(\d{15,25})"(.{0,3000}?)(?="aweme_id"|$)/gs;
         let mm;
-        while ((mm = re.exec(html)) !== null) {
+        while ((mm = re.exec(hay)) !== null) {
           const seg = mm[2] || '';
           const dm = seg.match(/"desc":"([^"]{1,90})"/);
-          const cm = seg.match(/"url_list":\\["(https:[^"]{1,300})"/);
-          add(mm[1], dm ? dm[1] : '', cm ? cm[1].replace(/\\\\u0026/g, '&') : '');
+          const cm = seg.match(/"url_list":\["(https:[^"]{1,300})"/);
+          add(mm[1], dm ? dm[1] : '', cm ? cm[1].replace(/\\u0026/g, '&') : '');
           if (out.length > 40) break;
         }
         if (out.length) window.webkit.messageHandlers.boxdy.postMessage(JSON.stringify(out));
       };
       scan();
+      const authPing = () => {
+        const t = document.body ? (document.body.innerText || '') : '';
+        const notLogged = /扫码登录|手机号登录|登录抖音/.test(t);
+        window.webkit.messageHandlers.boxdyauth.postMessage(notLogged ? '0' : '1');
+      };
+      authPing();
       setInterval(() => {
         scan();
+        authPing();
         if ((window.innerHeight + window.scrollY) > document.body.scrollHeight - innerHeight * 1.5) {
           window.scrollBy(0, innerHeight);
         }
-      }, 1800);
+      }, 2500);
     })();
     """
 }
@@ -114,6 +124,7 @@ final class DyFeedModel: NSObject, ObservableObject {
         guard !started else { return }
         started = true
         web.configuration.userContentController.add(self, name: "boxdy")
+        web.configuration.userContentController.add(self, name: "boxdyauth")
         web.navigationDelegate = self
         web.load(URLRequest(url: URL(string: "https://www.douyin.com/?recommend=1")!))
         status = "天线展开中，等卡片飘来…"
@@ -180,24 +191,32 @@ extension DyFeedModel: WKNavigationDelegate, WKScriptMessageHandler {
     @objc(webView:didFinishNavigation:)
     func webView(_ sv: WKWebView, didFinish nav: WKNavigation!) {
         sv.evaluateJavaScript(DyAntennaJS.reporter, completionHandler: nil)
-        sv.evaluateJavaScript("document.cookie.indexOf('sessionid')>=0") { r, _ in
-            let ok = (r as? Bool) ?? false
-            DispatchQueue.main.async {
-                self.loggedIn = ok
-                if self.items.isEmpty {
-                    self.status = ok ? "已登录 ✓ 抄写员工作中…" : "未检测到登录态（请展开天线登录）"
-                }
-                // 登录后容易被抖音带去"我的"页 → 一鞭子抽回推荐流（只抽头一次）
-                if ok, !self.forcedRecommend {
-                    self.forcedRecommend = true
-                    if !(sv.url?.absoluteString.contains("recommend") ?? false) {
-                        sv.evaluateJavaScript("location.href='https://www.douyin.com/?recommend=1'", completionHandler: nil)
-                    }
-                }
-            }
-        }
     }
     nonisolated func userContentController(_ uc: WKUserContentController, didReceive msg: WKScriptMessage) {
+        if msg.name == "boxdyauth" {
+            let on = ((msg.body as? String) ?? "") == "1"
+            DispatchQueue.main.async {
+                if on {
+                    if !self.loggedIn {
+                        self.loggedIn = true
+                        self.status = "已登录 ✓ 抄写员工作中…"
+                        // 登录态确认后若不在推荐流，抽一鞭子（仅首次）
+                        if !self.forcedRecommend {
+                            self.forcedRecommend = true
+                            if !(self.web.url?.absoluteString.contains("recommend") ?? false) {
+                                self.goRecommend()
+                            }
+                        }
+                    }
+                } else if self.loggedIn {
+                    self.loggedIn = false
+                    self.status = "未检测到登录态（点左上展开天线登录）"
+                } else {
+                    self.status = "天线页面加载中…"
+                }
+            }
+            return
+        }
         guard msg.name == "boxdy", let s = msg.body as? String,
               let d = s.data(using: .utf8),
               let arr = try? JSONSerialization.jsonObject(with: d) as? [[String: String]] else { return }
@@ -273,13 +292,17 @@ struct DyFeedView: View {
                         .font(.caption).foregroundStyle(.tertiary)
                         .multilineTextAlignment(.center)
                     HStack(spacing: 14) {
-                        NavigationLink {
-                            BoxBrowserView(seed: "https://www.douyin.com/?recommend=1")
-                        } label: {
-                            Text("去登录").font(.callout)
-                                .padding(.horizontal, 18).padding(.vertical, 9)
-                                .background(Capsule().fill(.tint.opacity(0.85)))
-                                .foregroundStyle(.white)
+                        if !feed.loggedIn {
+                            NavigationLink {
+                                BoxBrowserView(seed: "https://www.douyin.com/?recommend=1")
+                            } label: {
+                                Text("去登录").font(.callout)
+                                    .padding(.horizontal, 18).padding(.vertical, 9)
+                                    .background(Capsule().fill(.tint.opacity(0.85)))
+                                    .foregroundStyle(.white)
+                            }
+                        } else {
+                            Text("已登录 ✓ 正在抄卡，稍安勿躁…").font(.callout).foregroundStyle(.green)
                         }
                         Button("重试天线") { feed.retryIfEmpty() }
                             .font(.callout).foregroundStyle(.secondary)
