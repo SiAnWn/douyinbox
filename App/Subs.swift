@@ -69,7 +69,7 @@ struct SubsView: View {
                         Text(checkLine(s)).font(.caption).foregroundStyle(.secondary)
                         if runningID == s.mixID {
                             VStack(spacing: 4) {
-                                ProgressView(value: Double(min(runner.got + runner.skipped + runner.failed, max(runner.total, 1))),
+                                ProgressView(value: Double(min(runner.got + runner.failed, max(runner.total, 1))),
                                              total: Double(max(runner.total, 1)))
                                 Text(runner.current.isEmpty ? "准备中…" : runner.current)
                                     .font(.caption).foregroundStyle(.secondary).lineLimit(1)

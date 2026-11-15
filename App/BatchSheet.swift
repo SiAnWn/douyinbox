@@ -58,7 +58,7 @@ struct BatchSheet: View {
                     }
                 }
                 Section("进度") {
-                    ProgressView(value: Double(min(runner.got + runner.skipped + runner.failed, runner.total)),
+                    ProgressView(value: Double(min(runner.got + runner.failed, max(runner.total, 1))),
                                  total: Double(max(runner.total, 1)))
                     Text(runner.current.isEmpty ? "待开始" : runner.current)
                         .font(.footnote).foregroundStyle(.secondary)

@@ -198,7 +198,7 @@ final class BatchRunner: ObservableObject {
                onFinish: @escaping () -> Void) async {
         phase = .running
         await stopFlag.clear()
-        got = 0; skipped = 0; failed = 0; total = mix.eps.count
+        got = 0; skipped = 0; failed = 0; total = 0
         current = ""
 
         let rec = MixManifest.map(mix.id)
@@ -206,7 +206,8 @@ final class BatchRunner: ObservableObject {
             if let rel = rec[ep.id], SavePaths.exists(rel: rel) { return false }
             return true
         }
-        skipped = total - pendingList.count
+        skipped = mix.eps.count - pendingList.count
+        total = pendingList.count   // 进度只算真正要下的集，已存的不再虚增百分比
 
         let eng = EngineStore.current
         let realEngine = useEngine && eng.isIfphp
