@@ -80,21 +80,22 @@ final class BrowserModel: NSObject, ObservableObject {
     }
 
     // MARK: delegates
-    func webView(_ sv: WKWebView, didStart nav: WKNavigation!) {
+    @objc func webView(_ sv: WKWebView, didStart nav: WKNavigation!) {
         loading = true; refreshState()
     }
-    func webView(_ sv: WKWebView, didFinish nav: WKNavigation!) {
+    @objc func webView(_ sv: WKWebView, didFinish nav: WKNavigation!) {
         loading = false; progress = 0; refreshState()
         sv.evaluateJavaScript(longJS, completionHandler: nil)
     }
+    @objc(webView:didFailNavigation:withError:)
     func webView(_ sv: WKWebView, didFail nav: WKNavigation!, withError e: Error) {
         loading = false; refreshState()
     }
-    func observeValue(forKeyPath k: String?, of o: Any?, change: [NSKeyValueChangeKey: Any]?, context: UnsafeMutableRawPointer?) {
+    override func observeValue(forKeyPath k: String?, of o: Any?, change: [NSKeyValueChangeKey: Any]?, context: UnsafeMutableRawPointer?) {
         if k == "estimatedProgress" { progress = web.estimatedProgress }
     }
-    func webView(_ sv: WKWebView, decidePolicyFor su: WKNavigationAction,
-                 decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+    @objc func webView(_ sv: WKWebView, decidePolicyFor su: WKNavigationAction,
+                       decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         if let u = su.request.url, let scheme = u.scheme?.lowercased(), scheme.hasPrefix("http") {
             decisionHandler(.allow)
         } else {
@@ -104,12 +105,12 @@ final class BrowserModel: NSObject, ObservableObject {
         }
     }
     // target=_blank 的窗口请求：留在本窗（图站翻页常用）
-    func webView(_ sv: WKWebView, createWebViewWith cfg: WKWebViewConfiguration,
-                 for su: WKNavigationAction, message: WKScriptMessage?) -> WKWebView? {
-        if let req = su.request { sv.load(req) }
+    @objc func webView(_ sv: WKWebView, createWebViewWith cfg: WKWebViewConfiguration,
+                       for su: WKNavigationAction, message: WKScriptMessage?) -> WKWebView? {
+        sv.load(su.request)
         return nil
     }
-    func userContentController(_ uc: WKUserContentController, didReceive msg: WKScriptMessage) {
+    @objc func userContentController(_ uc: WKUserContentController, didReceive msg: WKScriptMessage) {
         if msg.name == "boxlong", let s = msg.body as? String {
             DispatchQueue.main.async { self.longPressImage = s }
         }
