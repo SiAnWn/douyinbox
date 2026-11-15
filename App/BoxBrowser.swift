@@ -5,7 +5,9 @@ import Photos
 // MARK: - 内置浏览器 v1（裸需求版：能逛、能存、能记路）
 // 引擎 = 系统 Safari 同一颗（WKWebView），UA 保持系统默认（本身即移动版 Safari 串）
 
-final class BrowserModel: NSObject, ObservableObject {
+@MainActor
+final class BrowserModel: NSObject, ObservableObject,
+                          WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
     @Published var progress: Double = 0
     @Published var loading = false
     @Published var canBack = false
