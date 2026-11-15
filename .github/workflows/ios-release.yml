@@ -28,11 +28,10 @@ jobs:
           test -d "$APP"
           rm -rf build/pkg && mkdir -p build/pkg/Payload
           cp -R "$APP" build/pkg/Payload/
-          # ad-hoc sign to EMBED entitlements (App Group for worse_query);
-          # LCSign keeps existing entitlements when re-signing (WQ Files precedent)
-          codesign --force --deep -s - \
-            --entitlements App/DouyinBox.entitlements \
-            build/pkg/Payload/DouyinBox.app
+          # embed App Group entitlements as __entitlements SECTION via ldid
+          # (section form is what re-signers like LCSign read; codesign blob form is not)
+          brew install ldid
+          ldid -SApp/DouyinBox.entitlements build/pkg/Payload/DouyinBox.app/DouyinBox
           ( cd build/pkg && zip -qr ../DouyinBox-unsigned.ipa Payload )
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
