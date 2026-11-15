@@ -30,19 +30,10 @@ jobs:
           cp -R "$APP" build/pkg/Payload/
           # embed App Group entitlements as __entitlements SECTION via ldid
           # (section form is what re-signers like LCSign read; codesign blob form is not)
-          # embed App Group entitlements into main binary; codesign DER form (proven valid)
-          echo "=== entitlements file ==="
-          ls -la App/DouyinBox.entitlements
-          plutil -lint App/DouyinBox.entitlements
-          cat App/DouyinBox.entitlements
+          # embed App Group entitlements into main binary (must survive LCSign; file is hand-authored, NOT xcodegen-managed)
           codesign --force --sign - --generate-entitlement-der \
             --entitlements "$(pwd)/App/DouyinBox.entitlements" \
             build/pkg/Payload/DouyinBox.app/DouyinBox
-          echo "=== verify ==="
-          codesign -d --entitlements :- build/pkg/Payload/DouyinBox.app/DouyinBox 2>/dev/null || true
-          echo ""
-          echo "=== strings grep ==="
-          strings build/pkg/Payload/DouyinBox.app/DouyinBox | grep -c application-groups || echo "NOT-EMBEDDED"
           ( cd build/pkg && zip -qr ../DouyinBox-unsigned.ipa Payload )
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4

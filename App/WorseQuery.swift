@@ -116,7 +116,7 @@ final class WQProbe: ObservableObject {
         Task.detached(priority: .userInitiated) {
             var handles: [Int64] = []
             let t0 = Date()
-            await MainActor.run { self.log("=== worse_query 探测 \(Date().description) ===") }
+            await MainActor.run { self.log("=== worse_query 探测 " + Date().formatted(.dateTime.year().month(.twoDigits).day(.twoDigits).hour(.twoDigits(amPM: .omitted)).minute().second().second(.twoDigits)) + " 本地时间 ===") }
 
             // 0. App Group 票是否在手
             let gr = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: WQ.groupID)
