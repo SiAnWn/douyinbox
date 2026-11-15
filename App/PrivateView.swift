@@ -119,6 +119,7 @@ struct PrivateEpisodes: View {
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { load() }
         .refreshable { load() }
+        .toolbar(.hidden, for: .tabBar)
         .fullScreenCover(item: $cleanVideo) { v in
             CleanPlayer(video: v)
         }

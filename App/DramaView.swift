@@ -112,6 +112,7 @@ struct DramaEpisodes: View {
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { load() }
         .refreshable { load() }
+        .toolbar(.hidden, for: .tabBar)
         .fullScreenCover(isPresented: $showEp) {
             EpisodePlayer(items: eps, start: epStart)
         }
