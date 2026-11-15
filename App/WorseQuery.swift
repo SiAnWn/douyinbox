@@ -49,11 +49,14 @@ enum WQ {
               let pRes = dlsym(mgr, "container_query_get_single_result"),
               let pFree = dlsym(mgr, "container_query_free"),
               let pTok = dlsym(mgr, "container_copy_sandbox_token"),
-              let pCons = dlsym(RTLD_DEFAULT, "sandbox_extension_consume"),
-              let pRel = dlsym(RTLD_DEFAULT, "sandbox_extension_release"),
-              let pXpc = dlsym(RTLD_DEFAULT, "xpc_string_create") else {
+              let sbx = dlopen("/usr/lib/system/libsystem_sandbox.dylib", RTLD_NOW | RTLD_LOCAL),
+              let pCons = dlsym(sbx, "sandbox_extension_consume"),
+              let pRel = dlsym(sbx, "sandbox_extension_release"),
+              let xpcLib = dlopen("/usr/lib/system/libxpc.dylib", RTLD_NOW | RTLD_LOCAL),
+              let pXpc = dlsym(xpcLib, "xpc_string_create") else {
             restoreCaches(group); return -2
         }
+        defer { dlclose(sbx); dlclose(xpcLib) }
         let fCreate = unsafeBitCast(pCreate, to: FNCreate.self)
         let fClass = unsafeBitCast(pClass, to: FNSetU64.self)
         let fIdent = unsafeBitCast(pIdent, to: FNSetXPC.self)
@@ -67,7 +70,7 @@ enum WQ {
         _ = pRel // 释放句柄在 release() 里独立解析
 
         guard let q = fCreate() else { restoreCaches(group); return -3 }
-        let ident = target.UTF8String.withCString { cs in fXpc(cs) }
+        let ident = group.withCString { cs in fXpc(cs) }
         fClass(q, 7)                                  // class 7 = appGroup
         if let ident { fIdent(q, ident) }
         fPart(q, 3)                                   // part 3 = Library/Caches
@@ -89,8 +92,10 @@ enum WQ {
     static func release(_ handle: Int64) {
         guard handle >= 0 else { return }
         typealias FNRel = @convention(c) (Int64) -> Int32
-        if let p = dlsym(RTLD_DEFAULT, "sandbox_extension_release") {
+        if let sbx = dlopen("/usr/lib/system/libsystem_sandbox.dylib", RTLD_NOW | RTLD_LOCAL),
+           let p = dlsym(sbx, "sandbox_extension_release") {
             _ = unsafeBitCast(p, to: FNRel.self)(handle)
+            dlclose(sbx)
         }
     }
 }
@@ -152,7 +157,7 @@ final class WQProbe: ObservableObject {
         }
     }
 
-    static func shallowList(_ root: String) -> String {
+    nonisolated static func shallowList(_ root: String) -> String {
         let fm = FileManager.default
         guard let subs = try? fm.contentsOfDirectory(atPath: root) else { return "    (扩展到手但列目录失败)" }
         var out = "    共 \(subs.count) 个子项；前 6："
