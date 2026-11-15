@@ -96,32 +96,6 @@ struct BoxView: View {
             List {
                 Section {
                     NavigationLink {
-                        DyFeedView()
-                    } label: {
-                        Label {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("抖音 · 沉浸刷流")
-                                Text("推荐流原样上滑沉浸播（已根治系统全屏弹窗），绿键存无水印原画")
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
-                        } icon: {
-                            Image(systemName: "play.tv").foregroundStyle(.pink)
-                        }
-                    }
-                    NavigationLink {
-                        BoxBrowserView(seed: "https://www.douyin.com/?recommend=1")
-                    } label: {
-                        Label {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("抖音 · 全屏推荐流")
-                                Text("登录一次 → 无限刷；喜欢的视频点 ⬇ 无水印原画入库")
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
-                        } icon: {
-                            Image(systemName: "music.note.list").foregroundStyle(.pink)
-                        }
-                    }
-                    NavigationLink {
                         BoxBrowserView()
                     } label: {
                         Label {

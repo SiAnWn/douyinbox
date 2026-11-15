@@ -2,40 +2,6 @@ import SwiftUI
 import WebKit
 import Photos
 
-// MARK: - 抖音模式增强包（全屏拉伸 + 当前视频 id 提取）
-enum DouyinBoost {
-    static let style = """
-    (() => {
-      if (document.getElementById('box-dy')) return;
-      const s = document.createElement('style'); s.id = 'box-dy';
-      s.textContent = `
-        video { object-fit: cover !important; }
-        header, [class*="Header"], [class*="search-box"] { display: none !important; }
-        body { background: #000 !important; }
-        ::-webkit-scrollbar { width: 0 !important; }
-      `;
-      document.documentElement.appendChild(s);
-    })();
-    """
-    // 找"正在播的那条"的 aweme id：顺着可见 video 往上找 /video/数字 链接
-    static let extract = """
-    (() => {
-      const vids = [...document.querySelectorAll('video')].filter(v => v.offsetParent);
-      for (const v of vids) {
-        let el = v;
-        while (el) {
-          const a = el.querySelector && el.querySelector('a[href*="/video/"]');
-          if (a) { const m = (a.getAttribute('href') || '').match(/\\/video\\/(\\d+)/); if (m) return m[1]; }
-          el = el.parentElement;
-        }
-      }
-      const as = [...document.querySelectorAll('a[href*="/video/"]')].filter(a => a.offsetParent);
-      for (const a of as) { const m = (a.getAttribute('href') || '').match(/\\/video\\/(\\d+)/); if (m) return m[1]; }
-      return '';
-    })()
-    """
-}
-
 // MARK: - 内置浏览器 v1（裸需求版：能逛、能存、能记路）
 // 引擎 = 系统 Safari 同一颗（WKWebView），UA 保持系统默认（本身即移动版 Safari 串）
 
@@ -57,11 +23,7 @@ final class BrowserModel: NSObject, ObservableObject,
     @Published var tuolei: TuoleiHit?
     @Published var tuoleiMsg = ""
     @Published var collecting = false
-    // 抖音模式
-    @Published var douyinActive = false
-    @Published var saving = false
     var seedURL = ""
-    weak var boxApp: AppState?
 
     let web: WKWebView
 
@@ -151,9 +113,6 @@ final class BrowserModel: NSObject, ObservableObject,
     func webView(_ sv: WKWebView, didFinish nav: WKNavigation!) {
         loading = false; progress = 0; refreshState()
         sv.evaluateJavaScript(longJS, completionHandler: nil)
-        let dy = sv.url?.host?.contains("douyin") ?? false
-        douyinActive = dy
-        if dy { sv.evaluateJavaScript(DouyinBoost.style, completionHandler: nil) }
     }
     @objc func webView(_ sv: WKWebView, didFail nav: WKNavigation!, withError e: Error) {
         loading = false; refreshState()
@@ -223,48 +182,6 @@ final class BrowserModel: NSObject, ObservableObject,
         }
     }
 
-    // MARK: 抖音存库（当前播放视频 → 无水印原画管线）
-    struct DYErr: Error { let msg: String; init(_ m: String) { msg = m } }
-
-    func saveCurrentAweme() {
-        guard let app = boxApp, !saving else {
-            if boxApp == nil { tuoleiMsg = "引擎未就绪（退出重进页面试试）" }
-            return
-        }
-        web.evaluateJavaScript(DouyinBoost.extract) { res, _ in
-            let id = (res as? String) ?? ""
-            DispatchQueue.main.async { self.saveAwemeId(id, app: app) }
-        }
-    }
-
-    private func saveAwemeId(_ id: String, app: AppState) {
-        guard id.count > 8 else { tuoleiMsg = "没锁定当前视频（滚动暂停一下再存）"; return }
-        saving = true
-        let link = "https://www.douyin.com/video/\(id)"
-        Task { @MainActor in
-            defer { saving = false }
-            app.keepAlive.start()
-            defer { if TuoleiJobs.shared.runningCount == 0 { app.keepAlive.stop() } }
-            do {
-                let r = try await ParseRouter.parse(link: link)
-                guard let o = r.options.first else { throw DYErr("没有可用清晰度") }
-                let file = try await DouyinAPI.download(o.url) { _, _ in }
-                let sz = (try? FileManager.default.attributesOfItem(atPath: file.path))?[.size] as? Int ?? 0
-                guard sz >= 30_000 else {
-                    try? FileManager.default.removeItem(at: file)
-                    throw DYErr("直链失效（文件过小）")
-                }
-                let name = Naming.fileName(r.author, r.title, o)
-                if SavePaths.write(file, rel: name) {
-                    DownloadStore.set(o.url.absoluteString, name)
-                    app.refresh()
-                    BoxIsland.banner("百宝箱 · 抖音存库", "\(String(r.title.prefix(40))) 已入库")
-                } else { throw DYErr("写入资料库失败") }
-            } catch {
-                BoxIsland.banner("百宝箱 · 抖音存库", "失败 \(String("\(error)".prefix(60)))")
-            }
-        }
-    }
     @objc(webView:decidePolicyForNavigationAction:decisionHandler:)
     func webView(_ sv: WKWebView, decidePolicyFor su: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
@@ -375,7 +292,6 @@ enum BoxBookmarkStore {
 struct BoxBrowserView: View {
     @StateObject private var m: BrowserModel
     @ObservedObject private var jobs = TuoleiJobs.shared
-    @EnvironmentObject var app: AppState
     @State private var input = ""
     @State private var showBookmarks = false
     @State private var showJobs = false
@@ -434,7 +350,6 @@ struct BoxBrowserView: View {
         }
         .onChange(of: urlFocused) { _, v in m.inputActive = v }
         .onAppear {
-            m.boxApp = app
             if m.web.url == nil && !m.seedURL.isEmpty { m.go(m.seedURL) }
         }
         .navigationTitle("浏览器")
@@ -490,19 +405,11 @@ struct BoxBrowserView: View {
             Button { m.web.goForward() } label: { Image(systemName: "chevron.forward") }.disabled(!m.canFwd)
             Button { m.web.reload() } label: { Image(systemName: "arrow.clockwise") }
             Spacer(minLength: 4)
-            if m.douyinActive {
-                Button { m.saveCurrentAweme() } label: {
-                    if m.saving { ProgressView().controlSize(.small) }
-                    else { Image(systemName: "tray.and.arrow.down").foregroundStyle(.green) }
-                }
-                .disabled(m.saving)
-            } else {
-                Button { m.collect() } label: {
-                    if m.collecting { ProgressView().controlSize(.small) }
-                    else { Image(systemName: "wand.and.stars").foregroundStyle(.orange) }
-                }
-                .disabled(m.collecting || m.currentURL.isEmpty)
+            Button { m.collect() } label: {
+                if m.collecting { ProgressView().controlSize(.small) }
+                else { Image(systemName: "wand.and.stars").foregroundStyle(.orange) }
             }
+            .disabled(m.collecting || m.currentURL.isEmpty)
             Button {
                 markName = m.web.title?.isEmpty == false ? (m.web.title ?? "") : m.currentURL
                 showMark = true
