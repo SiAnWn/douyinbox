@@ -32,14 +32,12 @@ enum DySkinJS {
       fix();
       new MutationObserver(fix).observe(document.documentElement, { childList: true, subtree: true });
       setInterval(fix, 2000);
-      // 皮肤 CSS：去网页头尾，只留沉浸内容
+      // 皮肤 CSS：保守版——只裁顶部导航，绝不动内容容器（防一锅端黑屏）
       if (!document.getElementById('box-skin')) {
         const s = document.createElement('style'); s.id = 'box-skin';
         s.textContent = `
-          header, [class*="header"], [data-e2e-viewport="top-nav"],
-          xg-find-bug, #guide-area, [class*="download"] { display: none !important; }
           video { object-fit: cover !important; }
-          html, body { background: #000 !important; overscroll-behavior: none; }
+          body { background: #000 !important; }
           ::-webkit-scrollbar { width: 0 !important; }
         `;
         document.documentElement.appendChild(s);
@@ -80,7 +78,7 @@ final class DySkinModel: NSObject, ObservableObject {
         cfg.allowsInlineMediaPlayback = true
         cfg.mediaTypesRequiringUserActionForPlayback = []
         cfg.defaultWebpagePreferences.allowsContentJavaScript = true
-        web = WKWebView(frame: .zero, configuration: cfg)
+        web = WKWebView(frame: CGRect(x: 0, y: 0, width: UIScreen.main.bounds.width, height: UIScreen.main.bounds.height), configuration: cfg)
         super.init()
         web.navigationDelegate = self
         web.uiDelegate = self
@@ -156,7 +154,22 @@ extension DySkinModel: WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandle
     func webView(_ sv: WKWebView, didFinish nav: WKNavigation!) {
         loading = false; progress = 0
         sv.evaluateJavaScript(DySkinJS.inlinePatch, completionHandler: nil)
+        // 自愈：5 秒后页面若还是死的（没视频没文字）就重开一次，最多自愈两次
+        reloadTries += 1
+        if reloadTries <= 2 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+                guard let self else { return }
+                sv.evaluateJavaScript("document.querySelectorAll('video').length + (document.body.innerText||'').length") { r, _ in
+                    let vital = (r as? NSNumber)?.doubleValue ?? 0
+                    if vital < 30, self.reloadTries <= 2 {
+                        self.reloadTries += 10   // 限流：自愈只留一次机会
+                        sv.reload()
+                    }
+                }
+            }
+        }
     }
+    private var reloadTries = 0
     @objc func webView(_ sv: WKWebView, decidePolicyFor su: WKNavigationAction,
                        decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         if let u = su.request.url, let s = u.scheme?.lowercased(), s.hasPrefix("http") {
