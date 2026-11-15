@@ -16,6 +16,8 @@ final class BrowserModel: NSObject, ObservableObject,
     @Published var longPressImage: String?
     // Safari 式：滚动收起工具栏
     @Published var barsShown = true
+    var inputActive = false               // 地址栏编辑中不许偷收
+    private var chromeTask: Task<Void, Never>?
     private var lastOffY: CGFloat = 0
     // 图叻聚图
     @Published var tuolei: TuoleiHit?
@@ -126,8 +128,22 @@ final class BrowserModel: NSObject, ObservableObject,
         }
     }
 
-    private func setBars(_ shown: Bool) {
+    func setBars(_ shown: Bool) {
         barsShown = shown
+        chromeTask?.cancel()
+        if shown && !inputActive {
+            // 真全屏：召唤 3.5 秒后自动隐身
+            chromeTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 3_500_000_000)
+                guard !Task.isCancelled, !self.inputActive else { return }
+                self.barsShown = false
+                self.applyBars(false)
+            }
+        }
+        applyBars(shown)
+    }
+
+    private func applyBars(_ shown: Bool) {
         UIView.animate(withDuration: 0.22) {
             let ins = self.web.scrollView.contentInset
             self.web.scrollView.contentInset = UIEdgeInsets(top: shown ? 46 : 0, left: ins.left,
@@ -261,6 +277,7 @@ struct BoxBrowserView: View {
     @State private var input = ""
     @State private var showBookmarks = false
     @State private var bookName = ""
+    @FocusState private var urlFocused: Bool
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -272,6 +289,7 @@ struct BoxBrowserView: View {
                 Image(systemName: "globe").foregroundStyle(.secondary)
                 TextField("地址 / 搜索", text: $input)
                     .textFieldStyle(.plain)
+                    .focused($urlFocused)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .keyboardType(.URL)
@@ -290,10 +308,20 @@ struct BoxBrowserView: View {
             .animation(.spring(duration: 0.25), value: m.barsShown)
 
             VStack { Spacer(); bottomBar }
+            // 隐身模式下的召唤区：点屏幕顶边召回工具栏
+            if !m.barsShown {
+                VStack {
+                    Color.clear.frame(height: 40).contentShape(Rectangle())
+                        .onTapGesture { m.setBars(true) }
+                    Spacer()
+                }
+                .ignoresSafeArea(edges: .top)
+            }
             if m.loading {
                 VStack { ProgressView(value: min(m.progress, 0.97)).progressViewStyle(.linear); Spacer() }
             }
         }
+        .onChange(of: urlFocused) { _, v in m.inputActive = v }
         .navigationTitle("浏览器")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)     // 把底部 tab 也让给网页
