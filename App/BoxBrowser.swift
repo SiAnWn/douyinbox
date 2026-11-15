@@ -112,7 +112,7 @@ final class BrowserModel: NSObject, ObservableObject,
     override func observeValue(forKeyPath k: String?, of o: Any?, change: [NSKeyValueChangeKey: Any]?, context: UnsafeMutableRawPointer?) {
         if k == "estimatedProgress" { progress = web.estimatedProgress }
         if k == "contentOffset", let ch = change {
-            let new = (ch[.newKey] as? NSValue)?.cgPointValue ?? lastOffY
+            let new = (ch[.newKey] as? NSValue)?.cgPointValue ?? CGPoint(x: 0, y: lastOffY)
             let dy = new.y - lastOffY
             lastOffY = new.y
             if abs(dy) > 3 {
