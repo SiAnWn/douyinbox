@@ -40,12 +40,12 @@ enum DyAntennaJS {
         const rd = document.getElementById('RENDER_DATA');
         let hay = html;
         if (rd && rd.textContent) { try { hay = decodeURIComponent(rd.textContent) + "\\n" + html; } catch (e) {} }
-        const re = /"aweme_id":"(\d{15,25})"(.{0,3000}?)(?="aweme_id"|$)/gs;
+        const re = /"aweme_id":"(\\d{15,25})"(.{0,3000}?)(?="aweme_id"|$)/gs;
         let mm;
         while ((mm = re.exec(hay)) !== null) {
           const seg = mm[2] || '';
           const dm = seg.match(/"desc":"([^"]{1,90})"/);
-          const cm = seg.match(/"url_list":\["(https:[^"]{1,300})"/);
+          const cm = seg.match(/"url_list":\\["(https:[^"]{1,300})"/);
           add(mm[1], dm ? dm[1] : '', cm ? cm[1].replace(/\\u0026/g, '&') : '');
           if (out.length > 40) break;
         }
