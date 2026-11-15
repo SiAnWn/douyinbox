@@ -114,6 +114,12 @@ final class DyFeedModel: NSObject, ObservableObject {
     func goRecommend() {
         web.evaluateJavaScript("location.href='https://www.douyin.com/?recommend=1'", completionHandler: nil)
     }
+    func goJingxuan() {
+        web.evaluateJavaScript("location.href='https://www.douyin.com/jingxuan'", completionHandler: nil)
+    }
+    func goLikes() {
+        web.evaluateJavaScript("location.href='https://www.douyin.com/user/self?tab=like'", completionHandler: nil)
+    }
 
     func retryIfEmpty() {
         if started, items.isEmpty { web.reload() }
@@ -126,8 +132,8 @@ final class DyFeedModel: NSObject, ObservableObject {
         web.configuration.userContentController.add(self, name: "boxdy")
         web.configuration.userContentController.add(self, name: "boxdyauth")
         web.navigationDelegate = self
-        web.load(URLRequest(url: URL(string: "https://www.douyin.com/?recommend=1")!))
-        status = "天线展开中，等卡片飘来…"
+        web.load(URLRequest(url: URL(string: "https://www.douyin.com/jingxuan")!))
+        status = "天线展开中（精选页），等卡片飘来…"
     }
 
     func ensurePlay(_ idx: Int, _ then: @escaping @Sendable () -> Void) {
@@ -200,19 +206,12 @@ extension DyFeedModel: WKNavigationDelegate, WKScriptMessageHandler {
                     if !self.loggedIn {
                         self.loggedIn = true
                         self.status = "已登录 ✓ 抄写员工作中…"
-                        // 登录态确认后若不在推荐流，抽一鞭子（仅首次）
-                        if !self.forcedRecommend {
-                            self.forcedRecommend = true
-                            if !(self.web.url?.absoluteString.contains("recommend") ?? false) {
-                                self.goRecommend()
-                            }
-                        }
                     }
                 } else if self.loggedIn {
                     self.loggedIn = false
-                    self.status = "未检测到登录态（点左上展开天线登录）"
+                    self.status = "未登录（推荐流有登录墙，可刷精选/喜欢页）"
                 } else {
-                    self.status = "天线页面加载中…"
+                    self.status = "天线抄写员已就位…"
                 }
             }
             return
@@ -343,10 +342,9 @@ struct DyFeedView: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    Button("回推荐流") { feed.goRecommend() }
-                    Button("抄我喜欢页（收藏搬运）") {
-                        feed.web.evaluateJavaScript("location.href='https://www.douyin.com/user/self?tab=like'", completionHandler: nil)
-                    }
+                    Button("精选流（免登录墙）") { feed.goJingxuan() }
+                    Button("个性化推荐流") { feed.goRecommend() }
+                    Button("我的喜欢页") { feed.goLikes() }
                     Button("刷新天线") { feed.web.reload() }
                 } label: { Image(systemName: "ellipsis.circle") }
             }
