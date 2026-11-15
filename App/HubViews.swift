@@ -95,6 +95,21 @@ struct BoxView: View {
         NavigationStack {
             List {
                 Section {
+                    NavigationLink {
+                        BoxBrowserView()
+                    } label: {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("内置浏览器")
+                                Text("书签速达 · 长按存图 · 记住登录")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "globe").foregroundStyle(.blue)
+                        }
+                    }
+                }
+                Section {
                     Label {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("匣子已开箱，好东西陆续上架")
