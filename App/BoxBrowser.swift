@@ -172,7 +172,10 @@ final class BrowserModel: NSObject, ObservableObject,
         if let s = raw as? String, let d = s.data(using: .utf8),
            let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
            let arr = j["u"] as? [String], !arr.isEmpty {
-            tuolei = TuoleiHit(title: (j["t"] as? String) ?? "", urls: arr, page: (j["page"] as? String) ?? "")
+            tuolei = TuoleiHit(title: (j["t"] as? String) ?? "", urls: arr,
+                               ws: (j["w"] as? [Int]) ?? Array(repeating: 0, count: arr.count),
+                               hs: (j["h"] as? [Int]) ?? Array(repeating: 0, count: arr.count),
+                               page: (j["page"] as? String) ?? "")
         } else {
             tuoleiMsg = "这页没聚到图（换列表页或大图页再试）"
         }

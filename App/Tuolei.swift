@@ -7,12 +7,13 @@ struct TuoleiHit: Identifiable {
     let id = UUID()
     let title: String
     let urls: [String]
+    let ws: [Int]
+    let hs: [Int]
     let page: String
 }
 
 enum TuoleiJS {
-    // async IIFE：先分段滚到底喂懒加载，再收 <img> + 直链 <a>，去重保序，剔小图
-    // 结果走 messageHandlers 桥（WK 的 evaluateJavaScript 不等 Promise，必须 postMessage）
+    // v3：原图溯源（data 属性 → srcset 最大档 → 包裹链接 href）+ 广告容器识别 + 尺寸上报
     static let collect = """
     (() => {
       (async () => {
@@ -23,24 +24,54 @@ enum TuoleiJS {
         }
         window.scrollTo(0, 0);
         await new Promise(r => setTimeout(r, 250));
-        const seen = new Set(); const urls = [];
+        const pick = im => {
+          const d = im.dataset || {};
+          for (const k of ['src','original','lazySrc','lazy-src','actualsrc','actual-src','origin','big','full','zoom','imgurl','img']) {
+            const v = d[k];
+            if (v && /^https?:\\/\\//.test(v)) return v;
+          }
+          const ss = im.getAttribute('srcset');
+          let best = 0, cand = null;
+          if (ss) for (const p of ss.split(',')) {
+            const t = p.trim().split(/\\s+/);
+            const n = parseInt(t[1]) || 0;
+            if (n > best) { best = n; cand = t[0]; }
+          }
+          if (cand && /^https?:|^\\//.test(cand)) return cand;
+          const a = im.closest && im.closest('a[href]');
+          if (a && /\\.(jpe?g|png|webp)([?#]|$)/i.test(a.getAttribute('href') || '')) return a.href;
+          return im.currentSrc || im.src || '';
+        };
+        const adish = im => {
+          let e = im, up = 0;
+          while (e && up < 4) {
+            const c = ((e.className || '') + ' ' + (e.id || '')).trim();
+            if (/(^|[\\s_.-])(ad|ads|advert|sponsor|banner|pop)([\\s_.-]|$)/i.test(c)) return true;
+            e = e.parentElement; up++;
+          }
+          return false;
+        };
+        const seen = new Set(); const urls = [], ws = [], hs = [];
+        const push = (s, w, h) => {
+          try { s = new URL(s, location.href).href.split('#')[0]; } catch (e) { return; }
+          if (!/^https?:/i.test(s) || s.startsWith('data:') || seen.has(s)) return;
+          seen.add(s); urls.push(s); ws.push(w | 0); hs.push(h | 0);
+        };
         for (const im of document.images) {
-          let s = im.currentSrc || im.src || '';
-          if (!s || s.startsWith('data:')) continue;
-          try { s = new URL(s, location.href).href.split('#')[0]; } catch (e) { continue; }
-          if (!/^https?:/i.test(s)) continue;
-          const w = im.naturalWidth || im.width || 0, h = im.naturalHeight || im.height || 0;
-          if (w && w < 120 && h < 120) continue;
-          if (seen.has(s)) continue;
-          seen.add(s); urls.push(s);
+          if (adish(im)) continue;
+          const s = pick(im);
+          if (!s || String(s).startsWith('data:')) continue;
+          push(s, im.naturalWidth || im.width || 0, im.naturalHeight || im.height || 0);
         }
         for (const a of document.links) {
           const h0 = (a.href || '').split('#')[0];
-          if (/\\.(jpe?g|png|webp|gif)(\\?[^#]*)?$/i.test(h0) && !seen.has(h0)) { seen.add(h0); urls.push(h0); }
+          if (/\\.(jpe?g|png|webp|gif)(\\?|$)/i.test(h0)) push(h0, 0, 0);
         }
         const og = document.querySelector('meta[property="og:image"], meta[name="og:image"]');
-        if (og && og.content) { try { const s0 = new URL(og.content, location.href).href; if (!seen.has(s0)) { seen.add(s0); urls.unshift(s0); } } catch (e) {} }
-        window.webkit.messageHandlers.boxtuolei.postMessage(JSON.stringify({ t: (document.title || location.hostname).trim(), u: urls, page: location.href }));
+        if (og && og.content) push(og.content, 0, 0);
+        window.webkit.messageHandlers.boxtuolei.postMessage(JSON.stringify({
+          t: (document.title || location.hostname).trim(), u: urls, w: ws, h: hs, page: location.href
+        }));
       })();
       return 'go';
     })()
@@ -56,9 +87,16 @@ struct TuoleiSheet: View {
     @State private var name: String
     @State private var sel: Set<Int>
     @State private var dest = 0            // 0=画廊 1=系统相册
+    @State private var minSide = 300      // 尺寸筛选（长边像素下限，未知尺寸放行）
     @State private var running = false
     @State private var done = 0
     @State private var failed = 0
+
+    private var rows: [Int] {
+        hit.urls.indices.filter { i in
+            minSide == 0 || hit.ws[i] == 0 || max(hit.ws[i], hit.hs[i]) >= minSide
+        }
+    }
 
     private let cols = Array(repeating: GridItem(.flexible(), spacing: 6), count: 4)
 
@@ -74,20 +112,30 @@ struct TuoleiSheet: View {
                 HStack {
                     TextField("图集名称", text: $name)
                         .textFieldStyle(.roundedBorder)
-                    Text("\(sel.count)/\(hit.urls.count)")
+                    Text("\(sel.count)/\(rows.count)")
                         .font(.subheadline).monospacedDigit().foregroundStyle(.secondary)
                 }.padding([.horizontal, .top], 14)
 
-                Picker("", selection: $dest) {
-                    Text("存画廊").tag(0)
-                    Text("存系统相册").tag(1)
+                HStack(spacing: 10) {
+                    Picker("", selection: $dest) {
+                        Text("存画廊").tag(0)
+                        Text("存系统相册").tag(1)
+                    }
+                    .pickerStyle(.segmented).labelsHidden()
+                    Picker("", selection: $minSide) {
+                        Text("不限").tag(0)
+                        Text("≥300").tag(300)
+                        Text("≥600").tag(600)
+                        Text("≥900").tag(900)
+                    }
+                    .pickerStyle(.segmented).labelsHidden()
+                    .frame(maxWidth: 190)
                 }
-                .pickerStyle(.segmented).labelsHidden()
-                .padding(14)
+                .padding(.horizontal, 14).padding(.top, 12)
 
                 ScrollView {
                     LazyVGrid(columns: cols, spacing: 6) {
-                        ForEach(0..<hit.urls.count, id: \.self) { i in
+                        ForEach(rows, id: \.self) { i in
                             ZStack(alignment: .topTrailing) {
                                 AsyncImage(url: URL(string: hit.urls[i])) { ph in
                                     switch ph {
@@ -111,11 +159,11 @@ struct TuoleiSheet: View {
                 }
 
                 HStack(spacing: 14) {
-                    Button("全选") { sel = Set(0..<hit.urls.count) }
+                    Button("全选") { sel = Set(rows) }
                     Button("全不选") { sel = [] }
                     Button("反选") {
                         var s = Set<Int>()
-                        for i in 0..<hit.urls.count where !sel.contains(i) { s.insert(i) }
+                        for i in rows where !sel.contains(i) { s.insert(i) }
                         sel = s
                     }
                     Spacer()
@@ -138,8 +186,10 @@ struct TuoleiSheet: View {
                 .buttonStyle(.borderless).font(.callout)
                 .padding(16)
             }
-            .navigationTitle("图叻 · 聚到 \(hit.urls.count) 张")
+            .navigationTitle("图叻 · 聚到 \(rows.count) 张")
             .navigationBarTitleDisplayMode(.inline)
+            .onAppear { sel = Set(rows) }
+            .onChange(of: minSide) { _, _ in sel = Set(rows) }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("取消") { if !running { dismiss() } }
