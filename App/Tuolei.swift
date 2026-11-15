@@ -94,7 +94,7 @@ struct TuoleiSheet: View {
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
                                 Image(systemName: sel.contains(i)
                                       ? "largecircle.fill.circle" : "circle")
-                                    .foregroundStyle(sel.contains(i) ? .tint : .secondary)
+                                    .foregroundStyle(sel.contains(i) ? Color.accentColor : Color.secondary)
                                     .padding(5)
                             }
                             .onTapGesture {
