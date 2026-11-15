@@ -531,6 +531,7 @@ struct GalleryPagerView: View {
         }
         .navigationTitle(name)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .tabBar)     // 大图/幻灯片真全屏：tab 栏让位
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
