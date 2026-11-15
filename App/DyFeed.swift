@@ -10,21 +10,39 @@ enum DySkinJS {
     // playsinline 根治：已有视频秒补 + 新建视频秒盯 + 弹全屏秒摁回
     static let inlinePatch = """
     (() => {
+      if (window.__boxInline) return;
+      window.__boxInline = true;
+      // 1) 出生证拦截：所有新建 video 自带 playsinline（抢在开播前）
+      const orig = document.createElement.bind(document);
+      document.createElement = function (tag, opts) {
+        const el = orig(tag, opts);
+        if (String(tag).toLowerCase() === 'video') {
+          el.setAttribute('playsinline', '');
+          el.setAttribute('webkit-playsinline', '');
+        }
+        return el;
+      };
+      // 2) 废掉全屏入口：进全屏一律摁回 inline
+      const p = HTMLVideoElement.prototype;
+      try {
+        p.webkitEnterFullscreen = function () {
+          try { this.webkitSetPresentationMode('inline'); } catch (e) {}
+        };
+        p.webkitEnterFullScreen = p.webkitEnterFullscreen;
+        const rq = p.requestFullscreen;
+        p.requestFullscreen = function () { try { this.webkitSetPresentationMode('inline'); } catch (e) {} return Promise.resolve(); };
+        p.webkitRequestFullscreen = function () {};
+        void rq;
+      } catch (e) {}
+      // 3) 存量视频补刀 + 变异监视 + 轮询兜底
       const fixOne = (v) => {
         v.setAttribute('playsinline', '');
         v.setAttribute('webkit-playsinline', '');
-        v.setAttribute('x5-video-player-type', 'page');
-        try {
-          if (v.webkitSetPresentationMode && v.webkitPresentationMode !== 'inline') {
-            v.webkitSetPresentationMode('inline');
-          }
-        } catch (e) {}
+        try { if (v.webkitSetPresentationMode && v.webkitPresentationMode !== 'inline') v.webkitSetPresentationMode('inline'); } catch (e) {}
         if (!v.__boxhook) {
           v.__boxhook = 1;
           v.addEventListener('webkitpresentationmodechanged', () => {
-            try {
-              if (v.webkitPresentationMode !== 'inline') v.webkitSetPresentationMode('inline');
-            } catch (e) {}
+            try { if (v.webkitPresentationMode !== 'inline') v.webkitSetPresentationMode('inline'); } catch (e) {}
           }, true);
         }
       };
@@ -32,7 +50,7 @@ enum DySkinJS {
       fix();
       new MutationObserver(fix).observe(document.documentElement, { childList: true, subtree: true });
       setInterval(fix, 2000);
-      // 皮肤 CSS：保守版——只裁顶部导航，绝不动内容容器（防一锅端黑屏）
+      // 皮肤 CSS：保守版
       if (!document.getElementById('box-skin')) {
         const s = document.createElement('style'); s.id = 'box-skin';
         s.textContent = `
@@ -79,6 +97,9 @@ final class DySkinModel: NSObject, ObservableObject {
         cfg.allowsInlineMediaPlayback = true
         cfg.mediaTypesRequiringUserActionForPlayback = []
         cfg.defaultWebpagePreferences.allowsContentJavaScript = true
+        cfg.userContentController.addUserScript(WKUserScript(script: DySkinJS.inlinePatch,
+                                                             injectionTime: .atDocumentStart,
+                                                             forMainFrameOnly: true))
         web = WKWebView(frame: CGRect(x: 0, y: 0, width: UIScreen.main.bounds.width, height: UIScreen.main.bounds.height), configuration: cfg)
         super.init()
         web.navigationDelegate = self
