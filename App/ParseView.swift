@@ -144,7 +144,7 @@ struct ParseView: View {
         guard let url = clipURL() else { return }
         if url == lastAutoClip { return }   // 这条已经自动解析过，不再浪费配额
         lastAutoClip = url
-        if app.selection != .parse { app.selection = .parse }   // 在别的页切回也直接跳到解析开干
+        if app.selection != .pick { app.selection = .pick }   // 在别的页切回也直接跳到解析开干
         autoPickAfterParse = true           // 一键流：解析完自动下最高画质，随后自动回抖音
         input = url
         status = "已自动填入，正在解析（完成后自动下载）…"

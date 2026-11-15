@@ -17,7 +17,7 @@ struct DramaView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        Group {
             Group {
                 if app.dramaSeries.isEmpty {
                     ContentUnavailableView("短剧为空",

@@ -104,7 +104,7 @@ struct LibraryView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        Group {
             VStack(spacing: 0) {
                 Picker("视图", selection: $seg) {
                     Text("视频 (\(vidCount))").tag(0)

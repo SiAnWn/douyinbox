@@ -17,7 +17,7 @@ struct PrivateView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        Group {
             Group {
                 if !app.privateUnlocked {
                     lockView

@@ -26,7 +26,7 @@ enum Orient {
     }
 }
 
-enum Tab: Hashable { case parse, play, drama, privacy, library }
+enum Tab: Hashable { case pick, play, stash, box, seal }
 
 @MainActor
 final class AppState: ObservableObject {
@@ -41,7 +41,7 @@ final class AppState: ObservableObject {
     @Published var aspectFill = true
     @Published var order: [String] = []
     @Published var idx = -1
-    @Published var selection: Tab = .parse
+    @Published var selection: Tab = .pick
     @Published var coverVideo: VideoItem?
     @Published var revealUI = false
     @Published var autoAdvance = true
@@ -71,7 +71,7 @@ final class AppState: ObservableObject {
     // 灵动岛“开始下载”按钮 → 回 App 自动解析+下最优档
     func islandDownload(_ link: String) {
         guard !link.isEmpty else { return }
-        selection = .parse
+        selection = .pick
         BoxIsland.update { $0.note = "已回App，即将自动下载" }
         islandPending = link
     }
@@ -270,16 +270,16 @@ struct RootView: View {
     var body: some View {
         TabView(selection: $app.selection) {
             ParseView()
-                .tabItem { Label("解析", systemImage: "arrow.down.circle") }.tag(Tab.parse)
+                .tabItem { Label("拾", systemImage: "tray.and.arrow.down") }.tag(Tab.pick)
             PlayerView()
-                .tabItem { Label("播放", systemImage: "play.circle") }.tag(Tab.play)
-            LibraryView()
-                .tabItem { Label("库", systemImage: "square.grid.3x3.fill") }.tag(Tab.library)
-            DramaView()
-                .tabItem { Label("短剧", systemImage: "film") }.tag(Tab.drama)
+                .tabItem { Label("映", systemImage: "play.rectangle") }.tag(Tab.play)
+            StashHubView()
+                .tabItem { Label("藏", systemImage: "books.vertical") }.tag(Tab.stash)
                 .badge(app.subsBadge)
-            PrivateView()
-                .tabItem { Label("私密", systemImage: "lock.fill") }.tag(Tab.privacy)
+            BoxView()
+                .tabItem { Label("匣", systemImage: "suitcase") }.tag(Tab.box)
+            SettingsView()
+                .tabItem { Label("印", systemImage: "seal") }.tag(Tab.seal)
         }
         .onChange(of: app.selection) { sel in
             if sel != .play { Orient.forcePortrait() }
@@ -297,7 +297,7 @@ struct RootView: View {
             }
         }
         .onChange(of: app.selection) { sel in
-            if sel != .privacy { app.privateUnlocked = false }
+            if sel != .stash { app.privateUnlocked = false }
         }
         .onChange(of: scenePhase) { p in
             if p == .active { BoxIsland.checkStale() }        // 前台补刀：卡"下载中"立刷终态
