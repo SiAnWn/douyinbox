@@ -15,6 +15,17 @@ final class PlayerController: ObservableObject {
     @Published var currentTime: Double = 0
     @Published var duration: Double = 0
     @Published var rate: Float = 1
+    @Published var playing = true
+
+    func togglePlay() {
+        if player.timeControlStatus == .paused {
+            player.playImmediately(atRate: max(rate, 0.5))
+            playing = true
+        } else {
+            player.pause()
+            playing = false
+        }
+    }
 
     private var endObs: NSObjectProtocol?
     private var timeObs: Any?
@@ -38,6 +49,7 @@ final class PlayerController: ObservableObject {
             }
         }
         player.playImmediately(atRate: rate)
+        playing = true
         timeObs = player.addPeriodicTimeObserver(
             forInterval: CMTime(seconds: 0.5, preferredTimescale: 600), queue: .main) { [weak self] _ in
             guard let self = self, let it = self.player.currentItem else { return }
@@ -77,7 +89,7 @@ final class PlayerController: ObservableObject {
         statusObs?.invalidate(); statusObs = nil
     }
 
-    func pause() { saveProgress(); player.pause() }
+    func pause() { saveProgress(); player.pause(); playing = false }
     func stop() { saveProgress(); player.pause(); player.replaceCurrentItem(with: nil); removeTime() }
     func removeObs() { removeEnd(); removeTime() }
 }
@@ -173,6 +185,21 @@ struct PlayerScrubber: View {
     }
 }
 
+// 中央播放/暂停大按钮（全播放器通用，手势调出 UI 时可见）
+struct CenterPlayPause: View {
+    @ObservedObject var pc: PlayerController
+    var body: some View {
+        Button { pc.togglePlay() } label: {
+            Image(systemName: pc.playing ? "pause.circle.fill" : "play.circle.fill")
+                .font(.system(size: 60))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(.white.opacity(0.9))
+                .shadow(radius: 6)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 // MARK: - 播放标签页
 
 struct PlayerView: View {
@@ -197,6 +224,7 @@ struct PlayerView: View {
                         bottomBar(cur)
                     }
                     .transition(.opacity)
+                    CenterPlayPause(pc: pc)
                 }
             } else {
                 empty
@@ -317,6 +345,7 @@ struct InlinePlayer: View {
                 .gesture(DragGesture().onEnded { g in
                     if g.translation.height > 80 { dismiss() }
                 })
+                .onTapGesture { pc.togglePlay() }
 
             VStack {
                 HStack {
@@ -350,6 +379,10 @@ struct InlinePlayer: View {
                     Color.clear.frame(width: 60, height: 1)
                 }
                 .padding(.horizontal)
+            }
+
+            if !pc.playing {
+                CenterPlayPause(pc: pc)
             }
         }
         .statusBarHidden()
@@ -397,6 +430,7 @@ struct CleanPlayer: View {
                         .multilineTextAlignment(.center).padding(.horizontal)
                 }
                 .transition(.opacity)
+                CenterPlayPause(pc: pc)
             }
         }
         .statusBarHidden(!showUI)
@@ -462,6 +496,7 @@ struct EpisodePlayer: View {
                             .multilineTextAlignment(.center).padding(.horizontal)
                     }
                     .transition(.opacity)
+                    CenterPlayPause(pc: pc)
                 }
             }
         }

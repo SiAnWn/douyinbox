@@ -147,12 +147,17 @@ struct TuoleiSheet: View {
                             .frame(height: 108)
                             .clipped()
                             .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .overlay(sel.contains(i) ? Color.accentColor.opacity(0.20) : Color.clear)
                             .overlay(alignment: .topTrailing) {
-                                Image(systemName: sel.contains(i)
-                                      ? "largecircle.fill.circle" : "circle")
-                                    .foregroundStyle(sel.contains(i) ? Color.accentColor : Color.secondary)
-                                    .padding(5)
+                                Image(systemName: sel.contains(i) ? "checkmark.circle.fill" : "circle")
+                                    .font(.title3)
+                                    .foregroundStyle(sel.contains(i) ? Color.white : Color.white.opacity(0.9))
+                                    .background(Circle().fill(sel.contains(i) ? Color.accentColor : Color.black.opacity(0.4)))
+                                    .padding(6)
                             }
+                            .overlay(RoundedRectangle(cornerRadius: 8)
+                                .strokeBorder(sel.contains(i) ? Color.accentColor : Color.black.opacity(0.22),
+                                              lineWidth: sel.contains(i) ? 3 : 1))
                             .contentShape(RoundedRectangle(cornerRadius: 8))
                             .onTapGesture {
                                 if sel.contains(i) { sel.remove(i) } else { sel.insert(i) }
@@ -195,7 +200,7 @@ struct TuoleiSheet: View {
             .onChange(of: minSide) { _, _ in sel = Set(rows) }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("取消") { if !running { dismiss() } }
+                    Button(running ? "后台下载" : "取消") { dismiss() }
                 }
             }
         }
@@ -203,7 +208,9 @@ struct TuoleiSheet: View {
 
     private func run() {
         running = true
+        app.keepAlive.start()      // 退出选图页/切后台也不掐下载
         Task { @MainActor in
+            defer { app.keepAlive.stop() }
             var savedFiles: [(Data, String)] = []
             let ext = { (u: String) -> String in
                 let p = u.split(separator: "?")[0]
@@ -280,7 +287,7 @@ struct GalleryHomeView: View {
                               alignment: .leading, spacing: 12) {
                         ForEach(albums) { a in
                             NavigationLink {
-                                GalleryPagerView(name: a.name, files: a.files)
+                                GalleryAlbumView(name: a.name, files: a.files)
                             } label: {
                                 VStack(alignment: .leading, spacing: 5) {
                                     AsyncImage(url: a.cover) { ph in
@@ -334,10 +341,73 @@ struct GalleryHomeView: View {
     }
 }
 
+// 图集内所有图的网格（点某张 → 大图；右上▶ 全图集幻灯片）
+struct GalleryAlbumView: View {
+    let name: String
+    let files: [URL]
+    @AppStorage("slideshowInterval") private var slideSec = 3
+    @State private var playStart: Int?
+
+    private let cols = Array(repeating: GridItem(.flexible(), spacing: 6), count: 3)
+
+    var body: some View {
+        ScrollView {
+            LazyVGrid(columns: cols, spacing: 6) {
+                ForEach(0..<files.count, id: \.self) { i in
+                    NavigationLink {
+                        GalleryPagerView(name: name, files: files, start: i)
+                    } label: {
+                        AsyncImage(url: files[i]) { ph in
+                            switch ph {
+                            case .success(let img): img.resizable().scaledToFill()
+                            case .failure: Color.gray.opacity(0.15)
+                            default: Color.gray.opacity(0.08)
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 130)
+                        .clipped()
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .overlay(alignment: .bottomTrailing) {
+                            Text("\(i + 1)")
+                                .font(.caption2.monospacedDigit()).foregroundStyle(.white)
+                                .padding(4)
+                                .background(Capsule().fill(.black.opacity(0.45)))
+                                .padding(5)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }.padding(10)
+        }
+        .navigationTitle(name)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    if slideSec == 0 { slideSec = 3 }
+                    playStart = 0
+                } label: { Image(systemName: "play.rectangle") }
+            }
+        }
+        .navigationDestination(item: $playStart) { s in
+            GalleryPagerView(name: name, files: files, start: s)
+        }
+    }
+}
+
+// 大图 + 幻灯片（速度菜单：手动/1/2/3/4 秒，选择记忆）
 struct GalleryPagerView: View {
     let name: String
     let files: [URL]
-    @State private var idx = 0
+    @AppStorage("slideshowInterval") private var slideSec = 3
+    @State private var idx: Int
+
+    init(name: String, files: [URL], start: Int = 0) {
+        self.name = name
+        self.files = files
+        _idx = State(initialValue: max(0, min(start, max(0, files.count - 1))))
+    }
 
     var body: some View {
         ZStack {
@@ -357,15 +427,44 @@ struct GalleryPagerView: View {
             .tabViewStyle(.page(indexDisplayMode: .never))
             VStack {
                 Spacer()
-                Text("\(idx + 1) / \(files.count)")
-                    .font(.caption.monospacedDigit())
-                    .padding(.horizontal, 10).padding(.vertical, 4)
-                    .background(Capsule().fill(.black.opacity(0.55)))
-                    .foregroundStyle(.white)
-                    .padding(.bottom, 12)
+                HStack(spacing: 10) {
+                    Text("\(idx + 1) / \(files.count)")
+                        .font(.caption.monospacedDigit())
+                    if slideSec > 0 {
+                        Label("\(slideSec)s", systemImage: "play.circle")
+                            .font(.caption2)
+                    }
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 12).padding(.vertical, 5)
+                .background(Capsule().fill(.black.opacity(0.55)))
+                .padding(.bottom, 12)
             }
         }
         .navigationTitle(name)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button("手动翻页") { slideSec = 0 }
+                    Divider()
+                    ForEach([1, 2, 3, 4], id: \.self) { s in
+                        Button {
+                            slideSec = s
+                        } label: {
+                            HStack { Text("\(s) 秒/张"); if slideSec == s { Image(systemName: "checkmark") } }
+                        }
+                    }
+                } label: { Image(systemName: "slider.horizontal.below.rectangle") }
+            }
+        }
+        .task(id: slideSec) {
+            guard slideSec > 0, files.count > 1 else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: UInt64(slideSec) * 1_000_000_000)
+                if Task.isCancelled { break }
+                withAnimation { idx = (idx + 1) % files.count }
+            }
+        }
     }
 }
