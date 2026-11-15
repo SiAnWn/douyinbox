@@ -98,6 +98,7 @@ final class DyFeedModel: NSObject, ObservableObject {
     }()
     private var started = false
     private var appRef: AppState?
+    @Published var loggedIn = false
 
     func retryIfEmpty() {
         if started, items.isEmpty { web.reload() }
@@ -174,6 +175,15 @@ extension DyFeedModel: WKNavigationDelegate, WKScriptMessageHandler {
     @objc(webView:didFinishNavigation:)
     func webView(_ sv: WKWebView, didFinish nav: WKNavigation!) {
         sv.evaluateJavaScript(DyAntennaJS.reporter, completionHandler: nil)
+        sv.evaluateJavaScript("document.cookie.indexOf('sessionid')>=0") { r, _ in
+            let ok = (r as? Bool) ?? false
+            DispatchQueue.main.async {
+                self.loggedIn = ok
+                if self.items.isEmpty {
+                    self.status = ok ? "已登录 ✓ 抄写员工作中…" : "未检测到登录态（请展开天线登录）"
+                }
+            }
+        }
     }
     nonisolated func userContentController(_ uc: WKUserContentController, didReceive msg: WKScriptMessage) {
         guard msg.name == "boxdy", let s = msg.body as? String,
@@ -194,6 +204,24 @@ extension DyFeedModel: WKNavigationDelegate, WKScriptMessageHandler {
     }
 }
 
+// 天线页面宿主：同一个 WKWebView 挪进界面（高度可调），进了 window 懒加载才会醒
+struct AntennaHost: UIViewRepresentable {
+    let web: WKWebView
+    func makeUIView(context: Context) -> UIView { UIView() }
+    func updateUIView(_ v: UIView, context: Context) {
+        guard web.superview !== v else { return }
+        web.removeFromSuperview()
+        web.translatesAutoresizingMaskIntoConstraints = false
+        v.addSubview(web)
+        NSLayoutConstraint.activate([
+            web.leadingAnchor.constraint(equalTo: v.leadingAnchor),
+            web.trailingAnchor.constraint(equalTo: v.trailingAnchor),
+            web.topAnchor.constraint(equalTo: v.topAnchor),
+            web.bottomAnchor.constraint(equalTo: v.bottomAnchor),
+        ])
+    }
+}
+
 // MARK: - 原生竖滑流界面（播放器单例挂底层，格子只画封面）
 
 struct DyFeedView: View {
@@ -202,18 +230,34 @@ struct DyFeedView: View {
     @StateObject private var pc = PlayerController()
     @State private var busySave = false
     @State private var toast = ""
+    @State private var showAntenna = false
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: .top) {
             Color.black.ignoresSafeArea()
             PlayerSurface(player: pc.player, fill: true)
                 .ignoresSafeArea()
+
+            // 天线实况窗：展开可登录/过验证码/看页面真身，收起只剩 2pt
+            AntennaHost(web: feed.web)
+                .frame(maxWidth: .infinity)
+                .frame(height: showAntenna ? 400 : 2)
+                .clipped()
+                .overlay(alignment: .bottom) {
+                    if showAntenna {
+                        Text("登录/验证码在这块里直接操作，搞定后点左上收起").font(.caption2)
+                            .foregroundStyle(.white).padding(6)
+                            .background(Color.black.opacity(0.55))
+                    }
+                }
+                .animation(.spring(duration: 0.3), value: showAntenna)
+                .zIndex(10)
 
             if feed.items.isEmpty {
                 VStack(spacing: 14) {
                     ProgressView()
                     Text(feed.status).font(.subheadline).foregroundStyle(.secondary)
-                    Text("首次使用需在网页里扫码登录抖音，登录后返回本页会自动继续")
+                    Text("点左上『天线』展开网页：在里面扫码登录或点验证码，搞定后收起即可")
                         .font(.caption).foregroundStyle(.tertiary)
                         .multilineTextAlignment(.center)
                     HStack(spacing: 14) {
@@ -255,6 +299,13 @@ struct DyFeedView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button { showAntenna.toggle() } label: {
+                    Image(systemName: feed.loggedIn ? "antenna.radiowaves.left.and.right" : "exclamationmark.antenna.radiowaves.left.and.right")
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(feed.loggedIn ? .green : .orange)
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button("刷新推荐") {
