@@ -34,6 +34,19 @@ struct SettingsView: View {
                             .textSelection(.enabled)
                     }
                 }
+                Section("实验实验室") {
+                    NavigationLink {
+                        WQProbeView()
+                    } label: {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("上帝视野探针（worse_query）")
+                                Text("试探 iOS 沙盒逃逸在你机器上是否可用 · 只读探测")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                        } icon: { Image(systemName: "binoculars").foregroundStyle(.teal) }
+                    }
+                }
                 Section("红果短剧") {
                     Button("重置红果匿名设备（被风控时空结果再用）") {
                         hgBusy = true
