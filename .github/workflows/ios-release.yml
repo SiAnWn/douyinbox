@@ -32,6 +32,12 @@ jobs:
           # (section form is what re-signers like LCSign read; codesign blob form is not)
           brew install ldid
           ldid -SApp/DouyinBox.entitlements build/pkg/Payload/DouyinBox.app/DouyinBox
+          echo "=== ldid dump ==="
+          ldid -l build/pkg/Payload/DouyinBox.app/DouyinBox || true
+          echo "=== codesign dump ==="
+          codesign -d --entitlements :- build/pkg/Payload/DouyinBox.app/DouyinBox 2>&1 || true
+          echo "=== grep in binary ==="
+          strings build/pkg/Payload/DouyinBox.app/DouyinBox | grep -c application-groups || echo "NOT-EMBEDDED"
           ( cd build/pkg && zip -qr ../DouyinBox-unsigned.ipa Payload )
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
