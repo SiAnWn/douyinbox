@@ -30,13 +30,12 @@ jobs:
           cp -R "$APP" build/pkg/Payload/
           # embed App Group entitlements as __entitlements SECTION via ldid
           # (section form is what re-signers like LCSign read; codesign blob form is not)
-          brew install ldid
-          ldid -SApp/DouyinBox.entitlements build/pkg/Payload/DouyinBox.app/DouyinBox
-          echo "=== ldid dump ==="
-          ldid -l build/pkg/Payload/DouyinBox.app/DouyinBox || true
-          echo "=== codesign dump ==="
-          codesign -d --entitlements :- build/pkg/Payload/DouyinBox.app/DouyinBox 2>&1 || true
-          echo "=== grep in binary ==="
+          # embed App Group entitlements into main binary; codesign DER form (proven valid)
+          codesign --force --sign - --generate-entitlement-der \
+            --entitlements App/DouyinBox.entitlements \
+            build/pkg/Payload/DouyinBox.app/DouyinBox
+          echo "=== verify ==="
+          codesign -d --entitlements - build/pkg/Payload/DouyinBox.app/DouyinBox 2>&1 | head -30 || true
           strings build/pkg/Payload/DouyinBox.app/DouyinBox | grep -c application-groups || echo "NOT-EMBEDDED"
           ( cd build/pkg && zip -qr ../DouyinBox-unsigned.ipa Payload )
       - name: Upload unsigned IPA
