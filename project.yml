@@ -81,9 +81,7 @@ targets:
       - package: openhongguo
         product: Openhongguo
     entitlements:
-      properties:
-        com.apple.security.application-groups:
-          - group.com.sian.DouyinBox
+      path: App/DouyinBox.entitlements
     info:
       path: Generated/Info.plist
       properties:
