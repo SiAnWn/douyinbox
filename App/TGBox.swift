@@ -16,13 +16,13 @@ struct TGItem: Identifiable, Hashable {
 enum TGParse {
     static let cdn = #"https://cdn\d+\.telesco\.pe/file/[^"&<\s)]+"#
 
-    static func html(_ raw: String, channel: String, before: Int?) throws -> [TGItem] {
+    static func scan(_ raw: String, channel: String, before: Int?) throws -> [TGItem] {
         // 按消息块切分
         let open = "js-widget_message_wrap"
         var items: [TGItem] = []
         var cuts: [String.Index] = []
         var search = raw.startIndex
-        while let r = raw.range(of: open, range: search...) {
+        while let r = raw.range(of: open, range: search..<raw.endIndex) {
             cuts.append(r.lowerBound)
             search = r.upperBound
         }
@@ -86,7 +86,7 @@ enum TGParse {
             throw TGError("频道不存在或无公开预览")
         }
         guard let html = String(data: data, encoding: .utf8) else { throw TGError("页面编码异常") }
-        let items = try html(html, channel: channel, before: before)
+        let items = try scan(html, channel: channel, before: before)
         if items.isEmpty, html.contains("If you have an account") {
             throw TGError("这个频道没有公开预览页")
         }
