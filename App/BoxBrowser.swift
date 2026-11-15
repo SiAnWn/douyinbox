@@ -51,6 +51,29 @@ final class BrowserModel: NSObject, ObservableObject,
         }
     }
 
+    // MARK: 拆环（重要：controller 对 handler 是强引用，不摘=整个模型泄漏）
+    private var kvoOn = true
+
+    func detach() {
+        web.configuration.userContentController.removeScriptMessageHandler(forName: "boxlong")
+        web.configuration.userContentController.removeScriptMessageHandler(forName: "boxtuolei")
+        web.navigationDelegate = nil
+        web.uiDelegate = nil
+        if kvoOn {
+            kvoOn = false
+            web.removeObserver(self, forKeyPath: "estimatedProgress")
+            web.scrollView.removeObserver(self, forKeyPath: "contentOffset")
+        }
+    }
+
+    deinit {
+        // 兜底：万一 detach 没被调过，这里至少把 KVO 摘干净（handler 环已在 detach 断）
+        if kvoOn {
+            web.removeObserver(self, forKeyPath: "estimatedProgress")
+            web.scrollView.removeObserver(self, forKeyPath: "contentOffset")
+        }
+    }
+
     func go(_ raw: String) {
         var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !s.isEmpty else { return }
@@ -352,6 +375,7 @@ struct BoxBrowserView: View {
         .onAppear {
             if m.web.url == nil && !m.seedURL.isEmpty { m.go(m.seedURL) }
         }
+        .onDisappear { m.detach() }
         .navigationTitle("浏览器")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)     // 把底部 tab 也让给网页

@@ -96,19 +96,6 @@ struct BoxView: View {
             List {
                 Section {
                     NavigationLink {
-                        TGHarvestView()
-                    } label: {
-                        Label {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Telegram 收割机")
-                                Text("公开频道直出 mp4 · 原文件无水印 · 批量入库")
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
-                        } icon: {
-                            Image(systemName: "paperplane").foregroundStyle(.blue)
-                        }
-                    }
-                    NavigationLink {
                         BoxBrowserView()
                     } label: {
                         Label {
