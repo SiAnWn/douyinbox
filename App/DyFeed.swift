@@ -72,6 +72,7 @@ final class DySkinModel: NSObject, ObservableObject {
 
     private var appRef: AppState?
     private var progObs: NSKeyValueObservation?
+    private var reloadTries = 0
 
     override init() {
         let cfg = WKWebViewConfiguration()
@@ -169,7 +170,6 @@ extension DySkinModel: WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandle
             }
         }
     }
-    private var reloadTries = 0
     @objc func webView(_ sv: WKWebView, decidePolicyFor su: WKNavigationAction,
                        decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         if let u = su.request.url, let s = u.scheme?.lowercased(), s.hasPrefix("http") {
