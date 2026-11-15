@@ -289,8 +289,12 @@ enum BoxBookmarkStore {
 // MARK: - 主界面
 struct BoxBrowserView: View {
     @StateObject private var m = BrowserModel()
+    @ObservedObject private var jobs = TuoleiJobs.shared
     @State private var input = ""
     @State private var showBookmarks = false
+    @State private var showJobs = false
+    @State private var showMark = false
+    @State private var markName = ""
     @State private var bookName = ""
     @FocusState private var urlFocused: Bool
 
@@ -357,10 +361,35 @@ struct BoxBrowserView: View {
             Button("取消", role: .cancel) {}
         }
         .sheet(isPresented: $showBookmarks) { bookmarksSheet }
+        .sheet(isPresented: $showJobs) { TuoleiJobsPanel() }
+        .sheet(isPresented: $showMark) { markSheet }
+    }
+
+    private var markSheet: some View {
+        NavigationStack {
+            Form {
+                TextField("书签名", text: $markName)
+                Text(m.currentURL)
+                    .font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+            }
+            .navigationTitle("收藏此页")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("取消") { showMark = false } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("保存") {
+                        BoxBookmarkStore.addCurrent(name: markName.isEmpty ? m.currentURL : markName,
+                                                    url: m.currentURL)
+                        showMark = false
+                    }
+                }
+            }
+        }
+        .presentationDetents([.height(260)])
     }
 
     private var bottomBar: some View {
-        HStack(spacing: 34) {
+        HStack(spacing: 24) {
             Button { m.web.goBack() } label: { Image(systemName: "chevron.backward") }.disabled(!m.canBack)
             Button { m.web.goForward() } label: { Image(systemName: "chevron.forward") }.disabled(!m.canFwd)
             Button { m.web.reload() } label: { Image(systemName: "arrow.clockwise") }
@@ -369,8 +398,24 @@ struct BoxBrowserView: View {
                 else { Image(systemName: "wand.and.stars").foregroundStyle(.orange) }
             }
             .disabled(m.collecting || m.currentURL.isEmpty)
-            Button { BoxBookmarkStore.addCurrent(name: m.web.title ?? "", url: m.currentURL) } label: { Image(systemName: "bookmark.plus") }
-                .disabled(m.currentURL.isEmpty)
+            Button {
+                markName = m.web.title?.isEmpty == false ? (m.web.title ?? "") : m.currentURL
+                showMark = true
+            } label: { Image(systemName: "bookmark.plus") }
+            .disabled(m.currentURL.isEmpty)
+            Button { showJobs = true } label: {
+                Image(systemName: "square.and.arrow.down")
+                    .overlay(alignment: .topTrailing) {
+                        if jobs.runningCount > 0 {
+                            Text("\(jobs.runningCount)")
+                                .font(.caption2).bold()
+                                .foregroundStyle(.white)
+                                .padding(4)
+                                .background(Circle().fill(.orange))
+                                .offset(x: 8, y: -8)
+                        }
+                    }
+            }
             Spacer()
             Menu {
                 Button("在 Safari 打开") {

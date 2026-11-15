@@ -185,21 +185,6 @@ struct PlayerScrubber: View {
     }
 }
 
-// 中央播放/暂停大按钮（全播放器通用，手势调出 UI 时可见）
-struct CenterPlayPause: View {
-    @ObservedObject var pc: PlayerController
-    var body: some View {
-        Button { pc.togglePlay() } label: {
-            Image(systemName: pc.playing ? "pause.circle.fill" : "play.circle.fill")
-                .font(.system(size: 60))
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(.white.opacity(0.9))
-                .shadow(radius: 6)
-        }
-        .buttonStyle(.plain)
-    }
-}
-
 // MARK: - 播放标签页
 
 struct PlayerView: View {
@@ -216,6 +201,7 @@ struct PlayerView: View {
                 Color.clear.contentShape(Rectangle())
                     .ignoresSafeArea()
                     .gesture(nav)
+                    .onTapGesture(count: 2) { pc.togglePlay() }
 
                 if app.revealUI {
                     VStack {
@@ -224,7 +210,13 @@ struct PlayerView: View {
                         bottomBar(cur)
                     }
                     .transition(.opacity)
-                    CenterPlayPause(pc: pc)
+                }
+                if !pc.playing {
+                    Image(systemName: "play.circle.fill")
+                        .font(.system(size: 60))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(.white.opacity(0.85))
+                        .shadow(radius: 6)
                 }
             } else {
                 empty
@@ -345,7 +337,7 @@ struct InlinePlayer: View {
                 .gesture(DragGesture().onEnded { g in
                     if g.translation.height > 80 { dismiss() }
                 })
-                .onTapGesture { pc.togglePlay() }
+                .onTapGesture(count: 2) { pc.togglePlay() }
 
             VStack {
                 HStack {
@@ -382,7 +374,11 @@ struct InlinePlayer: View {
             }
 
             if !pc.playing {
-                CenterPlayPause(pc: pc)
+                Image(systemName: "play.circle.fill")
+                    .font(.system(size: 60))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(.white.opacity(0.85))
+                    .shadow(radius: 6)
             }
         }
         .statusBarHidden()
@@ -410,6 +406,7 @@ struct CleanPlayer: View {
             Color.clear.contentShape(Rectangle())
                 .ignoresSafeArea()
                 .gesture(nav)
+                .onTapGesture(count: 2) { pc.togglePlay() }
 
             if showUI {
                 VStack {
@@ -430,7 +427,13 @@ struct CleanPlayer: View {
                         .multilineTextAlignment(.center).padding(.horizontal)
                 }
                 .transition(.opacity)
-                CenterPlayPause(pc: pc)
+            }
+            if !pc.playing {
+                Image(systemName: "play.circle.fill")
+                    .font(.system(size: 60))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(.white.opacity(0.85))
+                    .shadow(radius: 6)
             }
         }
         .statusBarHidden(!showUI)
@@ -473,6 +476,7 @@ struct EpisodePlayer: View {
                 Color.clear.contentShape(Rectangle())
                     .ignoresSafeArea()
                     .gesture(nav)
+                    .onTapGesture(count: 2) { pc.togglePlay() }
 
                 if showUI {
                     VStack {
@@ -496,7 +500,13 @@ struct EpisodePlayer: View {
                             .multilineTextAlignment(.center).padding(.horizontal)
                     }
                     .transition(.opacity)
-                    CenterPlayPause(pc: pc)
+                }
+                if !pc.playing {
+                    Image(systemName: "play.circle.fill")
+                        .font(.system(size: 60))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(.white.opacity(0.85))
+                        .shadow(radius: 6)
                 }
             }
         }

@@ -1,6 +1,84 @@
 import SwiftUI
 import Photos
 
+// MARK: - 图叻任务中枢（后台下载进度可查）
+
+struct TJob: Identifiable {
+    let id = UUID()
+    var name: String
+    var total: Int
+    var done = 0
+    var failed = 0
+    var finished = false
+}
+
+@MainActor
+final class TuoleiJobs: ObservableObject {
+    static let shared = TuoleiJobs()
+    @Published var list: [TJob] = []
+
+    var runningCount: Int { list.filter { !$0.finished }.count }
+
+    @discardableResult
+    func add(_ name: String, total: Int) -> UUID {
+        let j = TJob(name: name, total: total)
+        list.insert(j, at: 0)
+        if list.count > 12 { list.removeLast(list.count - 12) }
+        return j.id
+    }
+    func progress(_ id: UUID, _ done: Int, _ failed: Int) {
+        guard let i = list.firstIndex(where: { $0.id == id }) else { return }
+        list[i].done = done; list[i].failed = failed
+    }
+    func finish(_ id: UUID) {
+        guard let i = list.firstIndex(where: { $0.id == id }) else { return }
+        list[i].finished = true
+    }
+    func clearFinished() { list.removeAll { $0.finished } }
+}
+
+struct TuoleiJobsPanel: View {
+    @ObservedObject var hub = TuoleiJobs.shared
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(hub.list) { j in
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack {
+                            Text(j.name).font(.subheadline).lineLimit(1)
+                            Spacer()
+                            Text(j.finished
+                                 ? "完成 \(j.done)\(j.failed > 0 ? " 败\(j.failed)" : "")"
+                                 : "\(j.done)/\(j.total)")
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(j.finished ? Color.secondary : Color.accentColor)
+                        }
+                        ProgressView(value: Double(min(j.done + j.failed, max(j.total, 1))),
+                                     total: Double(max(j.total, 1)))
+                            .progressViewStyle(.linear)
+                    }.padding(.vertical, 2)
+                }
+            }
+            .overlay {
+                if hub.list.isEmpty {
+                    ContentUnavailableView("暂无下载任务", systemImage: "arrow.down.circle",
+                        description: Text("浏览器点✨聚图开下载后，这里看进度"))
+                }
+            }
+            .navigationTitle("图叻下载")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) { Button("关闭") { dismiss() } }
+                if hub.list.contains(where: { $0.finished }) {
+                    ToolbarItem(placement: .topBarTrailing) { Button("清完成") { hub.clearFinished() } }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+}
+
 // MARK: - 图叻：网页聚图引擎 v1（通吃模式：懒加载滚动 → DOM 全量聚图 → 预览勾选 → 批量入库）
 
 struct TuoleiHit: Identifiable {
@@ -144,7 +222,7 @@ struct TuoleiSheet: View {
                                 }
                             }
                             .frame(maxWidth: .infinity)
-                            .frame(height: 108)
+                            .frame(height: 132)
                             .clipped()
                             .clipShape(RoundedRectangle(cornerRadius: 8))
                             .overlay(sel.contains(i) ? Color.accentColor.opacity(0.20) : Color.clear)
@@ -209,15 +287,19 @@ struct TuoleiSheet: View {
     private func run() {
         running = true
         app.keepAlive.start()      // 退出选图页/切后台也不掐下载
+        let picked = Array(sel).sorted()
+        let jid = TuoleiJobs.shared.add(String(name.prefix(30)), total: picked.count)
         Task { @MainActor in
-            defer { app.keepAlive.stop() }
+            defer {
+                TuoleiJobs.shared.finish(jid)
+                if TuoleiJobs.shared.runningCount == 0 { app.keepAlive.stop() }
+            }
             var savedFiles: [(Data, String)] = []
             let ext = { (u: String) -> String in
                 let p = u.split(separator: "?")[0]
                 for e in ["png", "webp", "gif"] where p.hasSuffix(e) { return "." + e }
                 return ".jpg"
             }
-            let picked = Array(sel).sorted()
             for (n, i) in picked.enumerated() {
                 let u = hit.urls[i]
                 guard let url = URL(string: u) else { failed += 1; continue }
@@ -230,6 +312,7 @@ struct TuoleiSheet: View {
                     else { failed += 1 }
                 } catch { failed += 1 }
                 done = n + 1
+                TuoleiJobs.shared.progress(jid, done, failed)
             }
             if dest == 1 {
                 for (d, fn) in savedFiles {
