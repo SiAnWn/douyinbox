@@ -100,8 +100,8 @@ struct BoxView: View {
                     } label: {
                         Label {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("抖音 · 原生刷流")
-                                Text("隐藏天线收推荐 → 原生竖滑播放；♥ 一键存无水印原画")
+                                Text("抖音 · 沉浸刷流")
+                                Text("推荐流原样上滑沉浸播（已根治系统全屏弹窗），绿键存无水印原画")
                                     .font(.caption).foregroundStyle(.secondary)
                             }
                         } icon: {
