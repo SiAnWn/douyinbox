@@ -110,7 +110,7 @@ enum BoxIsland {
         // 横幅独立于岛存在与否（关常驻岛也要有播报）
         if UserDefaults.standard.object(forKey: "doneNotify") as? Bool ?? true {
             let un = UNMutableNotificationContent()
-            un.title = ok ? "抖音盒子 · 下载完成" : "抖音盒子 · 下载失败"
+            un.title = ok ? "百宝箱 · 下载完成" : "百宝箱 · 下载失败"
             un.body = ok ? (note.hasPrefix("已保存：") ? String(note.dropFirst(4)) : "已存入")
                          : String(note.prefix(100))
             un.sound = .default
@@ -198,7 +198,7 @@ enum BoxIsland {
     static func runParse() async {
         let clip = clipText() ?? ""
         guard let url = DouyinAPI.extractURL(clip) else {
-            update { $0.phase = "fail"; $0.note = "后台读不到剪贴板(iOS限制)：请在抖音点 分享→抖音盒子" }
+            update { $0.phase = "fail"; $0.note = "后台读不到剪贴板(iOS限制)：请在抖音点 分享→百宝箱" }
             return
         }
         await parseAndShow(url)

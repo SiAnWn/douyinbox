@@ -24,7 +24,7 @@ struct StashHubView: View {
                     case 0: LibraryView()
                     case 1: DramaView()
                     case 2: PrivateView()
-                    default: GalleryStubView()
+                    default: GalleryHomeView()
                     }
                 }
             }

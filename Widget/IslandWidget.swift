@@ -47,7 +47,7 @@ struct BoxLiveActivity: Widget {
                 Image(systemName: "arrow.down.circle.fill")
                     .font(.title3).foregroundStyle(.green)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(ctx.state.title.isEmpty ? "抖音盒子" : ctx.state.title)
+                    Text(ctx.state.title.isEmpty ? "百宝箱" : ctx.state.title)
                         .font(.headline).lineLimit(1)
                     Text(ctx.state.note.isEmpty ? "点一下岛开始下载" : ctx.state.note)
                         .font(.caption).foregroundStyle(.secondary).lineLimit(1)

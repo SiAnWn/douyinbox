@@ -288,7 +288,7 @@ struct ParseView: View {
                 mix = try await MixAPI.fetch(mixID: mixID)
                 status = "合集已就绪，开始批量"
                 if earlyReturn, let m = mix {
-                    BoxIsland.banner("抖音盒子 · 合集已备好",
+                    BoxIsland.banner("百宝箱 · 合集已备好",
                                      "\(m.name.prefix(24)) 共\(m.eps.count)集，点通知回来选集下载")
                 }
                 return

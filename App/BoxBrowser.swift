@@ -17,6 +17,10 @@ final class BrowserModel: NSObject, ObservableObject,
     // Safari 式：滚动收起工具栏
     @Published var barsShown = true
     private var lastOffY: CGFloat = 0
+    // 图叻聚图
+    @Published var tuolei: TuoleiHit?
+    @Published var tuoleiMsg = ""
+    @Published var collecting = false
 
     let web: WKWebView
 
@@ -128,6 +132,23 @@ final class BrowserModel: NSObject, ObservableObject,
             let ins = self.web.scrollView.contentInset
             self.web.scrollView.contentInset = UIEdgeInsets(top: shown ? 46 : 0, left: ins.left,
                                                             bottom: shown ? 56 : 0, right: ins.right)
+        }
+    }
+
+    // 图叻：聚这页的图（结果走 tuolei / tuoleiMsg）
+    func collect() {
+        guard !collecting else { return }
+        collecting = true
+        web.evaluateJavaScript(TuoleiJS.collect) { res, _ in
+            if let s = res as? String, let d = s.data(using: .utf8),
+               let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+               let arr = j["u"] as? [String], !arr.isEmpty {
+                self.tuolei = TuoleiHit(title: (j["t"] as? String) ?? "",
+                                        urls: arr, page: (j["page"] as? String) ?? "")
+            } else {
+                self.tuoleiMsg = "这页没聚到图（换列表页或大图页再试）"
+            }
+            self.collecting = false
         }
     }
     @objc(webView:decidePolicyForNavigationAction:decisionHandler:)
@@ -275,6 +296,13 @@ struct BoxBrowserView: View {
         }
         .navigationTitle("浏览器")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .tabBar)     // 把底部 tab 也让给网页
+        .sheet(item: $m.tuolei) { TuoleiSheet(hit: $0) }
+        .alert("图叻", isPresented: Binding(
+            get: { !m.tuoleiMsg.isEmpty },
+            set: { if !$0 { m.tuoleiMsg = "" } })) {
+            Button("好") { m.tuoleiMsg = "" }
+        } message: { Text(m.tuoleiMsg) }
         .confirmationDialog("这张图", isPresented: Binding(
             get: { m.longPressImage != nil },
             set: { if !$0 { m.longPressImage = nil } }),
@@ -293,6 +321,11 @@ struct BoxBrowserView: View {
             Button { m.web.goBack() } label: { Image(systemName: "chevron.backward") }.disabled(!m.canBack)
             Button { m.web.goForward() } label: { Image(systemName: "chevron.forward") }.disabled(!m.canFwd)
             Button { m.web.reload() } label: { Image(systemName: "arrow.clockwise") }
+            Button { m.collect() } label: {
+                if m.collecting { ProgressView().controlSize(.small) }
+                else { Image(systemName: "wand.and.stars").foregroundStyle(.orange) }
+            }
+            .disabled(m.collecting || m.currentURL.isEmpty)
             Button { BoxBookmarkStore.addCurrent(name: m.web.title ?? "", url: m.currentURL) } label: { Image(systemName: "bookmark.plus") }
                 .disabled(m.currentURL.isEmpty)
             Spacer()
