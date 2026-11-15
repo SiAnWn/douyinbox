@@ -136,21 +136,24 @@ struct TuoleiSheet: View {
                 ScrollView {
                     LazyVGrid(columns: cols, spacing: 6) {
                         ForEach(rows, id: \.self) { i in
-                            ZStack(alignment: .topTrailing) {
-                                AsyncImage(url: URL(string: hit.urls[i])) { ph in
-                                    switch ph {
-                                    case .success(let img): img.resizable().scaledToFill()
-                                    case .failure: Color.gray.opacity(0.15)
-                                    default: Color.gray.opacity(0.08)
-                                    }
+                            AsyncImage(url: URL(string: hit.urls[i])) { ph in
+                                switch ph {
+                                case .success(let img): img.resizable().scaledToFill()
+                                case .failure: Color.gray.opacity(0.15)
+                                default: Color.gray.opacity(0.08)
                                 }
-                                .frame(height: 108).clipped()
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                            }
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 108)
+                            .clipped()
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .overlay(alignment: .topTrailing) {
                                 Image(systemName: sel.contains(i)
                                       ? "largecircle.fill.circle" : "circle")
                                     .foregroundStyle(sel.contains(i) ? Color.accentColor : Color.secondary)
                                     .padding(5)
                             }
+                            .contentShape(RoundedRectangle(cornerRadius: 8))
                             .onTapGesture {
                                 if sel.contains(i) { sel.remove(i) } else { sel.insert(i) }
                             }
@@ -286,6 +289,7 @@ struct GalleryHomeView: View {
                                         default: Color.gray.opacity(0.1)
                                         }
                                     }
+                                    .frame(maxWidth: .infinity)
                                     .frame(height: 160).clipped()
                                     .clipShape(RoundedRectangle(cornerRadius: 10))
                                     Text(a.name).font(.subheadline).lineLimit(1)
