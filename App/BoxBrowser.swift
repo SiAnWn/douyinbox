@@ -27,6 +27,14 @@ final class BrowserModel: NSObject, ObservableObject,
         web.uiDelegate = self
         cfg.userContentController.add(self, name: "boxlong")
         web.allowsBackForwardNavigationGestures = true   // 右滑返回，浏览器基本礼貌
+        // 广告拦截：系统级内容规则，编译一次，之后所有加载走它
+        WKContentRuleListStore.default()?.compileContentRuleList(
+            forIdentifier: "boxAdsV1",
+            encodedContentRuleList: BoxAdRules.json
+        ) { list, _ in
+            guard let list else { return }
+            DispatchQueue.main.async { cfg.userContentController.add(list) }
+        }
     }
 
     func go(_ raw: String) {
@@ -120,6 +128,50 @@ final class BrowserModel: NSObject, ObservableObject,
             DispatchQueue.main.async { self.longPressImage = s }
         }
     }
+}
+
+// MARK: - 广告规则（引擎级拦截：域名黑名单 + 常见广告元素隐藏）
+enum BoxAdRules {
+    static let json = #"""
+    [
+      {"trigger":{"url-filter":"googlesyndication\\.com"},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"googleadservices\\.com"},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"googletagmanager\\.com"},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"googletagservices\\.com"},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"doubleclick\\.net"},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"adservice\\.google\\."},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"google-analytics\\.com"},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"amazon-adsystem\\.com"},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"adnxs\\.com"},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"rubiconproject\\.com"},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"pubmatic\\.com"},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"openx\\.net"},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"criteo"},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"taboola\\.com"},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"outbrain\\.com"},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"moatads\\.com"},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"scorecardresearch\\.com"},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"quantserve\\.com"},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"cnzz\\.com"},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"51\\.la"},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"umeng\\.com"},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"hm\\.baidu\\.com"},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"gdt\\.qq\\.com"},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"exoclick\\.com"},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"exdynsrv\\.com"},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"trafficjunky\\."},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"adsterra\\.com"},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"a-ads\\.com"},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"popads\\.net"},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"videoadex\\.com"},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"reacheasing\\.com"},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"plytix\\.com"},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"updtnvpl\\.info"},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"adsafety\\.net"},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"magsrv\\.com"},"action":{"type":"block"}},
+      {"trigger":{},"action":{"type":"css-display-none","selector":".ad, .ads, .ad-banner, .adbox, .advert, .sponsor, .sponsored, #ad, #ads, #banner, .popbox, .popunder, .floating-ads, .mobile-pop, iframe[src*='adsystem'], iframe[src*='exoclick'], iframe[src*='trafficjunky']"}}
+    ]
+    """#
 }
 
 // MARK: - WKWebView 宿主（复用同一实例，滚动/历史不断）
