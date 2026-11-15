@@ -22,14 +22,29 @@ enum DyAntennaJS {
       const seen = new Set();
       const scan = () => {
         const out = [];
-        for (const a of document.querySelectorAll('a[href*="/video/"]')) {
-          const m = (a.getAttribute('href') || '').match(/\\/video\\/(\\d+)/);
-          if (!m || seen.has(m[1])) continue;
-          seen.add(m[1]);
+        const add = (id, d, c) => {
+          if (!id || id.length < 15 || seen.has(id)) return;
+          seen.add(id);
+          out.push({ id: id, d: (d || '').slice(0, 80), c: c || '' });
+        };
+        // 通道1：标准链接卡片
+        for (const a of document.querySelectorAll('a[href]')) {
+          const m = (a.getAttribute('href') || '').match(/\\/(?:video|note)\\/(\\d{15,25})/);
+          if (!m) continue;
           const card = (a.closest && a.closest('li,div')) || a;
           const img = card.querySelector ? card.querySelector('img') : null;
-          const t = (a.textContent || '').trim();
-          out.push({ id: m[1], d: t.slice(0, 80), c: img ? (img.currentSrc || img.src || '') : '' });
+          add(m[1], (a.textContent || '').trim(), img ? (img.currentSrc || img.src || '') : '');
+        }
+        // 通道2：页面内嵌数据（SSR/状态里的 aweme_id + 就近 desc/cover）
+        const html = document.documentElement.innerHTML;
+        const re = /"aweme_id":"(\\d{15,25})"(.{0,3000}?)(?="aweme_id"|$)/gs;
+        let mm;
+        while ((mm = re.exec(html)) !== null) {
+          const seg = mm[2] || '';
+          const dm = seg.match(/"desc":"([^"]{1,90})"/);
+          const cm = seg.match(/"url_list":\\["(https:[^"]{1,300})"/);
+          add(mm[1], dm ? dm[1] : '', cm ? cm[1].replace(/\\\\u0026/g, '&') : '');
+          if (out.length > 40) break;
         }
         if (out.length) window.webkit.messageHandlers.boxdy.postMessage(JSON.stringify(out));
       };
