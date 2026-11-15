@@ -14,6 +14,9 @@ final class BrowserModel: NSObject, ObservableObject,
     @Published var canFwd = false
     @Published var currentURL = ""
     @Published var longPressImage: String?
+    // Safari 式：滚动收起工具栏
+    @Published var barsShown = true
+    private var lastOffY: CGFloat = 0
 
     let web: WKWebView
 
@@ -27,6 +30,9 @@ final class BrowserModel: NSObject, ObservableObject,
         web.uiDelegate = self
         cfg.userContentController.add(self, name: "boxlong")
         web.allowsBackForwardNavigationGestures = true   // 右滑返回，浏览器基本礼貌
+        web.addObserver(self, forKeyPath: "estimatedProgress", options: [.new], context: nil)
+        web.scrollView.addObserver(self, forKeyPath: "contentOffset", options: [.new, .old], context: nil)
+        web.scrollView.contentInset = UIEdgeInsets(top: 46, left: 0, bottom: 56, right: 0)
         // 广告拦截：系统级内容规则，编译一次，之后所有加载走它
         WKContentRuleListStore.default()?.compileContentRuleList(
             forIdentifier: "boxAdsV1",
@@ -91,7 +97,9 @@ final class BrowserModel: NSObject, ObservableObject,
 
     // MARK: delegates（Xcode26 协议 Swift 名 = ObjC 全称，逐一贴齐）
     @objc func webView(_ sv: WKWebView, didStartProvisionalNavigation nav: WKNavigation!) {
-        loading = true; refreshState()
+        loading = true
+        if !barsShown { setBars(true) }   // 跳新页就把工具栏叫回来
+        refreshState()
     }
     @objc(webView:didFinishNavigation:)
     func webView(_ sv: WKWebView, didFinish nav: WKNavigation!) {
@@ -103,6 +111,24 @@ final class BrowserModel: NSObject, ObservableObject,
     }
     override func observeValue(forKeyPath k: String?, of o: Any?, change: [NSKeyValueChangeKey: Any]?, context: UnsafeMutableRawPointer?) {
         if k == "estimatedProgress" { progress = web.estimatedProgress }
+        if k == "contentOffset", let ch = change {
+            let new = (ch[.newKey] as? NSValue)?.cgPointValue ?? lastOffY
+            let dy = new.y - lastOffY
+            lastOffY = new.y
+            if abs(dy) > 3 {
+                let want = dy < 0 || new.y < 20          // 上滑或已在顶部 → 露出工具栏
+                if want != barsShown { setBars(want) }
+            }
+        }
+    }
+
+    private func setBars(_ shown: Bool) {
+        barsShown = shown
+        UIView.animate(withDuration: 0.22) {
+            let ins = self.web.scrollView.contentInset
+            self.web.scrollView.contentInset = UIEdgeInsets(top: shown ? 46 : 0, left: ins.left,
+                                                            bottom: shown ? 56 : 0, right: ins.right)
+        }
     }
     @objc(webView:decidePolicyForNavigationAction:decisionHandler:)
     func webView(_ sv: WKWebView, decidePolicyFor su: WKNavigationAction,
@@ -177,10 +203,7 @@ enum BoxAdRules {
 // MARK: - WKWebView 宿主（复用同一实例，滚动/历史不断）
 struct WebViewHost: UIViewRepresentable {
     let m: BrowserModel
-    func makeUIView(context: Context) -> WKWebView {
-        m.web.addObserver(m, forKeyPath: "estimatedProgress", options: [.new], context: nil)
-        return m.web
-    }
+    func makeUIView(context: Context) -> WKWebView { m.web }
     func updateUIView(_ uiView: WKWebView, context: Context) {}
 }
 
@@ -219,7 +242,11 @@ struct BoxBrowserView: View {
     @State private var bookName = ""
 
     var body: some View {
-        VStack(spacing: 0) {
+        ZStack(alignment: .top) {
+            WebViewHost(m: m)
+                .ignoresSafeArea()
+
+            // 顶栏（地址+搜索）：下滑收起，上滑即回，Safari 同款
             HStack(spacing: 8) {
                 Image(systemName: "globe").foregroundStyle(.secondary)
                 TextField("地址 / 搜索", text: $input)
@@ -235,33 +262,16 @@ struct BoxBrowserView: View {
                 }
             }
             .padding(.horizontal, 12).padding(.vertical, 9)
-            .background(.regularMaterial)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+            .padding(.horizontal, 10)
+            .opacity(m.barsShown ? 1 : 0)
+            .offset(y: m.barsShown ? 0 : -70)
+            .animation(.spring(duration: 0.25), value: m.barsShown)
 
-            ZStack(alignment: .top) {
-                WebViewHost(m: m).ignoresSafeArea(edges: .bottom)
-                if m.loading {
-                    ProgressView(value: min(m.progress, 0.97))
-                                        .progressViewStyle(.linear)
-                                        .frame(maxWidth: .infinity)
-                }
+            VStack { Spacer(); bottomBar }
+            if m.loading {
+                VStack { ProgressView(value: min(m.progress, 0.97)).progressViewStyle(.linear); Spacer() }
             }
-
-            HStack(spacing: 34) {
-                Button { m.web.goBack() } label: { Image(systemName: "chevron.backward") }.disabled(!m.canBack)
-                Button { m.web.goForward() } label: { Image(systemName: "chevron.forward") }.disabled(!m.canFwd)
-                Button { m.web.reload() } label: { Image(systemName: "arrow.clockwise") }
-                Button { BoxBookmarkStore.addCurrent(name: m.web.title ?? "", url: m.currentURL) } label: { Image(systemName: "bookmark.plus") }
-                    .disabled(m.currentURL.isEmpty)
-                Spacer()
-                Menu {
-                    Button("在 Safari 打开") {
-                        if let u = m.web.url { UIApplication.shared.open(u) }
-                    }
-                } label: { Image(systemName: "ellipsis.circle") }
-            }
-            .font(.title3)
-            .padding(.horizontal, 22).padding(.vertical, 10)
-            .background(.regularMaterial)
         }
         .navigationTitle("浏览器")
         .navigationBarTitleDisplayMode(.inline)
@@ -276,6 +286,29 @@ struct BoxBrowserView: View {
             Button("取消", role: .cancel) {}
         }
         .sheet(isPresented: $showBookmarks) { bookmarksSheet }
+    }
+
+    private var bottomBar: some View {
+        HStack(spacing: 34) {
+            Button { m.web.goBack() } label: { Image(systemName: "chevron.backward") }.disabled(!m.canBack)
+            Button { m.web.goForward() } label: { Image(systemName: "chevron.forward") }.disabled(!m.canFwd)
+            Button { m.web.reload() } label: { Image(systemName: "arrow.clockwise") }
+            Button { BoxBookmarkStore.addCurrent(name: m.web.title ?? "", url: m.currentURL) } label: { Image(systemName: "bookmark.plus") }
+                .disabled(m.currentURL.isEmpty)
+            Spacer()
+            Menu {
+                Button("在 Safari 打开") {
+                    if let u = m.web.url { UIApplication.shared.open(u) }
+                }
+            } label: { Image(systemName: "ellipsis.circle") }
+        }
+        .font(.title3)
+        .padding(.horizontal, 22).padding(.vertical, 10)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .padding(.horizontal, 10)
+        .opacity(m.barsShown ? 1 : 0)
+        .offset(y: m.barsShown ? 0 : 96)
+        .animation(.spring(duration: 0.25), value: m.barsShown)
     }
 
     private var bookmarksSheet: some View {
