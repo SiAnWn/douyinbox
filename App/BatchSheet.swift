@@ -116,7 +116,7 @@ struct BatchSheet: View {
                 }
             }
             .fullScreenCover(item: $patchEp) { ep in
-                SniffView(seed: "https://www.iesdouyin.com/share/video/\(ep.id)/")
+                SniffView(seed: "https://www.douyin.com/video/\(ep.id)", desktop: true)
                     .environmentObject(app)
             }
             .onAppear {

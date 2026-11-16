@@ -6,6 +6,8 @@ import WebKit
 enum SniffConst {
     // 和 WKWebView 用同一套身份，让"网页能看 = 能下"
     static let ua = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1"
+    // 桌面身份：抖音网页播放器（登录态）会吐 1080p 直链（IDM 实测同款）
+    static let desktopUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 }
 
 @MainActor
@@ -55,7 +57,12 @@ struct SniffView: View {
     @StateObject private var bridge = BrowserBridge()
     @State private var urlInput = ""
     @State private var webPlay: VideoItem?
-    var seed: String = ""     // 外部直达：进来自动加载（如短剧补漏的剧集页）
+    @State private var desktopUA: Bool
+    let seed: String
+    init(seed: String = "", desktop: Bool = false) {
+        self.seed = seed
+        _desktopUA = State(initialValue: UserDefaults.standard.object(forKey: "sniffDesktop") as? Bool ?? desktop)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -69,6 +76,13 @@ struct SniffView: View {
                 Button("停止") { bridge.webView?.stopLoading() }.font(.footnote)
             }
             .padding(10)
+
+            Picker("身份", selection: $desktopUA) {
+                Text("手机网页").tag(false)
+                Text("电脑网页（1080p 直链·需登录）").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal, 10)
 
             SiteBrowser(bridge: bridge, onURL: { u, t in
                 vm.pageURL = u ?? vm.pageURL
@@ -136,10 +150,15 @@ struct SniffView: View {
         }
         .onAppear {
             bridge.vm = vm
+            bridge.setDesktop(desktopUA, reload: false)
             if !seed.isEmpty && urlInput.isEmpty {
                 urlInput = seed
                 bridge.load(seed)
             }
+        }
+        .onChange(of: desktopUA) { v in
+            UserDefaults.standard.set(v, forKey: "sniffDesktop")
+            bridge.setDesktop(v, reload: true)
         }
     }
 
@@ -211,6 +230,10 @@ final class BrowserBridge: ObservableObject {
     weak var webView: WKWebView?
     weak var vm: SniffVM?
 
+    func setDesktop(_ desktop: Bool, reload: Bool) {
+        webView?.customUserAgent = desktop ? SniffConst.desktopUA : SniffConst.ua
+        if reload, webView?.url != nil { webView?.reload() }
+    }
     func load(_ u: String) {
         guard let url = URL(string: u) else { return }
         webView?.load(URLRequest(url: url))
