@@ -5,6 +5,7 @@ struct MixEpisode {
     let id: String
     let title: String
     let embedded: URL?
+    var durMs: Int = 0      // 官方时长，<20s = 卡片/预告碎料
     var num: Int = 0
 }
 
@@ -69,12 +70,15 @@ enum MixAPI {
                 guard let id = strOf(item["aweme_id"]) else { continue }
                 let title = (item["desc"] as? String) ?? ""
                 var emb: URL? = nil
-                if let v = item["video"] as? [String: Any],
-                   let pa = v["play_addr"] as? [String: Any],
-                   let arr = pa["url_list"] as? [String], let first = arr.first {
-                    emb = URL(string: first)
+                var dur = 0
+                if let v = item["video"] as? [String: Any] {
+                    dur = intOf(v["duration"]) ?? 0
+                    if let pa = v["play_addr"] as? [String: Any],
+                       let arr = pa["url_list"] as? [String], let first = arr.first {
+                        emb = URL(string: first)
+                    }
                 }
-                eps.append(MixEpisode(id: id, title: title.isEmpty ? "第\(eps.count + 1)集" : title, embedded: emb))
+                eps.append(MixEpisode(id: id, title: title.isEmpty ? "第\(eps.count + 1)集" : title, embedded: emb, durMs: dur))
             }
             if name.isEmpty { name = (d["mix_name"] as? String) ?? "" }
             let hasMore = intOf(d["has_more"]) ?? ((d["has_more"] as? Bool == true) ? 1 : 0)
@@ -222,11 +226,14 @@ final class BatchRunner: ObservableObject {
         current = ""
 
         let rec = MixManifest.map(mix.id)
+        // 碎料过滤：<20 秒的官方卡片/预告集不当正片下载（durMs=0 未知时长时放行）
+        let junkCut = mix.eps.filter { $0.durMs > 0 && $0.durMs < 20_000 }
         let pendingList = mix.eps.filter { ep in
+            if ep.durMs > 0 && ep.durMs < 20_000 { return false }
             if let rel = rec[ep.id], SavePaths.exists(rel: rel) { return false }
             return true
         }
-        skipped = mix.eps.count - pendingList.count
+        skipped = mix.eps.count - pendingList.count - junkCut.count
         total = pendingList.count   // 进度只算真正要下的集，已存的不再虚增百分比
 
         let eng = apiEngine ?? EngineStore.current

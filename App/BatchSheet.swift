@@ -11,14 +11,16 @@ struct BatchSheet: View {
     @State private var subbed = false
 
     private var isWebEngine: Bool { EngineStore.current == .web }
+    private var junkCount: Int { mix.eps.filter { $0.durMs > 0 && $0.durMs < 20_000 }.count }
 
     var body: some View {
         NavigationStack {
             Form {
                 Section("合集") {
                     Text(mix.name).font(.headline)
-                    Text("\(mix.eps.count) 集 · 本机已有 \(existing) 集 · 待下 \(mix.eps.count - existing) 集")
-                        .font(.footnote).foregroundStyle(.secondary)
+                    Text("\(mix.eps.count) 集 · 本机已有 \(existing) 集 · 待下 \(mix.eps.count - existing - junkCount) 集"
+                         + (junkCount > 0 ? "\n⚠️ \(junkCount) 集是官方卡片/预告碎料（已自动跳过，去抖音或红果 App 看）" : ""))
+                        .font(.footnote).foregroundStyle(junkCount > 0 ? .orange : .secondary)
                 }
                 Section {
                     Button {
