@@ -52,9 +52,9 @@ struct BatchSheet: View {
                             .font(.footnote).foregroundStyle(.secondary)
                     } else {
                         Picker("模式", selection: $mode) {
-                            Text("多平台 API（不限量·推荐）").tag(1)
+                            Text("免费快速（内嵌，0 配额·实测下发完整正片）").tag(0)
+                            Text("多平台 API（配额免限·个别集被下发卡片）").tag(1)
                             Text("抖音原画（每集 1 次配额）").tag(2)
-                            Text("免费快速（内嵌约720p，0 配额）").tag(0)
                         }
                         .pickerStyle(.inline)
                         .disabled(runner.phase == .running)
@@ -100,7 +100,7 @@ struct BatchSheet: View {
             .onAppear {
                 let rec = MixManifest.map(mix.id)
                 existing = rec.values.filter { SavePaths.exists(rel: $0) }.count
-                if mode < 0 { mode = isWebEngine ? 0 : (mix.freeDefault ? 1 : (EngineStore.current.isIfphp ? 2 : 0)) }
+                if mode < 0 { mode = isWebEngine ? 0 : (mix.freeDefault ? 0 : (EngineStore.current.isIfphp ? 2 : 0)) }
                 subbed = SubscriptionStore.exists(mix.id)
             }
         }
