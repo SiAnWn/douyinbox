@@ -293,6 +293,18 @@ struct ParseView: View {
                 }
                 return
             }
+            // 抖音单集短剧分享 → 自动升级为剧集合集（红果剧经抖音官方分发，绕开红果匿名闸门）
+            if !Hongguo.isHongguo(link),
+               let sid = await MixAPI.seriesID(for: resolved),
+               let m = try? await MixAPI.fetch(mixID: sid), m.eps.count > 1 {
+                    mix = m
+                    status = "发现短剧！已升级全集（\(m.eps.count)集）"
+                    if earlyReturn {
+                        BoxIsland.banner("百宝箱 · 短剧合集已备好",
+                                         "\(m.name.prefix(24)) 共\(m.eps.count)集，点通知回来选集下载")
+                    }
+                    return
+                }
             status = "解析中（\(engine == .web ? "浏览器引擎较慢…" : "API 直连…")）"
             result = Hongguo.isHongguo(link)
                 ? try await Hongguo.parseWithHeal(link)

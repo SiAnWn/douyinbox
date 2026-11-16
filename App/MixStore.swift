@@ -29,6 +29,23 @@ enum MixAPI {
         }
     }
 
+    /// 抖音单集分享 → 查剧集关联：reflow 详情免签吐 series_id（红果剧在抖音官方号
+    /// 以整剧合集分发；该 id 可直接喂 mix 接口）。找到返回 id，否则 nil。
+    static func seriesID(for finalURL: String) async -> String? {
+        guard let aid = RegexHelper.firstGroup(finalURL, pattern: "/share/video/(\\d{15,20})")
+                ?? RegexHelper.firstGroup(finalURL, pattern: "/video/(\\d{15,20})") else { return nil }
+        let u = "https://www.iesdouyin.com/aweme/v1/aweme/detail/?reflow_source=reflow_page"
+              + "&web_id=undefined&device_id=undefined&aid=1128&aweme_id=\(aid)"
+              + "&device_type=&device_platform=web&app=aweme&os=ios&ac=wifi"
+        var req = URLRequest(url: URL(string: u)!)
+        req.setValue(iosUA, forHTTPHeaderField: "User-Agent")
+        req.setValue("https://www.iesdouyin.com/", forHTTPHeaderField: "Referer")
+        req.timeoutInterval = 12
+        guard let (data, _) = try? await URLSession.shared.data(for: req),
+              let s = String(data: data, encoding: .utf8) else { return nil }
+        return RegexHelper.firstGroup(s, pattern: "\"series_id\":\"?(\\d{15,20})\"?")
+    }
+
     static func mixID(from finalURL: String) -> String? {
         RegexHelper.firstGroup(finalURL, pattern: "/mix(?:/detail)?/(\\d{15,20})")
             ?? RegexHelper.firstGroup(finalURL, pattern: "mix_id=(\\d{15,20})")
