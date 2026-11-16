@@ -71,26 +71,9 @@ struct GalleryAboutView: View {
     }
 }
 
-// MARK: - 匣（百宝匣）：未来工具的待租橱窗
+// MARK: - 匣（百宝匣）：内置浏览器柜（占位橱窗已清空）
 
 struct BoxView: View {
-    private struct Coming: Identifiable {
-        let id = UUID()
-        let name: String
-        let icon: String
-        let phase: String
-    }
-    private let items: [Coming] = [
-        .init(name: "图叻 · 网页图集", icon: "photo.stack", phase: "P1"),
-        .init(name: "全站收藏 · 规则站速达", icon: "star.rectangle", phase: "P2"),
-        .init(name: "追更订阅 · 新集推送", icon: "bell.badge", phase: "P2"),
-        .init(name: "小红书图集定向", icon: "book", phase: "P2"),
-        .init(name: "ReelShort / DramaBox 出海短剧", icon: "globe", phase: "P2"),
-        .init(name: "NFC 贴卡一键收", icon: "wifi", phase: "P3"),
-        .init(name: "OCR 截图提链接", icon: "text.viewfinder", phase: "P3"),
-        .init(name: "铃声提取 · 白噪音", icon: "music.note", phase: "P3"),
-    ]
-
     var body: some View {
         NavigationStack {
             List {
@@ -107,35 +90,6 @@ struct BoxView: View {
                         } icon: {
                             Image(systemName: "globe").foregroundStyle(.blue)
                         }
-                    }
-                }
-                Section {
-                    Label {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("匣子已开箱，好东西陆续上架")
-                            Text("所有条目施工中标注，上架后此处直接可用")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                    } icon: {
-                        Image(systemName: "gift.fill").foregroundStyle(.orange)
-                    }
-                }
-                Section("待入驻") {
-                    ForEach(items) { it in
-                        Label {
-                            HStack {
-                                Text(it.name)
-                                Spacer()
-                                Text(it.phase)
-                                    .font(.caption2).monospacedDigit()
-                                    .foregroundStyle(.secondary)
-                                    .padding(.horizontal, 8).padding(.vertical, 3)
-                                    .background(Capsule().fill(.quaternary))
-                            }
-                        } icon: {
-                            Image(systemName: it.icon).foregroundStyle(.secondary)
-                        }
-                        .foregroundStyle(.secondary)
                     }
                 }
             }
