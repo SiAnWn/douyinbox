@@ -28,7 +28,9 @@ final class SniffVM: ObservableObject {
     func add(_ url: String) {
         guard url.hasPrefix("http"), items.count < 40 else { return }
         let low = url.lowercased()
-        if low.contains("m3u8") || low.contains(".mp4") {
+        let isVid = low.contains("m3u8") || low.contains(".mp4")
+            || low.contains("douyinvod") || low.contains("video_mp4") || low.contains("/video/tos/")
+        if isVid {
             // 过滤明显非媒体
             for drop in [".js", ".css", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".woff", ".ico", ".webp", ".html"] where low.contains(drop) && !low.contains("m3u8") { return }
             if items.contains(where: { $0.id == url }) { return }
@@ -361,10 +363,11 @@ struct SiteBrowser: UIViewRepresentable {
       var oo=XMLHttpRequest.prototype.open, os=XMLHttpRequest.prototype.send;
       XMLHttpRequest.prototype.open=function(m,u){ this.__u=u; return oo.apply(this,arguments); };
       XMLHttpRequest.prototype.send=function(){ var x=this; x.addEventListener('load',function(){ try{ var t=x.responseText||''; if(t.indexOf('#EXTM3U')>-1){ say(x.__u||location.href); } scanText(t); }catch(e){} }); return os.apply(this,arguments); };
-      function videoScan(){ try{ var vs=document.querySelectorAll('video,source'); for(var i=0;i<vs.length;i++){ var src=vs[i].currentSrc||vs[i].src||''; if(src.indexOf('m3u8')>-1||src.indexOf('.mp4')>-1){ say(src); } } }catch(e){} }
+      function videoScan(){ try{ var vs=document.querySelectorAll('video,source'); for(var i=0;i<vs.length;i++){ var src=vs[i].currentSrc||vs[i].src||''; if(src.indexOf('m3u8')>-1||src.indexOf('.mp4')>-1||src.indexOf('video_id=')>-1||src.indexOf('douyinvod')>-1){ say(src); } } }catch(e){} }
+      function perfScan(){ try{ var es=performance.getEntriesByType('resource'); for(var i=0;i<es.length;i++){ var n=es[i].name||''; if(n.indexOf('douyinvod')>-1||n.indexOf('mime_type=video_mp4')>-1||n.indexOf('/video/tos/')>-1||n.indexOf('.m3u8')>-1||n.indexOf('.mp4')>-1){ say(n); } } }catch(e){} }
       window.__deepScan=function(){ try{ scanText(document.documentElement.innerHTML.slice(0,300000));
-        var t=''; [].forEach.call(document.querySelectorAll('script'), function(s){ t+=s.textContent.slice(0,150000); }); scanText(t); videoScan(); }catch(e){} };
-      setInterval(videoScan, 3000);
+        var t=''; [].forEach.call(document.querySelectorAll('script'), function(s){ t+=s.textContent.slice(0,150000); }); scanText(t); videoScan(); perfScan(); }catch(e){} };
+      setInterval(function(){ videoScan(); perfScan(); }, 3000);
       try{ var mo=new MutationObserver(function(){ videoScan(); }); mo.observe(document.documentElement||document, {childList:true, subtree:true}); }catch(e){}
     })();
     """
