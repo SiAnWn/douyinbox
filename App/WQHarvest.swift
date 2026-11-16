@@ -21,6 +21,14 @@ final class WQHarvest: ObservableObject {
     @Published var sel = Set<String>()
     @Published var scanning = false
     @Published var importing = false
+    // 扫描开出的通行证存起来，导入还要用；重扫或离开页面才归还
+    private var keptHandles: [Int64] = []
+
+    func teardown() {
+        guard !scanning, !importing else { return }
+        keptHandles.forEach { WQ.release($0) }
+        keptHandles = []
+    }
 
     func scan(force: Bool = false) {
         guard !scanning else { return }
@@ -28,6 +36,8 @@ final class WQHarvest: ObservableObject {
         lines = []
         hits = []
         sel = []
+        keptHandles.forEach { WQ.release($0) }
+        keptHandles = []
         Task.detached(priority: .userInitiated) {
             let t0 = Date()
             guard let group = WQ.workingGroup() else {
@@ -91,11 +101,11 @@ final class WQHarvest: ObservableObject {
                 found += WQWalk.walk(root, label: lab, deadline: deadline, budget: WQWalk.maxHits - found.count)
                 if found.count >= WQWalk.maxHits { break }
             }
-            handles.forEach { WQ.release($0) }
             let sorted = found.sorted { $0.size > $1.size }
             await MainActor.run {
+                self.keptHandles = handles   // 导入阶段还要靠它们搬运，不在此归还
                 self.hits = sorted
-                self.lines.append("=== \(String(format: "%.1f", Date().timeIntervalSince(t0)))s，\(sorted.count) 个视频（≥1.5MB，句柄已还）===")
+                self.lines.append("=== \(String(format: "%.1f", Date().timeIntervalSince(t0)))s，\(sorted.count) 个视频（≥1.5MB，通行证保留待导入）===")
                 self.scanning = false
             }
         }
@@ -116,8 +126,10 @@ final class WQHarvest: ObservableObject {
                 do {
                     try? FileManager.default.removeItem(at: out)
                     try FileManager.default.copyItem(at: h.url, to: out)
-                    let stem = h.name.replacingOccurrences(of: "[^A-Za-z0-9一-龥._ -]", with: "_", options: .regularExpression)
-                    let name = "WQ_\(h.source.split(separator: ":").last ?? "?")_\(String(stem.prefix(60)))"
+                    let stem = h.url.deletingPathExtension().lastPathComponent
+                    let ext = (h.url.pathExtension.lowercased().isEmpty ? "mp4" : h.url.pathExtension.lowercased())
+                    let clean = stem.replacingOccurrences(of: "[^A-Za-z0-9一-龥._ -]", with: "_", options: .regularExpression)
+                    let name = "WQ_\(h.source.split(separator: ":").last ?? "?")_\(String(clean.prefix(50))).\(ext)"
                     if SavePaths.write(out, rel: name) {
                         DownloadStore.set(h.url.absoluteString, name)
                         saved += 1
@@ -130,6 +142,7 @@ final class WQHarvest: ObservableObject {
             app.refresh()
             app.keepAlive.stop()
             self.importing = false
+            self.lines.append("导入结果：成功 \(saved)，失败 \(fails)")
             BoxIsland.banner("百宝箱 · 上帝视野", "收割完成 \(saved) 条" + (fails > 0 ? "，失败 \(fails)" : ""))
             _ = done
         }
@@ -231,6 +244,7 @@ struct WQHarvestView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
         .onAppear { if hq.lines.isEmpty { hq.scan() } }
+        .onDisappear { hq.teardown() }
     }
 }
 
