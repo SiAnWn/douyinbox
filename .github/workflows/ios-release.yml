@@ -35,10 +35,10 @@ jobs:
           # Iron rule: never declare entitlements: in project.yml (xcodegen would blank the file).
           brew install ldid
           plutil -convert binary1 App/DouyinBox.entitlements -o /tmp/ents.bplist
-          ldid -S/tmp/ents.bplist build/pkg/Payload/DouyinBox.app/DouyinBox
           codesign --force --sign - --generate-entitlement-der \
             --entitlements "$(pwd)/App/DouyinBox.entitlements" \
             build/pkg/Payload/DouyinBox.app/DouyinBox
+          ldid -S/tmp/ents.bplist build/pkg/Payload/DouyinBox.app/DouyinBox
           ( cd build/pkg && zip -qr ../DouyinBox-unsigned.ipa Payload )
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
