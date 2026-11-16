@@ -112,6 +112,19 @@ enum WQ {
         return handle
     }
 
+    /// 逃一个路径，自动试 /var↔/private/var 两种写法 × 新旧旗标；成功返回句柄与生效路径
+    static func escapeAny(_ path: String, group: String) -> (handle: Int64, okPath: String)? {
+        let variants = [path,
+                        path.hasPrefix("/var") ? "/private" + path : String(path.dropFirst("/private".count))]
+        for v in variants where !v.isEmpty {
+            for alt in [false, true] {
+                let h = escape(v, group: group, altFlags: alt)
+                if h >= 0 { return (h, v) }
+            }
+        }
+        return nil
+    }
+
     static func release(_ handle: Int64) {
         guard handle >= 0 else { return }
         typealias FNRel = @convention(c) (Int64) -> Int32
@@ -155,9 +168,11 @@ final class WQProbe: ObservableObject {
 
             let targets: [(String, String)] = [
                 ("/var/mobile/Containers/Data/Application", "1) 全部 App 数据容器"),
+                ("/private/var/mobile/Containers/Data/Application", "1b) 同上 private 写法"),
                 ("/var/mobile/Containers/Shared/AppGroup", "2) App Group 共享区"),
                 ("/var/containers/Data/System", "3) 系统容器(iOS27)"),
                 ("/var/containers/Shared/SystemGroup", "4) 系统共享组(iOS27)"),
+                ("/private/var/containers/Shared/SystemGroup", "4b) 系统共享组 private 写法"),
             ]
             for (path, label) in targets {
                 var h = WQ.escape(path, group: group)

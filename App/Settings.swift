@@ -46,6 +46,17 @@ struct SettingsView: View {
                             }
                         } icon: { Image(systemName: "binoculars").foregroundStyle(.teal) }
                     }
+                    NavigationLink {
+                        WQHarvestView()
+                    } label: {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("上帝视野收割")
+                                Text("扫其他 App 容器里的视频 → 勾选导入资料库（只读不改别人）")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                        } icon: { Image(systemName: "tray.and.arrow.down").foregroundStyle(.orange) }
+                    }
                 }
                 Section("红果短剧") {
                     Button("重置红果匿名设备（被风控时空结果再用）") {
