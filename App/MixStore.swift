@@ -210,6 +210,7 @@ final class BatchRunner: ObservableObject {
     @Published var phase: Phase = .ready
     @Published var total = 0
     @Published var got = 0
+    @Published var junk = 0    // 下发文件是卡片/空壳被拒收的集数
     @Published var skipped = 0
     @Published var failed = 0
     @Published var current = ""
@@ -222,7 +223,7 @@ final class BatchRunner: ObservableObject {
                onFinish: @escaping () -> Void) async {
         phase = .running
         await stopFlag.clear()
-        got = 0; skipped = 0; failed = 0; total = 0
+        got = 0; skipped = 0; failed = 0; junk = 0; total = 0
         current = ""
 
         let rec = MixManifest.map(mix.id)
@@ -285,7 +286,13 @@ final class BatchRunner: ObservableObject {
                             let file = try await BatchTransfer.shared.download(u2)
                             let rel = "\(base)/\(folder)/\(Naming.epName(num: ep.num, title: ep.title))"
                             let sz = (try? FileManager.default.attributesOfItem(atPath: file.path))?[.size] as? Int ?? 0
-                            let ok = sz >= 30_000 && SavePaths.write(file, rel: rel)
+                            // 碎料保险：官方时长看着完整，下发文件却可能只有卡片/空壳
+                            if sz < 7_000_000 {
+                                try? FileManager.default.removeItem(at: file)
+                                await self?.addJunk()
+                                continue
+                            }
+                            let ok = SavePaths.write(file, rel: rel)
                             try? FileManager.default.removeItem(at: file)
                             if ok {
                                 await self?.persist(mix.id, ep.id, rel)
@@ -308,5 +315,6 @@ final class BatchRunner: ObservableObject {
     private func showCur(_ ep: MixEpisode) { current = "第 \(ep.num) 集 · \(String(ep.title.prefix(24)))" }
     private func addGot() { got += 1 }
     private func addFail() { failed += 1 }
+    private func addJunk() { junk += 1 }
     private func persist(_ mixID: String, _ epID: String, _ rel: String) { MixManifest.record(mixID, epID: epID, rel: rel) }
 }

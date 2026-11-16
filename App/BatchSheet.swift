@@ -65,7 +65,7 @@ struct BatchSheet: View {
                                  total: Double(max(runner.total, 1)))
                     Text(runner.current.isEmpty ? "待开始" : runner.current)
                         .font(.footnote).foregroundStyle(.secondary)
-                    Text("已下 \(runner.got) · 跳过 \(runner.skipped) · 失败 \(runner.failed)")
+                    Text("已下 \(runner.got) · 跳过 \(runner.skipped) · 碎料拒收 \(runner.junk) · 失败 \(runner.failed)")
                         .font(.footnote).foregroundStyle(.secondary)
                     switch runner.phase {
                     case .ready:
@@ -81,6 +81,7 @@ struct BatchSheet: View {
                         Button("停止", role: .destructive) { runner.cancel() }
                     case .done:
                         Text("完成：下 \(runner.got) 集，跳过 \(runner.skipped) 集"
+                             + (runner.junk > 0 ? "，碎料拒收 \(runner.junk) 集（这几集抖音只下发卡片，去红果App看）" : "")
                              + (runner.failed > 0 ? "，失败 \(runner.failed) 集" : "")).font(.callout)
                         Button("完成") { dismiss() }
                     case .failed:
