@@ -33,6 +33,7 @@ enum MixAPI {
         RegexHelper.firstGroup(finalURL, pattern: "/mix(?:/detail)?/(\\d{15,20})")
             ?? RegexHelper.firstGroup(finalURL, pattern: "mix_id=(\\d{15,20})")
             ?? RegexHelper.firstGroup(finalURL, pattern: "/collection/(\\d{15,20})")
+            ?? RegexHelper.firstGroup(finalURL, pattern: "/playlet/detail/(\\d{15,20})")  // 抖音播剧=合集，id 即 mix_id（实测 mix 接口直接吐集列表）
     }
 
     static func fetch(mixID: String) async throws -> MixData {
