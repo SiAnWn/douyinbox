@@ -1,7 +1,7 @@
 import Foundation
 
 // MARK: - 合集数据（免费公开接口，不耗 ifphp 配额）
-struct MixEpisode {
+struct MixEpisode: Identifiable {
     let id: String
     let title: String
     let embedded: URL?
@@ -211,6 +211,7 @@ final class BatchRunner: ObservableObject {
     @Published var total = 0
     @Published var got = 0
     @Published var junk = 0    // 下发文件是卡片/空壳被拒收的集数
+    @Published var junkEps: [MixEpisode] = []   // 缺片清单，供浏览器逐个补漏
     @Published var skipped = 0
     @Published var failed = 0
     @Published var current = ""
@@ -223,7 +224,7 @@ final class BatchRunner: ObservableObject {
                onFinish: @escaping () -> Void) async {
         phase = .running
         await stopFlag.clear()
-        got = 0; skipped = 0; failed = 0; junk = 0; total = 0
+        got = 0; skipped = 0; failed = 0; junk = 0; junkEps = []; total = 0
         current = ""
 
         let rec = MixManifest.map(mix.id)
@@ -235,6 +236,8 @@ final class BatchRunner: ObservableObject {
             return true
         }
         skipped = mix.eps.count - pendingList.count - junkCut.count
+        junkEps = junkCut
+        junk = junkCut.count
         total = pendingList.count   // 进度只算真正要下的集，已存的不再虚增百分比
 
         let eng = apiEngine ?? EngineStore.current
@@ -289,7 +292,7 @@ final class BatchRunner: ObservableObject {
                             // 碎料保险：官方时长看着完整，下发文件却可能只有卡片/空壳
                             if sz < 7_000_000 {
                                 try? FileManager.default.removeItem(at: file)
-                                await self?.addJunk()
+                                await self?.markJunk(ep)
                                 continue
                             }
                             let ok = SavePaths.write(file, rel: rel)
@@ -316,5 +319,9 @@ final class BatchRunner: ObservableObject {
     private func addGot() { got += 1 }
     private func addFail() { failed += 1 }
     private func addJunk() { junk += 1 }
+    private func markJunk(_ ep: MixEpisode) {
+        junk += 1
+        if !junkEps.contains(where: { $0.id == ep.id }) { junkEps.append(ep) }
+    }
     private func persist(_ mixID: String, _ epID: String, _ rel: String) { MixManifest.record(mixID, epID: epID, rel: rel) }
 }

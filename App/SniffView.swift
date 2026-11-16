@@ -55,6 +55,7 @@ struct SniffView: View {
     @StateObject private var bridge = BrowserBridge()
     @State private var urlInput = ""
     @State private var webPlay: VideoItem?
+    var seed: String = ""     // 外部直达：进来自动加载（如短剧补漏的剧集页）
 
     var body: some View {
         VStack(spacing: 0) {
@@ -133,7 +134,13 @@ struct SniffView: View {
                 InlinePlayer(video: v)
             }
         }
-        .onAppear { bridge.vm = vm }
+        .onAppear {
+            bridge.vm = vm
+            if !seed.isEmpty && urlInput.isEmpty {
+                urlInput = seed
+                bridge.load(seed)
+            }
+        }
     }
 
     private func go() {

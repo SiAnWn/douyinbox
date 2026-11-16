@@ -6,6 +6,7 @@ struct BatchSheet: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var runner = BatchRunner()
     @State private var base = UserDefaults.standard.string(forKey: "batchBase") ?? "短剧"
+    @State private var patchEp: MixEpisode?
     @State private var mode = -1   // 0 内嵌免费 1 多平台API(不限量) 2 抖音原画(配额)
     @State private var existing = 0
     @State private var subbed = false
@@ -83,6 +84,23 @@ struct BatchSheet: View {
                         Text("完成：下 \(runner.got) 集，跳过 \(runner.skipped) 集"
                              + (runner.junk > 0 ? "，碎料拒收 \(runner.junk) 集（这几集抖音只下发卡片，去红果App看）" : "")
                              + (runner.failed > 0 ? "，失败 \(runner.failed) 集" : "")).font(.callout)
+                        if !runner.junkEps.isEmpty {
+                            Text("碎料缺集（\(runner.junkEps.count) 集）· 逐集点开浏览器补漏：")
+                                .font(.footnote).bold().foregroundStyle(.orange)
+                            ForEach(runner.junkEps) { ep in
+                                Button {
+                                    patchEp = ep
+                                } label: {
+                                    HStack {
+                                        Text("第 \(ep.num) 集 · \(String(ep.title.prefix(20)))")
+                                            .font(.callout)
+                                        Spacer()
+                                        Image(systemName: "play.rectangle.on.rectangle")
+                                            .foregroundStyle(.blue)
+                                    }
+                                }
+                            }
+                        }
                         Button("完成") { dismiss() }
                     case .failed:
                         Text(runner.current).font(.callout)
@@ -96,6 +114,10 @@ struct BatchSheet: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("关闭") { if runner.phase != .running { dismiss() } }
                 }
+            }
+            .fullScreenCover(item: $patchEp) { ep in
+                SniffView(seed: "https://www.iesdouyin.com/share/video/\(ep.id)/")
+                    .environmentObject(app)
             }
             .onAppear {
                 let rec = MixManifest.map(mix.id)
