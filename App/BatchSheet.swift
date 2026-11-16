@@ -95,7 +95,7 @@ struct BatchSheet: View {
             .onAppear {
                 let rec = MixManifest.map(mix.id)
                 existing = rec.values.filter { SavePaths.exists(rel: $0) }.count
-                if isWebEngine { useEngine = false }
+                if isWebEngine || mix.freeDefault { useEngine = false }
                 subbed = SubscriptionStore.exists(mix.id)
             }
         }

@@ -12,6 +12,7 @@ struct MixData: Identifiable {
     let id: String          // mixID
     let name: String
     let eps: [MixEpisode]
+    var freeDefault: Bool = false   // 短剧升级来的合集：批量默认走大合集接口内嵌地址（0 配额）
 }
 
 enum MixAPI {

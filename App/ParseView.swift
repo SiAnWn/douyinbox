@@ -297,7 +297,9 @@ struct ParseView: View {
             if !Hongguo.isHongguo(link),
                let sid = await MixAPI.seriesID(for: resolved),
                let m = try? await MixAPI.fetch(mixID: sid), m.eps.count > 1 {
-                    mix = m
+                    var upgraded = m
+                    upgraded.freeDefault = true
+                    mix = upgraded
                     status = "发现短剧！已升级全集（\(m.eps.count)集）"
                     if earlyReturn {
                         BoxIsland.banner("百宝箱 · 短剧合集已备好",
