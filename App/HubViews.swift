@@ -91,6 +91,19 @@ struct BoxView: View {
                             Image(systemName: "globe").foregroundStyle(.blue)
                         }
                     }
+                    NavigationLink {
+                        SniffView()
+                    } label: {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("网页嗅探器")
+                                Text("抖音短剧 1080p · 任意网页 m3u8/mp4 抓取入库")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "dot.radiowaves.right").foregroundStyle(.purple)
+                        }
+                    }
                 }
             }
             .navigationTitle("匣")
