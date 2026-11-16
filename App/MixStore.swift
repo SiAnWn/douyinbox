@@ -214,6 +214,7 @@ final class BatchRunner: ObservableObject {
     func cancel() { Task { await stopFlag.setStop() } }
 
     func start(mix: MixData, base: String, useEngine: Bool, folderName: String,
+               apiEngine: Engine? = nil,
                onFinish: @escaping () -> Void) async {
         phase = .running
         await stopFlag.clear()
@@ -228,7 +229,7 @@ final class BatchRunner: ObservableObject {
         skipped = mix.eps.count - pendingList.count
         total = pendingList.count   // 进度只算真正要下的集，已存的不再虚增百分比
 
-        let eng = EngineStore.current
+        let eng = apiEngine ?? EngineStore.current
         let realEngine = useEngine && eng.isIfphp
         let endpoint = eng == .svparse ? "svparse" : "dyjx"
         let apikey = KeyStore.value(for: eng)

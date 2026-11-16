@@ -6,7 +6,7 @@ struct BatchSheet: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var runner = BatchRunner()
     @State private var base = UserDefaults.standard.string(forKey: "batchBase") ?? "短剧"
-    @State private var useEngine = EngineStore.current.isIfphp
+    @State private var mode = -1   // 0 内嵌免费 1 多平台API(不限量) 2 抖音原画(配额)
     @State private var existing = 0
     @State private var subbed = false
 
@@ -49,9 +49,10 @@ struct BatchSheet: View {
                         Text("浏览器引擎：批量走免费内嵌地址（约720p，不耗配额）")
                             .font(.footnote).foregroundStyle(.secondary)
                     } else {
-                        Picker("模式", selection: $useEngine) {
-                            Text("原画批量（每集 1 次配额）").tag(true)
-                            Text("免费快速（内嵌约720p，0 配额）").tag(false)
+                        Picker("模式", selection: $mode) {
+                            Text("多平台 API（不限量·推荐）").tag(1)
+                            Text("抖音原画（每集 1 次配额）").tag(2)
+                            Text("免费快速（内嵌约720p，0 配额）").tag(0)
                         }
                         .pickerStyle(.inline)
                         .disabled(runner.phase == .running)
@@ -69,8 +70,9 @@ struct BatchSheet: View {
                         Button("开始批量（补下缺失集）") {
                             UserDefaults.standard.set(base, forKey: "batchBase")
                             Task { await runner.start(mix: mix, base: base,
-                                useEngine: useEngine && !isWebEngine,
+                                useEngine: (mode == 1 || mode == 2) && !isWebEngine,
                                 folderName: mix.name,
+                                apiEngine: mode == 1 ? .svparse : (mode == 2 ? .dyjx : nil),
                                 onFinish: { app.refreshDramaSeries(); app.refreshPrivateSeries(); app.refresh() }) }
                         }
                     case .running:
@@ -95,7 +97,7 @@ struct BatchSheet: View {
             .onAppear {
                 let rec = MixManifest.map(mix.id)
                 existing = rec.values.filter { SavePaths.exists(rel: $0) }.count
-                if isWebEngine || mix.freeDefault { useEngine = false }
+                if mode < 0 { mode = isWebEngine ? 0 : (mix.freeDefault ? 1 : (EngineStore.current.isIfphp ? 2 : 0)) }
                 subbed = SubscriptionStore.exists(mix.id)
             }
         }
