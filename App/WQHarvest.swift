@@ -1,14 +1,17 @@
 import SwiftUI
 
 // MARK: - 上帝视野·收割（worse_query 逃逸扫其他 App 容器的视频 → 入库）
-// 只读 + 复制出去，绝不写删别人家文件。扫描限时限深防爆。
+// 内核只给"具体容器"开票不给父目录，所以：
+//   路线A: 直接给 Data/Application 父目录开票（某些版本可）
+//   路线B: pathleak 扫 inode 找出全部容器路径 → 逐个开票（结果缓存 7 天）
+// AppGroup 区父目录可直接开票。只读+复制，绝不写删别人家文件。
 
 struct WQHit: Identifiable, Hashable {
     var id: String { url.path }
     let url: URL
     let name: String
     let size: Int
-    let source: String   // 来源容器短名
+    let source: String
 }
 
 @MainActor
@@ -19,11 +22,7 @@ final class WQHarvest: ObservableObject {
     @Published var scanning = false
     @Published var importing = false
 
-    static let vexts: Set<String> = ["mp4", "mov", "m4v"]
-    static let minSize = 1_500_000
-    static let maxHits = 250
-
-    func scan() {
+    func scan(force: Bool = false) {
         guard !scanning else { return }
         scanning = true
         lines = []
@@ -36,23 +35,57 @@ final class WQHarvest: ObservableObject {
                 return
             }
             var handles: [Int64] = []
-            var roots: [(String, String)] = []   // (root, label)
-            let tries: [(String, String)] = [
-                ("/var/mobile/Containers/Data/Application", "App数据"),
-                ("/var/mobile/Containers/Shared/AppGroup", "AppGroup"),
-            ]
-            for (p, lab) in tries {
-                if let r = WQ.escapeAny(p, group: group) {
-                    handles.append(r.handle)
-                    roots.append((r.okPath, lab))
-                    await MainActor.run { self.lines.append("✓ 开通 \(lab)（\(r.okPath)）") }
-                } else {
-                    await MainActor.run { self.lines.append("✗ \(lab) 开路失败") }
-                }
-            }
             var found: [WQHit] = []
-            let deadline = t0.addingTimeInterval(30)
-            for (root, lab) in roots {
+            var dirs: [(String, String)] = []   // (已开票目录, 标签)
+
+            // 1) App 数据容器
+            let dataRoot = "/var/mobile/Containers/Data/Application"
+            if let r = WQ.escapeAny(dataRoot, group: group) {
+                handles.append(r.handle)
+                dirs.append((r.okPath, "影"))
+                await MainActor.run { self.lines.append("✓ App数据 父目录直通") }
+            } else {
+                await MainActor.run { self.lines.append("App数据 父目录不给票 → 走 inode 普查（首次约十几秒，之后有缓存）") }
+                let key = "wqContV2"
+                var uuids: [String] = []
+                let cache = UserDefaults.standard.dictionary(forKey: key) as? [String: Any]
+                let stamp = (cache?["t"] as? TimeInterval) ?? 0
+                if !force, Date().timeIntervalSince1970 - stamp < 7 * 86400, let arr = cache?["v"] as? [String] {
+                    uuids = arr
+                    await MainActor.run { self.lines.append("（用 7 天内缓存的 \(uuids.count) 个容器）") }
+                } else {
+                    let dl = Date().addingTimeInterval(70)
+                    let paths = WQ.pathleak(dataRoot, deadline: dl)
+                    uuids = paths
+                    UserDefaults.standard.set(["t": Date().timeIntervalSince1970, "v": paths], forKey: key)
+                    await MainActor.run { self.lines.append("普查得 \(paths.count) 个容器") }
+                }
+                let cap = min(uuids.count, 160)
+                var granted = 0
+                await MainActor.run { self.lines.append("逐个开票 \(cap) 个…") }
+                for p in uuids.prefix(cap) {
+                    if Date() > t0.addingTimeInterval(90) { break }
+                    if let r = WQ.escapeAny(p, group: group) {
+                        handles.append(r.handle)
+                        dirs.append((r.okPath, "影"))
+                        granted += 1
+                    }
+                }
+                await MainActor.run { self.lines.append("开票成功 \(granted)/\(cap)") }
+            }
+
+            // 2) AppGroup 共享区（父目录可直通）
+            let agRoot = "/var/mobile/Containers/Shared/AppGroup"
+            if let r = WQ.escapeAny(agRoot, group: group) {
+                handles.append(r.handle)
+                dirs.append((r.okPath, "组"))
+                await MainActor.run { self.lines.append("✓ AppGroup 开通") }
+            } else {
+                await MainActor.run { self.lines.append("✗ AppGroup 开路失败") }
+            }
+
+            let deadline = t0.addingTimeInterval(120)
+            for (root, lab) in dirs {
                 found += WQWalk.walk(root, label: lab, deadline: deadline, budget: WQWalk.maxHits - found.count)
                 if found.count >= WQWalk.maxHits { break }
             }
@@ -60,15 +93,48 @@ final class WQHarvest: ObservableObject {
             let sorted = found.sorted { $0.size > $1.size }
             await MainActor.run {
                 self.hits = sorted
-                self.lines.append("=== \(String(format: "%.1f", Date().timeIntervalSince(t0)))s，共 \(sorted.count) 个视频（≥1.5MB，上限 \(WQWalk.maxHits)，句柄已还）===")
+                self.lines.append("=== \(String(format: "%.1f", Date().timeIntervalSince(t0)))s，\(sorted.count) 个视频（≥1.5MB，句柄已还）===")
                 self.scanning = false
             }
         }
     }
 
-    // BFS 限深 4、跳过 Library/Caches 与 tmp，撞 deadline 即停（非隔离枚举，后台直跑）
+    func importSel(app: AppState) {
+        guard !importing, !sel.isEmpty else { return }
+        importing = true
+        let picked = hits.filter { sel.contains($0.id) }
+        let jobs = TuoleiJobs.shared
+        Task { @MainActor in
+            app.keepAlive.start()
+            let jid = jobs.add("上帝视野收割 \(picked.count) 条", total: picked.count)
+            var done = 0, fails = 0, saved = 0
+            for h in picked {
+                let out = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("wq_\(UUID().uuidString.prefix(8)).\(h.url.pathExtension.lowercased())")
+                do {
+                    try? FileManager.default.removeItem(at: out)
+                    try FileManager.default.copyItem(at: h.url, to: out)
+                    let stem = h.name.replacingOccurrences(of: "[^A-Za-z0-9一-龥._ -]", with: "_", options: .regularExpression)
+                    let name = "WQ_\(h.source.split(separator: ":").last ?? "?")_\(String(stem.prefix(60)))"
+                    if SavePaths.write(out, rel: name) {
+                        DownloadStore.set(h.url.absoluteString, name)
+                        saved += 1
+                    } else { try? FileManager.default.removeItem(at: out); fails += 1 }
+                } catch { fails += 1 }
+                done += 1
+                jobs.progress(jid, done, fails)
+            }
+            jobs.finish(jid)
+            app.refresh()
+            app.keepAlive.stop()
+            self.importing = false
+            BoxIsland.banner("百宝箱 · 上帝视野", "收割完成 \(saved) 条" + (fails > 0 ? "，失败 \(fails)" : ""))
+            _ = done
+        }
+    }
 }
 
+// BFS 限深 4、跳过 Caches/tmp，撞 deadline 即停；非隔离，后台直跑
 enum WQWalk {
     static let vexts: Set<String> = ["mp4", "mov", "m4v"]
     static let minSize = 1_500_000
@@ -106,51 +172,20 @@ enum WQWalk {
     }
 }
 
-extension WQHarvest {
-    func importSel(app: AppState) {
-        guard !importing, !sel.isEmpty else { return }
-        importing = true
-        let picked = hits.filter { sel.contains($0.id) }
-        let jobs = TuoleiJobs.shared
-        Task { @MainActor in
-            app.keepAlive.start()
-            let jid = jobs.add("上帝视野收割 \(picked.count) 条", total: picked.count)
-            var done = 0, fails = 0, saved = 0
-            for h in picked {
-                let out = FileManager.default.temporaryDirectory
-                    .appendingPathComponent("wq_\(UUID().uuidString.prefix(8)).\(h.url.pathExtension.lowercased())")
-                do {
-                    try? FileManager.default.removeItem(at: out)
-                    try FileManager.default.copyItem(at: h.url, to: out)
-                    let stem = h.name.replacingOccurrences(of: "[^A-Za-z0-9一-龥._ -]", with: "_", options: .regularExpression)
-                    let name = "WQ_\(h.source.split(separator: ":").last ?? "?")_\(String(stem.prefix(60)))"
-                    if SavePaths.write(out, rel: name) {
-                        DownloadStore.set(h.url.absoluteString, name)
-                        saved += 1
-                    } else { try? FileManager.default.removeItem(at: out); fails += 1 }
-                } catch { fails += 1 }
-                done += 1
-                jobs.progress(jid, done, fails)
-            }
-            jobs.finish(jid)
-            app.refresh()
-            app.keepAlive.stop()
-            self.importing = false
-            BoxIsland.banner("百宝箱 · 上帝视野", "收割完成 \(saved) 条" + (fails > 0 ? "，失败 \(fails)" : ""))
-            self.scan()
-            _ = done
-        }
-    }
-}
-
-struct WQHarvestView: View {    @EnvironmentObject var app: AppState
+struct WQHarvestView: View {
+    @EnvironmentObject var app: AppState
     @StateObject private var hq = WQHarvest()
 
     var body: some View {
         List {
             Section {
-                Button(hq.scanning ? "扫描中…" : "扫描全部容器视频") { hq.scan() }
-                    .disabled(hq.scanning || hq.importing)
+                HStack {
+                    Button(hq.scanning ? "扫描中…" : "扫描全部容器视频") { hq.scan() }
+                        .disabled(hq.scanning || hq.importing)
+                    Spacer()
+                    Button("重扫inode") { hq.scan(force: true) }
+                        .font(.callout).disabled(hq.scanning || hq.importing)
+                }
                 ForEach(Array(hq.lines.enumerated()), id: \.offset) { _, l in
                     Text(l).font(.system(.caption, design: .monospaced))
                 }
@@ -167,7 +202,7 @@ struct WQHarvestView: View {    @EnvironmentObject var app: AppState
                         Button("全不选") { hq.sel = [] }.font(.callout)
                         Button {
                             hq.importSel(app: app)
-                        } label: { Text("导入 ⬇").foregroundStyle(.orange) }
+                        } label: { Text("导入⬇").foregroundStyle(.orange) }
                         .disabled(hq.sel.isEmpty || hq.importing)
                     }
                 }
