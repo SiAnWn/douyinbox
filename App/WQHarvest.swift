@@ -46,7 +46,7 @@ final class WQHarvest: ObservableObject {
                 await MainActor.run { self.lines.append("✓ App数据 父目录直通") }
             } else {
                 await MainActor.run { self.lines.append("App数据 父目录不给票 → 走 inode 普查（首次约十几秒，之后有缓存）") }
-                let key = "wqContV2"
+                let key = "wqContV3"
                 var uuids: [String] = []
                 let cache = UserDefaults.standard.dictionary(forKey: key) as? [String: Any]
                 let stamp = (cache?["t"] as? TimeInterval) ?? 0
@@ -55,10 +55,12 @@ final class WQHarvest: ObservableObject {
                     await MainActor.run { self.lines.append("（用 7 天内缓存的 \(uuids.count) 个容器）") }
                 } else {
                     let dl = Date().addingTimeInterval(70)
-                    let paths = WQ.pathleak(dataRoot, deadline: dl)
+                    let (paths, diag, complete) = WQ.pathleak(dataRoot, deadline: dl)
                     uuids = paths
-                    UserDefaults.standard.set(["t": Date().timeIntervalSince1970, "v": paths], forKey: key)
-                    await MainActor.run { self.lines.append("普查得 \(paths.count) 个容器") }
+                    if complete {
+                        UserDefaults.standard.set(["t": Date().timeIntervalSince1970, "v": paths], forKey: key)
+                    }
+                    await MainActor.run { self.lines.append("普查: \(diag) \(complete ? "已缓存" : "未扫完不缓存")") }
                 }
                 let cap = min(uuids.count, 160)
                 var granted = 0

