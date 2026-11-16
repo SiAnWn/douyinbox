@@ -1,5 +1,4 @@
 import SwiftUI
-import Security
 
 // MARK: - worse_query 沙盒逃逸移植（探测版 v1）
 // 源自 forcequitOS/worse_query PoC (GPL-3.0, Taj C/forcequit, 2026-11-08)
@@ -7,22 +6,23 @@ import Security
 // 向容器管理器查询组缓存分区，管理器跟链接给目标签发沙盒扩展令牌。
 // Apple 未修（截至 2026-11-16），仅供个人研究使用。
 // v1 关键更新：签名工具(LCSign)会把申报的组名替换成它现发的随机组
-// （WQ Files 日志实证 group.<hash>.N），所以组名必须运行时从自身签名读。
+// （WQ Files 日志实证 group.<hash>.N），所以组名必须运行时从内嵌描述文件读。
 
 enum WQ {
     static let declaredGroup = "group.com.sian.DouyinBox"
 
-    // 从自身代码签名的 entitlements 里读实际发到的 App Group
+    // 从 embedded.mobileprovision 的 Entitlements 读实际发到的 App Group
+    // （iOS 没有 macOS 那套 SecCode API，描述文件是公开替代路）
     static func detectedGroups() -> [String] {
-        var code: SecCode?
-        guard SecCodeCopySelf([], &code) == 0, let code else { return [] }
-        var stat: SecStaticCode?
-        guard SecCodeCopyStaticCode(code, [], &stat) == 0, let stat else { return [] }
-        var infoRef: CFDictionary?
-        let flags = SecCSFlags(rawValue: UInt(kSecCSSigningInformation))
-        guard SecCodeCopySigningInformation(stat, flags, &infoRef) == 0,
-              let info = infoRef as? [String: Any],
-              let ents = info[kSecCodeInfoEntitlements as String] as? [String: Any],
+        guard let url = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
+              let data = try? Data(contentsOf: url),
+              let s = String(data: data, encoding: .isoLatin1),
+              let a = s.range(of: "<?xml"),
+              let b = s.range(of: "</plist>") else { return [] }
+        let xml = String(s[a.lowerBound..<b.upperBound])
+        guard let xd = xml.data(using: .utf8),
+              let plist = try? PropertyListSerialization.propertyList(from: xd, format: nil) as? [String: Any],
+              let ents = plist["Entitlements"] as? [String: Any],
               let groups = ents["com.apple.security.application-groups"] as? [String] else { return [] }
         return groups
     }
