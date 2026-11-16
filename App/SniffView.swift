@@ -196,22 +196,40 @@ struct SniffView: View {
                     app.refresh()
                 } else {
                     let ck = await sniffCookies(host: u.host ?? "")
-                    let file = try await DouyinAPI.download(u,
-                        referer: vm.pageURL.isEmpty ? s.id : vm.pageURL,
-                        cookie: ck, uaOverride: SniffConst.ua) { frac, sps in
-                            Task { @MainActor in
-                                self.vm.update(s.id) { cur in
-                                    cur.frac = frac
-                                    cur.note = "\(Int(frac * 100))% · \(Naming.fmtSpeed(sps))"
-                                }
+                    let refer = vm.pageURL.isEmpty ? s.id : vm.pageURL
+                    // tos 直链实测裸连可下；带页面身份证则可能 UA/签名配套被拒 →
+                    // 先裸下，失败再带身份重试
+                    let prog: @Sendable (Double, Double) -> Void = { frac, sps in
+                        Task { @MainActor in
+                            self.vm.update(s.id) { cur in
+                                cur.frac = frac
+                                cur.note = "\(Int(frac * 100))% · \(Naming.fmtSpeed(sps))"
                             }
                         }
-                    let sz = (try? FileManager.default.attributesOfItem(atPath: file.path))?[.size] as? Int ?? 0
+                    }
+                    let attempts: [(String, String, String)] = [
+                        (desktopUA ? SniffConst.desktopUA : SniffConst.ua, "", ""),   // 裸连+对味UA
+                        (desktopUA ? SniffConst.desktopUA : SniffConst.ua, refer, ck) // 带页面身份证
+                    ]
+                    var file: URL?
+                    var lastErr: Error?
+                    for (ua, rf, cok) in attempts {
+                        do {
+                            file = try await DouyinAPI.download(u, referer: rf, cookie: cok,
+                                                                uaOverride: ua, progress: prog)
+                            break
+                        } catch {
+                            lastErr = error
+                            vm.update(s.id) { $0.note = "换姿势重试…" }
+                        }
+                    }
+                    guard let got = file else { throw lastErr ?? GError.failed("下载失败") }
+                    let sz = (try? FileManager.default.attributesOfItem(atPath: got.path))?[.size] as? Int ?? 0
                     if sz < 30_000 {
-                        try? FileManager.default.removeItem(at: file)
+                        try? FileManager.default.removeItem(at: got)
                         vm.update(s.id) { $0.frac = -1; $0.note = "站点拒直下(仅\(sz / 1024)KB)：优先用HLS候选，或先在网页里点播放再试" }
-                    } else if SavePaths.write(file, rel: destRel) {
-                        try? FileManager.default.removeItem(at: file)
+                    } else if SavePaths.write(got, rel: destRel) {
+                        try? FileManager.default.removeItem(at: got)
                         vm.update(s.id) { $0.frac = 1; $0.done = true; $0.downloaded = true; $0.note = "已存入视频库(\(destRel))" }
                         app.refresh()
                     } else {
