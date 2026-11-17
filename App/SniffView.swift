@@ -16,6 +16,8 @@ final class SniffVM: ObservableObject {
         let id: String          // 完整 URL
         var kind: String        // "m3u8" / "mp4"
         var note = ""
+        var tag = ""            // 智能标签：如 "本集·1080"
+        var dsRank = 99         // tos ds 档位（4=1080 6=576，越小越高清）
         var frac = -1.0         // -1 未开始
         var done = false
         var downloaded = false
@@ -24,6 +26,14 @@ final class SniffVM: ObservableObject {
     @Published var pageURL = ""
     @Published var pageTitle = ""
     @Published var hint = ""
+    var currentVid = ""          // 当前播放页的 video id（判定"本集"）
+
+    private static func qv(_ url: String, _ k: String) -> String {
+        guard let r = url.range(of: k + "=") else { return "" }
+        let tail = url[r.upperBound...]
+        let end = tail.firstIndex(where: { $0 == "&" }) ?? tail.endIndex
+        return String(tail[..<end])
+    }
 
     func add(_ url: String) {
         guard url.hasPrefix("http"), items.count < 40 else { return }
@@ -33,11 +43,38 @@ final class SniffVM: ObservableObject {
         if isVid {
             // 过滤明显非媒体
             for drop in [".js", ".css", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".woff", ".ico", ".webp", ".html"] where low.contains(drop) && !low.contains("m3u8") { return }
-            // 同一视频常被播放器多次带不同签名请求 → 按 域名+路径 去重
-            let key = low.components(separatedBy: "?").first ?? low
-            if items.contains(where: { (($0.id.lowercased()).components(separatedBy: "?").first ?? "") == key }) { return }
-            let k = low.contains("m3u8") ? "m3u8" : "mp4"
-            items.append(Snip(id: url, kind: k))
+            // 按视频本体归并：video_id 优先，退回 host+path
+            let vid = Self.qv(low, "video_id")
+            let key = !vid.isEmpty ? vid : ((low.components(separatedBy: "?").first) ?? low)
+            let ds = Int(Self.qv(low, "ds")) ?? 99
+            var tag = ""
+            if kindIsMp4(low) {
+                if !vid.isEmpty, vid == currentVid { tag += "本集·" }
+                else if !vid.isEmpty { tag += "预载·" }
+                tag += ds == 4 ? "1080" : (ds == 6 ? "576" : (ds < 99 ? "档\(ds)" : ""))
+            }
+            if let i = items.firstIndex(where: {
+                let kv = Self.qv($0.id.lowercased(), "video_id")
+                return (!vid.isEmpty && !kv.isEmpty && kv == vid) ||
+                       (vid.isEmpty && kv.isEmpty && (($0.id.lowercased().components(separatedBy: "?").first) ?? "") == key)
+            }) {
+                // 同集重复到达：只留更清晰档位那条
+                if ds < items[i].dsRank {
+                    items[i] = Snip(id: url, kind: kindIsMp4(low) ? "mp4" : "m3u8", tag: tag, dsRank: ds)
+                    resort()
+                }
+                return
+            }
+            let k = kindIsMp4(low) ? "mp4" : "m3u8"
+            items.append(Snip(id: url, kind: k, tag: tag, dsRank: ds))
+            resort()
+        }
+    }
+    private func kindIsMp4(_ low: String) -> Bool { !low.contains("m3u8") }
+    private func resort() {
+        items.sort { a, b in
+            if (a.kind == "mp4") != (b.kind == "mp4") { return a.kind == "mp4" }
+            return a.dsRank < b.dsRank
         }
     }
     func update(_ url: String, _ block: (inout Snip) -> Void) {
@@ -90,6 +127,9 @@ struct SniffView: View {
 
             SiteBrowser(bridge: bridge, onURL: { u, t in
                 vm.pageURL = u ?? vm.pageURL
+                if let u = u, let r = u.range(of: "/video/(\\d{15,20})", options: .regularExpression) {
+                    vm.currentVid = String(r.dropFirst("/video/".count))
+                }
                 if let t = t, !t.isEmpty { vm.pageTitle = t }
                 vm.hint = ""
             })
@@ -115,6 +155,14 @@ struct SniffView: View {
                                             .background(s.kind == "m3u8" ? Color.purple.opacity(0.25) : Color.green.opacity(0.25))
                                             .foregroundStyle(s.kind == "m3u8" ? Color.purple : Color.green)
                                             .clipShape(Capsule())
+                                        if !s.tag.isEmpty {
+                                            Text(s.tag)
+                                                .font(.caption2).bold()
+                                                .padding(.horizontal, 6).padding(.vertical, 2)
+                                                .background(s.tag.contains("1080") ? Color.orange.opacity(0.3) : Color.gray.opacity(0.2))
+                                                .foregroundStyle(s.tag.contains("1080") ? Color.orange : Color.secondary)
+                                                .clipShape(Capsule())
+                                        }
                                         Text(s.id).font(.caption2).lineLimit(1).foregroundStyle(.secondary)
                                         Spacer()
                                         if s.frac >= 0 {
@@ -157,6 +205,9 @@ struct SniffView: View {
             bridge.setDesktop(desktopUA, reload: false)
             if !seed.isEmpty && urlInput.isEmpty {
                 urlInput = seed
+                if let r = seed.range(of: "/video/(\\d{15,20})", options: .regularExpression) {
+                    vm.currentVid = String(r.dropFirst("/video/".count))
+                }
                 bridge.load(seed)
             }
         }
