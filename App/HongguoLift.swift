@@ -197,10 +197,11 @@ enum HongguoLift {
         let cdid: String
     }
 
-    // 直连会话：nw_proxy type 0 = 忽略系统代理 → 中国蜂窝/家宽出口
+    // 直连会话：connectionProxyDictionary=[:] 关掉 HTTP 代理层
+    // （若手机 Clash 是 TUN/VPN 模式则此项无效，fqnovel 域名需在订阅规则里指 DIRECT）
     static let direct: URLSession = {
         let cfg = URLSessionConfiguration.ephemeral
-        cfg.connectionDictionary = ["sessionProxyConfiguration": ["networkProxyType": 0]]
+        cfg.connectionProxyDictionary = [:]
         cfg.timeoutIntervalForRequest = 15
         cfg.timeoutIntervalForResource = 120
         cfg.waitsForConnectivity = false
