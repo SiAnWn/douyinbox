@@ -45,13 +45,8 @@ enum HGTrail {
 
 // MARK: - 基础件
 enum HGBase {
-    /// SM3 哈希：iOS26+ 用系统原生（手写移植曾出主循环 bug），更老系统退 HGSM3
-    static func sm3Data(_ d: Data) -> Data {
-        if #available(iOS 26.0, *) {
-            return Data(SM3.hash(data: d))
-        }
-        return HGSM3.hash(d)
-    }
+    /// SM3 哈希（CI SDK 无 CryptoKit.SM3，用自家移植；自检向量把关）
+    static func sm3Data(_ d: Data) -> Data { HGSM3.hash(d) }
     static func md5(_ d: Data) -> Data {
         var out = Data(count: Int(CC_MD5_DIGEST_LENGTH))
         d.withUnsafeBytes { ib in
@@ -169,14 +164,11 @@ enum HGBase {
     }
 }
 
-// MARK: - SM3（国密哈希，argus 用；标准向量 "abc" 在 selfCheck 核对）
+// MARK: - SM3（国密哈希，argus 用；结构逐行镜像 HongGuo-PC sm3.js——abc 向量已在 PC 验证）
 enum HGSM3 {
-    private static func p0(_ x: UInt32) -> UInt32 { x ^ HGBase.rotl32(x, 9) ^ HGBase.rotl32(x, 17) }
-    private static func p1(_ x: UInt32) -> UInt32 { x ^ HGBase.rotl32(x, 15) ^ HGBase.rotl32(x, 23) }
-
     static func hash(_ msg: Data) -> Data {
-        var iv: [UInt32] = [0x7382_6466, 0x5f06_3de3, 0x20bc_e65d, 0x643a_1f9f,
-                            0xdfd4_fb6f, 0x656b_e79f, 0x6291_f93a, 0xa452_ffc3]
+        var iv: [UInt32] = [0x7380_166f, 0x4914_b2b9, 0x1724_42d7, 0xda8a_0600,
+                            0xa96f_30bc, 0x1631_38aa, 0xe38d_ee4d, 0xb0fb_0e4e]
         var data = msg
         let bitLen = UInt64(msg.count) &* 8
         data.append(0x80)
@@ -197,19 +189,19 @@ enum HGSM3 {
         for i in 0..<16 { w[i] = HGBase.readBE32(m, at &+ i &* 4) }
         for j in 16..<68 {
             let x = w[j &- 16] ^ w[j &- 9] ^ HGBase.rotl32(w[j &- 3], 15)
-            w[j] = p1(x) ^ HGBase.rotl32(w[j &- 13], 7) ^ w[j &- 6]
+            w[j] = x ^ HGBase.rotl32(x, 15) ^ HGBase.rotl32(x, 23)
+                ^ HGBase.rotl32(w[j &- 13], 7) ^ w[j &- 6]
         }
         var a = v0[0], b = v0[1], c = v0[2], dd = v0[3], e = v0[4], f = v0[5], g = v0[6], h = v0[7]
-        for k in 0..<64 {
-            let tt: UInt32 = k < 16 ? 0x79cc_4519 : 0x7a87_9d8a
-            let a12 = (HGBase.rotl32(a, 12) &+ e &+ HGBase.rotl32(tt, UInt32(k & 31))) & 0xffff_ffff
-            let ss1 = HGBase.rotl32(a12, 7)
-            let ss2 = ss1 ^ HGBase.rotl32(a, 12)
-            let ff = k < 16 ? (a ^ b ^ c) : ((a & b) | (a & c) | (b & c))
-            let gg = k < 16 ? (e ^ f ^ g) : ((e & f) | ((~e & 0xffff_ffff) & g))
-            let wj = w[k] ^ w[k &+ 4]
-            let t1 = (ff &+ dd &+ p0(wj)) &+ ss2
-            let t2 = (gg &+ h &+ p1(wj)) &+ ss2
+        for i in 0..<64 {
+            let a12 = HGBase.rotl32(a, 12)
+            let tt: UInt32 = i < 16 ? 0x79cc_4519 : 0x7a87_9d8a
+            let s1 = HGBase.rotl32(a12 &+ e &+ HGBase.rotl32(tt, UInt32(i)), 7)
+            let s2 = s1 ^ a12
+            let ff = i < 16 ? (a ^ b ^ c) : ((a & b) | (a & c) | (b & c))
+            let gg = i < 16 ? (e ^ f ^ g) : ((e & f) | ((~e & 0xffff_ffff) & g))
+            let t1 = ff &+ dd &+ s2 &+ (w[i] ^ w[i &+ 4])
+            let t2 = gg &+ h &+ s1 &+ w[i]
             dd = c
             c = HGBase.rotl32(b, 9)
             b = a
@@ -217,12 +209,10 @@ enum HGSM3 {
             h = g
             g = HGBase.rotl32(f, 19)
             f = e
-            e = p0(t2) ^ ss2
+            e = t2 ^ HGBase.rotl32(t2, 9) ^ HGBase.rotl32(t2, 17)
         }
-        return [(a ^ v0[0]) & 0xffff_ffff, (b ^ v0[1]) & 0xffff_ffff,
-                (c ^ v0[2]) & 0xffff_ffff, (dd ^ v0[3]) & 0xffff_ffff,
-                (e ^ v0[4]) & 0xffff_ffff, (f ^ v0[5]) & 0xffff_ffff,
-                (g ^ v0[6]) & 0xffff_ffff, (h ^ v0[7]) & 0xffff_ffff]
+        let next = [a, b, c, dd, e, f, g, h]
+        return (0..<8).map { (v0[$0] ^ next[$0]) & 0xffff_ffff }
     }
 }
 
@@ -381,7 +371,6 @@ enum HongguoLift {
             if let n = j[name] as? NSNumber { let s = n.stringValue; if validId(s) { return s } }
             return ""
         }
-        func validId(_ s: String) -> Bool { s.count >= 6 && s.contains(where: \.isNumber) && !s.trimmingCharacters(in: CharacterSet(charactersIn: "0")).isEmpty }
         let biz = (j["code"] as? NSNumber)?.intValue ?? (j["Code"] as? NSNumber)?.intValue ?? 0
         let dev = bigId("device_id"), iid = bigId("install_id")
         guard biz == 0, !dev.isEmpty, !iid.isEmpty else {
