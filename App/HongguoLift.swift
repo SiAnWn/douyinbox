@@ -501,8 +501,8 @@ enum HongguoLift {
             HGBase.writeLE64(&data, off &+ 8, right)
             off += 16
         }
-        let mask = HGBase.fromHex("d04ffdffd04ffdff")
-        for i in 0..<data.count { data[i] ^= mask[i % 16] }
+        let mask = HGBase.fromHex("d04ffdffd04ffdff")   // 8 字节！
+        for i in 0..<data.count { data[i] ^= mask[i % mask.count] }
         let combined = Data((mask + data).reversed())
         let container = pad16(HGBase.fromHex("a6e783ee7001100918") + combined + HGBase.fromHex("567b"))
         let key = HGBase.md5(argusKey.subdata(in: 0..<16))
