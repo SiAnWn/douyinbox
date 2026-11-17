@@ -148,13 +148,16 @@ enum HGBase {
         }
         return ~c
     }
-    static func le32(_ v: UInt32) -> Data {
-        var x = v.littleEndian
+    static func le32(_ v: UInt32) -> Data {        var x = v.littleEndian
         return Data(bytes: &x, count: 4)
     }
     static func be32(_ v: UInt32) -> Data {
         var x = v.bigEndian
         return Data(bytes: &x, count: 4)
+    }
+    static func le64(_ v: UInt64) -> Data {
+        var x = v.littleEndian
+        return Data(bytes: &x, count: 8)
     }
     static func readLE64(_ d: Data, _ at: Int) -> UInt64 {
         var x: UInt64 = 0
@@ -567,6 +570,11 @@ enum HongguoLift {
         var lastErr = "空响应"
         for round in 0..<2 {
             let dev = try await device(renew: round > 0)
+            // V5 手机端新协议先行(上游 openhongguo PR#13 同套)，失败落回 video_tab 五头
+            if let lift = await HGV5.attempt(vid: vid, dev: dev) {
+                HGTrail.note("lift ok v5 def=\(lift.definition) \(lift.width)x\(lift.height) key=\(lift.keyHex.isEmpty ? "none" : String(lift.keyHex.prefix(8))) url=" + String(lift.url.absoluteString.prefix(90)))
+                return lift
+            }
             let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
             let khronos = UInt32(truncatingIfNeeded: nowMs / 1000)
             var pairs = deviceParams
