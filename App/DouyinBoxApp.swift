@@ -244,6 +244,7 @@ struct DouyinBoxApp: App {
             RootView()
                 .environmentObject(app)
                 .onAppear {
+                    HGCrash.install()
                     app.loadFav()
                     app.refreshSoon(); app.refreshSeriesSoon()
                     app.loadSubs()
