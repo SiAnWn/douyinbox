@@ -7,8 +7,8 @@ import Darwin
 enum HGCrash {
     private static var fd: Int32 = -1
     private static var frames = [UnsafeMutableRawPointer?](repeating: nil, count: 48)
-    private static let headC: [Int8] = Array("@@@ CRASH\n".utf8) + [0]
-    private static let tailC: [Int8] = Array("@@@ END\n".utf8) + [0]
+    private static let headC: [UInt8] = Array("@@@ CRASH\n".utf8) + [0]
+    private static let tailC: [UInt8] = Array("@@@ END\n".utf8) + [0]
     static func install() {
         let p = SavePaths.docs.appendingPathComponent("HGTrail.txt").path
         fd = open(p, O_APPEND | O_WRONLY | O_CREAT, 0o644)
