@@ -103,7 +103,8 @@ final class SniffAutoVM: ObservableObject {
                     if SavePaths.write(file, rel: rel) {
                         try? FileManager.default.removeItem(at: file)
                         MixManifest.record(mixID, epID: ep.id, rel: rel)
-                        setRow(i, "✓入库 \(w ≥ 1000 ? "1080" : "\(w)p)") \(snip.tag)"; got += 1
+                        let wTag = w >= 1000 ? "1080" : "\(w)p"
+                        setRow(i, "✓入库 \(wTag) \(snip.tag)"); got += 1
                         log("EP\(ep.num) ✓入库 \(rel)")
                     } else {
                         try? FileManager.default.removeItem(at: file)
