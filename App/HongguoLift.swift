@@ -293,10 +293,13 @@ enum HongguoLift {
         guard n > 4 else { throw GError.failed("gzip 失败") }
         comp = comp.subdata(in: 0..<n)
         var body = comp
+        var mode = "raw"
         // zlib 流首字节 0x78 系（CMF/FLG 校验 %31==0）→ 剥 2 字节头 + 4 字节 adler
         if comp.count > 6, comp[0] & 0x0f == 8, (Int(comp[0]) << 8 | Int(comp[1])) % 31 == 0 {
             body = comp.subdata(in: 2..<(n - 4))
+            mode = "zlib"
         }
+        HGTrail.note("gz mode=" + mode + " c0=" + String(format: "%02x", comp[0]) + " n=" + String(n))
         var out = Data([0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff])
         out.append(body)
         out.append(HGBase.le32(HGBase.crc32(d)))
