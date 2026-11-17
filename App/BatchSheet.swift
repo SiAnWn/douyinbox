@@ -78,6 +78,12 @@ struct BatchSheet: View {
                                 apiEngine: mode == 1 ? .svparse : (mode == 2 ? .dyjx : nil),
                                 onFinish: { app.refreshDramaSeries(); app.refreshPrivateSeries(); app.refresh() }) }
                         }
+                        NavigationLink {
+                            SniffAutoView(eps: mix.eps, base: base, mixID: mix.id, folder: mix.name)
+                                .environmentObject(app)
+                        } label: {
+                            Label("整剧 1080 自动补漏（嗅探流水线）", systemImage: "robot")
+                        }
                     case .running:
                         Button("停止", role: .destructive) { runner.cancel() }
                     case .done:
@@ -100,6 +106,12 @@ struct BatchSheet: View {
                                     }
                                 }
                             }
+                        }
+                        NavigationLink {
+                            SniffAutoView(eps: mix.eps, base: base, mixID: mix.id, folder: mix.name)
+                                .environmentObject(app)
+                        } label: {
+                            Label("一键流水线补漏（只嗅缺的，1080）", systemImage: "robot")
                         }
                         Button("完成") { dismiss() }
                     case .failed:
