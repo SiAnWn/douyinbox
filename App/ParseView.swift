@@ -533,8 +533,7 @@ struct ParseView: View {
                                 HongguoLift.didSelfCheck = true
                                 NSLog("HGlift selfcheck " + HongguoLift.selfCheckLine())
                             }
-                            let dev = try await HongguoLift.register()
-                            let lf = try await HongguoLift.resolve(vid: ep.id, device: dev)
+                            let lf = try await HongguoLift.resolve(vid: ep.id)
                             status = "lift 注册设备取流 \(lf.definition)，下载中…"
                             let tmpL = try await HongguoLift.download(lf.url)
                             if lf.keyHex.isEmpty {

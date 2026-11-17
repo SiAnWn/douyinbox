@@ -150,12 +150,9 @@ enum Hongguo {
                 NSLog("HGlift selfcheck " + chk)
                 HGTrail.note("selfcheck " + chk)
             }
-            var lf: HongguoLift.Lift?
-            if let dev = try? await HongguoLift.register() {
-                lf = try? await HongguoLift.resolve(vid: first.id, device: dev)
-            }
+            let lf = try? await HongguoLift.resolve(vid: first.id)
             guard let lf = lf else {
-                throw GError.failed("红果播放口被收紧，注册设备通道也没打通（等下版）")
+                throw GError.failed("红果取流被 IP 风控（设备与签名已全绿仍回空；短剧请走抖音合集，红果侧待上游更新）")
             }
             opts.append(QualityOption(
                 label: "红果 \(lf.definition) · 全\(eps.count)集 · 注册设备",

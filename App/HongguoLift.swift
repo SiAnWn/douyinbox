@@ -274,6 +274,26 @@ enum HongguoLift {
 
     static var didSelfCheck = false
 
+    // MARK: 注册设备共享池（参考同款：批量共享一个身份，回空时轮换重注一次）
+    private static var cachedDevice: Device?
+    static func loadStoredDevice() -> Device? {
+        guard let d = UserDefaults.standard.dictionary(forKey: "hgLiftDevice"),
+              let dev = d["dev"] as? String, let iid = d["iid"] as? String, let cdid = d["cdid"] as? String,
+              let at = d["at"] as? TimeInterval, Date().timeIntervalSince1970 - at < 6 * 3600 else { return nil }
+        return Device(deviceId: dev, iid: iid, cdid: cdid)
+    }
+    static func device(renew: Bool = false) async throws -> Device {
+        if !renew {
+            if let d = cachedDevice { return d }
+            if let d = loadStoredDevice() { cachedDevice = d; HGTrail.note("dev reuse saved \(d.deviceId)"); return d }
+        }
+        let d = try await register()
+        cachedDevice = d
+        UserDefaults.standard.set(["dev": d.deviceId, "iid": d.iid, "cdid": d.cdid, "at": Date().timeIntervalSince1970],
+                                  forKey: "hgLiftDevice")
+        return d
+    }
+
     private static let registerURL = "https://log5-applog-lf.fqnovel.com/service/2/device_register/?tt_data=a&cronet_version=8d40f833_2026-03-03&ttnet_version=4.2.243.31-douyin&use_store_region_cookie=1"
     private static let tabHosts = [
         "https://api5-normal-sinfonlineb.fqnovel.com/reading/bookapi/video_tab/multi_video_model/v1/",
@@ -541,68 +561,73 @@ enum HongguoLift {
         return (prefix + data).base64EncodedString()
     }
 
-    // MARK: tab 请求 + 解析
-    static func resolve(vid: String, device: Device) async throws -> Lift {
+    // MARK: tab 请求 + 解析（设备池内部自管；两口全回空 = 参考同款轮换一次）
+    static func resolve(vid: String) async throws -> Lift {
         HGTrail.note("lift start vid=\(vid)")
-        let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
-        let khronos = UInt32(truncatingIfNeeded: nowMs / 1000)
-        var pairs = deviceParams
-        pairs.append(("device_id", device.deviceId))
-        pairs.append(("iid", device.iid))
-        pairs.append(("cdid", device.cdid))
-        pairs.append(("video_id", vid))
-        pairs.append(("video_id_type", "0"))
-        pairs.append(("device_level", "1"))
-        pairs.append(("need_all_video_definition", "1"))
-        pairs.append(("need_mp4_align", "0"))
-        pairs.append(("use_os_player", "0"))
-        pairs.append(("video_platform", "1024"))
-        pairs.append(("source", "0"))
-        pairs.append(("from_video_id", ""))
-        pairs.append(("_rticket", String(nowMs)))
-        let query = pairs.map { HGBase.pct($0.0) + "=" + HGBase.pct($0.1) }.joined(separator: "&")
-        let nonce = Data((0..<11).map { _ in UInt8.random(in: 0...255) })
-        HGTrail.note("query built len=\(query.count)")
         var lastErr = "空响应"
-        for host in tabHosts {
-            guard let u = URL(string: host + "?" + query) else { lastErr = "URL 构造失败"; continue }
-            var req = URLRequest(url: u)
-            req.setValue(tabUA, forHTTPHeaderField: "User-Agent")
-            req.setValue("application/json; charset=utf-8,application/x-protobuf", forHTTPHeaderField: "Accept")
-            req.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
-            req.setValue(String(nowMs), forHTTPHeaderField: "x-ss-req-ticket")
-            req.setValue(String(khronos), forHTTPHeaderField: "x-khronos")
-            req.setValue("0", forHTTPHeaderField: "x-xs-from-web")
-            req.setValue("2", forHTTPHeaderField: "sdk-version")
-            req.setValue(gorgon(query: query, khronos: khronos), forHTTPHeaderField: "x-gorgon")
-            HGTrail.note("g done")
-            req.setValue(argus(query: query, khronos: khronos, deviceId: device.deviceId, nonce: nonce),
-                         forHTTPHeaderField: "x-argus")
-            HGTrail.note("a done")
-            req.setValue(ladon(aid: "8662", khronos: khronos, prefix: nonce.subdata(in: 2..<6)),
-                         forHTTPHeaderField: "x-ladon")
-            HGTrail.note("l done")
-            HGTrail.note("tab send " + String(host.split(separator: "/")[2]))
-            do {
-                let (data, resp) = try await direct.data(for: req)
-                let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
-                HGTrail.note("tab \(host.split(separator: "/")[2]) http=\(code) len=\(data.count) head=" + String(decoding: data.prefix(160), as: UTF8.self).replacingOccurrences(of: "\n", with: " "))
-                guard code == 200, data.count > 20 else {
-                    lastErr = "\(host.split(separator: "/")[2]) HTTP\(code) len=\(data.count)"
-                    continue
+        for round in 0..<2 {
+            let dev = try await device(renew: round > 0)
+            let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
+            let khronos = UInt32(truncatingIfNeeded: nowMs / 1000)
+            var pairs = deviceParams
+            pairs.append(("device_id", dev.deviceId))
+            pairs.append(("iid", dev.iid))
+            pairs.append(("cdid", dev.cdid))
+            pairs.append(("video_id", vid))
+            pairs.append(("video_id_type", "0"))
+            pairs.append(("device_level", "1"))
+            pairs.append(("need_all_video_definition", "1"))
+            pairs.append(("need_mp4_align", "0"))
+            pairs.append(("use_os_player", "0"))
+            pairs.append(("video_platform", "1024"))
+            pairs.append(("source", "0"))
+            pairs.append(("from_video_id", ""))
+            pairs.append(("_rticket", String(nowMs)))
+            let query = pairs.map { HGBase.pct($0.0) + "=" + HGBase.pct($0.1) }.joined(separator: "&")
+            let nonce = Data((0..<11).map { _ in UInt8.random(in: 0...255) })
+            HGTrail.note("query built len=\(query.count) dev=\(dev.deviceId)")
+            var empties = 0
+            for host in tabHosts {
+                guard let u = URL(string: host + "?" + query) else { lastErr = "URL 构造失败"; continue }
+                var req = URLRequest(url: u)
+                req.setValue(tabUA, forHTTPHeaderField: "User-Agent")
+                req.setValue("application/json; charset=utf-8,application/x-protobuf", forHTTPHeaderField: "Accept")
+                req.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
+                req.setValue(String(nowMs), forHTTPHeaderField: "x-ss-req-ticket")
+                req.setValue(String(khronos), forHTTPHeaderField: "x-khronos")
+                req.setValue("0", forHTTPHeaderField: "x-xs-from-web")
+                req.setValue("2", forHTTPHeaderField: "sdk-version")
+                req.setValue(gorgon(query: query, khronos: khronos), forHTTPHeaderField: "x-gorgon")
+                req.setValue(argus(query: query, khronos: khronos, deviceId: dev.deviceId, nonce: nonce),
+                             forHTTPHeaderField: "x-argus")
+                req.setValue(ladon(aid: "8662", khronos: khronos, prefix: nonce.subdata(in: 2..<6)),
+                             forHTTPHeaderField: "x-ladon")
+                do {
+                    let (data, resp) = try await direct.data(for: req)
+                    let hr = resp as? HTTPURLResponse
+                    let code = hr?.statusCode ?? -1
+                    let logid = hr?.value(forHTTPHeaderField: "x-tt-logid") ?? "-"
+                    let hostName = hr?.url?.host ?? String(host.split(separator: "/").dropFirst(1).first ?? "?")
+                    HGTrail.note("tab \(hostName) http=\(code) len=\(data.count) logid=\(logid) head=" + String(decoding: data.prefix(160), as: UTF8.self).replacingOccurrences(of: "\n", with: " "))
+                    guard code == 200, data.count > 20 else {
+                        if code == 200 { empties += 1 }
+                        lastErr = "\(hostName) HTTP\(code) len=\(data.count)"
+                        continue
+                    }
+                    guard let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                        lastErr = "非JSON head=" + String(decoding: data.prefix(100), as: UTF8.self)
+                        continue
+                    }
+                    if let lift = parseTab(j, vid: vid) {
+                        HGTrail.note("lift ok def=\(lift.definition) \(lift.width)x\(lift.height) key=\(lift.keyHex.isEmpty ? "none" : String(lift.keyHex.prefix(8))) url=" + String(lift.url.absoluteString.prefix(90)))
+                        return lift
+                    }
+                    lastErr = "JSON ok 但无可用流 keys=" + j.keys.prefix(8).joined(separator: ",")
+                } catch {
+                    lastErr = "网络 " + String(String(describing: error).prefix(60))
                 }
-                guard let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                    lastErr = "非JSON head=" + String(decoding: data.prefix(100), as: UTF8.self)
-                    continue
-                }
-                if let lift = parseTab(j, vid: vid) {
-                    HGTrail.note("lift ok def=\(lift.definition) \(lift.width)x\(lift.height) key=\(lift.keyHex.isEmpty ? "none" : String(lift.keyHex.prefix(8))) url=" + String(lift.url.absoluteString.prefix(90)))
-                    return lift
-                }
-                lastErr = "JSON ok 但无可用流 keys=" + j.keys.prefix(8).joined(separator: ",")
-            } catch {
-                lastErr = "网络 " + String(String(describing: error).prefix(60))
             }
+            if empties < tabHosts.count { break }   // 非全空 = 轮换也没用，直接认输
         }
         HGTrail.note("lift fail " + lastErr)
         throw GError.failed("lift: " + lastErr)
