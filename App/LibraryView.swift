@@ -400,13 +400,14 @@ final class ResCache {
     func tag(_ url: URL) async -> String {
         if let s = memo[url] { return s }
         if let t = inflight[url] { return await t.value }
+        let std = standard
         let t = Task.detached(priority: .utility) { () -> String in
             let asset = AVURLAsset(url: url)
             guard let tr = asset.tracks(withMediaType: .video).first else { return "" }
             let sz = tr.naturalSize
             let p = Int(round(min(fabs(sz.width), fabs(sz.height))))
             guard p >= 144 else { return "" }
-            if let c = standard.min(by: { abs($0 - p) < abs($1 - p) }), abs(c - p) <= max(2, Int(Double(c) * 0.06)) {
+            if let c = std.min(by: { abs($0 - p) < abs($1 - p) }), abs(c - p) <= max(2, Int(Double(c) * 0.06)) {
                 return "\(c)P"
             }
             return "\(p)P"
