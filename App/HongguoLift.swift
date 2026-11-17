@@ -1,6 +1,7 @@
 import Foundation
 import CommonCrypto
 import Compression
+import CryptoKit
 
 // MARK: - 墓碑面包屑：每阶段同步写 Documents/HGTrail.txt，闪退也留遗嘱
 enum HGTrail {
@@ -44,6 +45,13 @@ enum HGTrail {
 
 // MARK: - 基础件
 enum HGBase {
+    /// SM3 哈希：iOS26+ 用系统原生（手写移植曾出主循环 bug），更老系统退 HGSM3
+    static func sm3Data(_ d: Data) -> Data {
+        if #available(iOS 26.0, *) {
+            return Data(SM3.hash(data: d))
+        }
+        return HGSM3.hash(d)
+    }
     static func md5(_ d: Data) -> Data {
         var out = Data(count: Int(CC_MD5_DIGEST_LENGTH))
         d.withUnsafeBytes { ib in
@@ -255,7 +263,7 @@ enum HongguoLift {
     private static let tabUA = "com.phoenix.read/73532 (Linux; U; Android 9; SM-N9860; Build/PQ3A.190705.10241111;tt-ok/3.12.13.20)"
     private static let kdfSalt = HGBase.fromHex("4dd4c2e6b83162090e52b3c7a6733ba41cb2462b829ab58a196b39db57177524f49baf7f08e8d68d26a72e37c1a95a2f1f05a51892aef2949732b62a38aadd58")
     private static let argusKey = HGBase.fromHex("ac1adaae95a7af94a5114ab3b3a97dd80050aa0a39314c40528caec95256c28c")
-    private static let argusDerived: Data = HGSM3.hash(HGBase.fromHex("ac1adaae95a7af94a5114ab3b3a97dd80050aa0a39314c40528caec95256c28c") + HGBase.fromHex("3ccc567b") + HGBase.fromHex("ac1adaae95a7af94a5114ab3b3a97dd80050aa0a39314c40528caec95256c28c"))
+    private static let argusDerived: Data = HGBase.sm3Data(HGBase.fromHex("ac1adaae95a7af94a5114ab3b3a97dd80050aa0a39314c40528caec95256c28c") + HGBase.fromHex("3ccc567b") + HGBase.fromHex("ac1adaae95a7af94a5114ab3b3a97dd80050aa0a39314c40528caec95256c28c"))
     private static let requestKey: [UInt8] = [68,185,185,217,164,174,249,252,164,147,170,117,124,163,194,196,164,150,147,143]
 
     // 设备参数（顺序严格照抓包样本：签名对 query 字节级敏感）
@@ -271,7 +279,7 @@ enum HongguoLift {
         ("player_so_load", "1"), ("is_android_pad_screen", "0"),
     ]
 
-    // MARK: gzip（Compression 给 zlib 流，剥壳换 gzip 头尾）
+    // MARK: gzip（智能识别 Compression 输出：zlib 流剥壳 / 裸 deflate 直用）
     static func hgGzip(_ d: Data) throws -> Data {
         let cap = d.count + 512
         var comp = Data(count: cap)
@@ -282,9 +290,15 @@ enum HongguoLift {
                                           COMPRESSION_ZLIB)
             }
         }
-        guard n > 6 else { throw GError.failed("gzip 失败") }
+        guard n > 4 else { throw GError.failed("gzip 失败") }
+        comp = comp.subdata(in: 0..<n)
+        var body = comp
+        // zlib 流首字节 0x78 系（CMF/FLG 校验 %31==0）→ 剥 2 字节头 + 4 字节 adler
+        if comp.count > 6, comp[0] & 0x0f == 8, (Int(comp[0]) << 8 | Int(comp[1])) % 31 == 0 {
+            body = comp.subdata(in: 2..<(n - 4))
+        }
         var out = Data([0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff])
-        out.append(comp.subdata(in: 2..<(n - 4)))
+        out.append(body)
         out.append(HGBase.le32(HGBase.crc32(d)))
         out.append(HGBase.le32(UInt32(truncatingIfNeeded: d.count)))
         return out
@@ -348,20 +362,28 @@ enum HongguoLift {
         let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
         HGTrail.note("reg http=\(code) len=\(data.count) head=" + String(decoding: data.prefix(160), as: UTF8.self).replacingOccurrences(of: "\n", with: " "))
         guard code == 200 else { throw GError.failed("lift 注册 HTTP \(code)") }
-        guard let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw GError.failed("lift 注册响应非 JSON")
+        // 大 ID 精度保护：>2^53 裸数字转字符串再解析（不伤 *_str 键）
+        let rawStr = String(decoding: data, as: UTF8.self)
+        var fixed = rawStr
+        if let re = try? NSRegularExpression(pattern: "\"(device_id|install_id)\"[[:space:]]*:[[:space:]]*([0-9]{16,})") {
+            fixed = re.stringByReplacingMatches(in: rawStr, range: NSRange(location: 0, length: rawStr.utf16.count),
+                                                withTemplate: "\"$1\":\"$2\"")
         }
+        let j = (try? JSONSerialization.jsonObject(with: Data(fixed.utf8))) as? [String: Any]
+            ?? (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+        func validId(_ s: String) -> Bool { s.count >= 6 && s.contains(where: \.isNumber) && !s.trimmingCharacters(in: CharacterSet(charactersIn: "0")).isEmpty }
         func bigId(_ name: String) -> String {
-            if let s = j[name + "_str"] as? String, !s.isEmpty, s.contains(where: \.isNumber) { return s }
-            if let n = j[name] as? NSNumber { return n.stringValue }
-            if let s = j[name] as? String, s.count >= 10 { return s }
+            if let s = j[name + "_str"] as? String, validId(s) { return s }
+            if let s = j[name] as? String, validId(s) { return s }
+            if let n = j[name] as? NSNumber { let s = n.stringValue; if validId(s) { return s } }
             return ""
         }
+        func validId(_ s: String) -> Bool { s.count >= 6 && s.contains(where: \.isNumber) && !s.trimmingCharacters(in: CharacterSet(charactersIn: "0")).isEmpty }
         let biz = (j["code"] as? NSNumber)?.intValue ?? (j["Code"] as? NSNumber)?.intValue ?? 0
         let dev = bigId("device_id"), iid = bigId("install_id")
         guard biz == 0, !dev.isEmpty, !iid.isEmpty else {
-            HGTrail.note("reg rejected code=\(biz)")
-            throw GError.failed("lift 注册被拒 code=\(biz)")
+            HGTrail.note("reg rejected code=\(biz) dev=\(dev) iid=\(iid)")
+            throw GError.failed("lift 注册被拒 code=\(biz)（出口或马甲被服务器冷待，换节点/加fqnovel直连规则再试）")
         }
         HGTrail.note("reg ok dev=\(dev) iid=\(iid)")
         return Device(deviceId: dev, iid: iid, cdid: cdid)
@@ -408,8 +430,8 @@ enum HongguoLift {
     }
 
     private static func argus(query: String, khronos: UInt32, deviceId: String, nonce: Data) -> String {
-        let bodyHash = HGSM3.hash(Data(repeating: 0, count: 16))
-        let queryHash = HGSM3.hash(Data(query.utf8))
+        let bodyHash = HGBase.sm3Data(Data(repeating: 0, count: 16))
+        let queryHash = HGBase.sm3Data(Data(query.utf8))
         var counters = protoVar(1, 1) + protoVar(2, 1) + protoVar(3, 1) + protoVar(7, 3_348_294_860)
         var env = protoBytes(1, Data("25053RT47C".utf8)) + protoBytes(2, Data("16".utf8))
         env += protoBytes(3, Data("update_64".utf8)) + protoVar(4, 2_147_483_648)
@@ -524,6 +546,7 @@ enum HongguoLift {
             var req = URLRequest(url: u)
             req.setValue(tabUA, forHTTPHeaderField: "User-Agent")
             req.setValue("application/json; charset=utf-8,application/x-protobuf", forHTTPHeaderField: "Accept")
+            req.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
             req.setValue(String(nowMs), forHTTPHeaderField: "x-ss-req-ticket")
             req.setValue(String(khronos), forHTTPHeaderField: "x-khronos")
             req.setValue("0", forHTTPHeaderField: "x-xs-from-web")
@@ -533,6 +556,7 @@ enum HongguoLift {
                          forHTTPHeaderField: "x-argus")
             req.setValue(ladon(aid: "8662", khronos: khronos, prefix: nonce.subdata(in: 2..<6)),
                          forHTTPHeaderField: "x-ladon")
+            HGTrail.note("tab send " + String(host.split(separator: "/")[2]))
             do {
                 let (data, resp) = try await direct.data(for: req)
                 let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
@@ -676,7 +700,7 @@ enum HongguoLift {
     // MARK: 首跑自检（日志核对移植正确性）
     static func selfCheckLine() -> String {
         var out: [String] = []
-        let sm = HGBase.hexL(HGSM3.hash(Data("abc".utf8)))
+        let sm = HGBase.hexL(HGBase.sm3Data(Data("abc".utf8)))
         let smOK = sm == "66c7f0f462eeedd9d1f2d46bdc10e4e24167c4875cf2f7a2297da02b8f4ba8e0"
         out.append("sm3" + (smOK ? "✓" : "✗" + sm))
         let g = gorgon(query: sampleQuery, khronos: 1_794_890_799)
