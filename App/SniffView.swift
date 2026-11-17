@@ -59,6 +59,7 @@ final class SniffVM: ObservableObject {
             let nvid = Self.nidInPath(low)
             let key = !vid.isEmpty ? vid : (!nvid.isEmpty ? nvid : ((low.components(separatedBy: "?").first) ?? low))
             let ds = Int(Self.qv(low, "ds")) ?? 99
+            if ds == 3 { log("丢弃:ds3加密档(下载不可播) …\(cleanURL.suffix(20))"); return }
             var tag = ""
             if kindIsMp4(low) {
                 if !vid.isEmpty, vid == currentFileVid { tag += "本集·" }
@@ -376,6 +377,17 @@ final class BrowserBridge: ObservableObject {
             self.vm?.hint = "媒体直链已拦进列表（不再被全屏播放器抢走），点按该行即可下载"
         }
     }
+    func reportTitle(_ t: String) {
+        Task { @MainActor in
+            guard !t.isEmpty else { return }
+            // 只在标题是网站通名/空的时候用视频简介顶替（剧集页自带好标题）
+            let cur = self.vm?.pageTitle ?? ""
+            if cur.isEmpty || cur.hasPrefix("抖音") || cur.contains("douyin.com") {
+                self.vm?.pageTitle = t
+                self.vm?.log("标题改用简介: " + t.prefix(24))
+            }
+        }
+    }
     func reportVid(_ v: String) {
         Task { @MainActor in
             guard !v.isEmpty, self.vm?.currentFileVid != v else { return }
@@ -469,6 +481,7 @@ struct SiteBrowser: UIViewRepresentable {
                 if let u = d["u"] as? String { bridge.report(t: "net", u: u) }
                 if let lst = d["list"] as? [String] { bridge.reportList(lst) }
                 if let vv = d["v"] as? String { bridge.reportVid(vv) }
+                if let tt = d["title"] as? String { bridge.reportTitle(tt) }
             }
         }
     }
@@ -491,12 +504,13 @@ struct SiteBrowser: UIViewRepresentable {
       XMLHttpRequest.prototype.open=function(m,u){ this.__u=u; return oo.apply(this,arguments); };
       XMLHttpRequest.prototype.send=function(){ var x=this; x.addEventListener('load',function(){ try{ var t=x.responseText||''; if(t.indexOf('#EXTM3U')>-1){ say(x.__u||location.href); } scanText(t); }catch(e){} }); return os.apply(this,arguments); };
       function videoScan(){ try{ var vs=document.querySelectorAll('video,source'); for(var i=0;i<vs.length;i++){ var src=vs[i].currentSrc||vs[i].src||''; if(src.indexOf('m3u8')>-1||src.indexOf('.mp4')>-1||src.indexOf('video_id=')>-1||src.indexOf('douyinvod')>-1){ say(src); } } }catch(e){} }
-      var lastVid='';
+      var lastVid='';var lastTitle='';
+      function titleScan(){ try{ var de=document.querySelector('[data-e2e="video-desc"]'); var tx=de?((de.textContent||'').trim().slice(0,50)):''; if(tx && tx!==lastTitle){ lastTitle=tx; send({t:'title', v:tx}); } }catch(e){} }
       function vidScan(){ try{ var d=document.documentElement.innerHTML||''; var i=d.indexOf('\"vid\":\"v'); if(i<0){ i=d.indexOf('\"video_id\":\"v'); } if(i>-1){ var m=d.slice(i, i+80).match(/v[0-9a-z]{16,40}/); if(m && m[0]!==lastVid){ lastVid=m[0]; send({t:'vid', v:m[0]}); } } }catch(e){} }
       function perfScan(){ try{ var es=performance.getEntriesByType('resource'); for(var i=0;i<es.length;i++){ var n=es[i].name||''; if(n.indexOf('douyinvod')>-1||n.indexOf('mime_type=video_mp4')>-1||n.indexOf('/video/tos/')>-1||n.indexOf('.m3u8')>-1||n.indexOf('.mp4')>-1){ say(n); } } }catch(e){} }
       window.__deepScan=function(){ try{ scanText(document.documentElement.innerHTML.slice(0,300000));
-        var t=''; [].forEach.call(document.querySelectorAll('script'), function(s){ t+=s.textContent.slice(0,150000); }); scanText(t); videoScan(); perfScan(); vidScan(); }catch(e){} };
-      setInterval(function(){ videoScan(); perfScan(); vidScan(); }, 3000);
+        var t=''; [].forEach.call(document.querySelectorAll('script'), function(s){ t+=s.textContent.slice(0,150000); }); scanText(t); videoScan(); perfScan(); vidScan(); titleScan(); }catch(e){} };
+      setInterval(function(){ videoScan(); perfScan(); vidScan(); titleScan(); }, 3000);
       try{ var mo=new MutationObserver(function(){ videoScan(); }); mo.observe(document.documentElement||document, {childList:true, subtree:true}); }catch(e){}
     })();
     """
