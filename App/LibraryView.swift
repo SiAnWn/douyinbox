@@ -394,6 +394,7 @@ struct Thumb: View {
 @MainActor
 final class ResCache {
     static let shared = ResCache()
+    static var probe = 0
     private var memo: [URL: String] = [:]
     private var inflight: [URL: Task<String, Never>] = [:]
     private let standard = [240, 270, 360, 480, 540, 576, 720, 1080, 1440, 2160, 2880]
@@ -414,6 +415,7 @@ final class ResCache {
         }
         inflight[url] = t
         let r = await t.value
+        if Self.probe < 40 { Self.probe += 1; HGTrail.note("res \(url.lastPathComponent) -> " + (r.isEmpty ? "none(" + (FileManager.default.fileExists(atPath: url.path) ? "fexist" : "nofile") + ")" : r)) }
         memo[url] = r
         inflight[url] = nil
         return r
@@ -426,7 +428,7 @@ struct ResTag: View {
     var body: some View {
         Group {
             if !s.isEmpty {
-                Text(s).font(.caption2).foregroundStyle(.secondary)
+                Text(s).font(.caption2).foregroundStyle(.secondary).fixedSize()
             }
         }
         .task(id: url) {
