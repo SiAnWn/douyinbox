@@ -5,32 +5,32 @@ import Darwin
 
 // MARK: - 信号级崩溃捕手：启动装 trap，SIGSEGV/ABRT 等把回溯纯 write 进 HGTrail 再原样重抛
 enum HGCrash {
-    private static var fd: Int32 = -1
-    private static var frames = [UnsafeMutableRawPointer?](repeating: nil, count: 48)
-    private static let headC: [UInt8] = Array("@@@ CRASH\n".utf8) + [0]
-    private static let tailC: [UInt8] = Array("@@@ END\n".utf8) + [0]
+    static var fd: Int32 = -1
+    static var frames = [UnsafeMutableRawPointer?](repeating: nil, count: 48)
+    static let headC: [UInt8] = Array("@@@ CRASH\n".utf8) + [0]
+    static let tailC: [UInt8] = Array("@@@ END\n".utf8) + [0]
     static func install() {
         let p = SavePaths.docs.appendingPathComponent("HGTrail.txt").path
         fd = open(p, O_APPEND | O_WRONLY | O_CREAT, 0o644)
         guard fd >= 0 else { return }
         for sig in [SIGILL, SIGTRAP, SIGABRT, SIGFPE, SIGBUS, SIGSEGV] {
-            signal(sig) { sg in report(sg) }
+            signal(sig, hgCrashReport)
         }
     }
-    private static func report(_ sg: Int32) {
-        if fd >= 0 {
-            headC.withUnsafeBufferPointer { _ = write(fd, $0.baseAddress, headC.count - 1) }
-            let n = backtrace(&frames, Int32(frames.count))
-            if n > 0 {
-                frames.withUnsafeMutableBufferPointer { bp in
-                    backtrace_symbols_fd(bp.baseAddress, n, fd)
-                }
+}
+func hgCrashReport(_ sg: Int32) {
+    if HGCrash.fd >= 0 {
+        HGCrash.headC.withUnsafeBufferPointer { _ = write(HGCrash.fd, $0.baseAddress, HGCrash.headC.count - 1) }
+        let n = backtrace(&HGCrash.frames, Int32(HGCrash.frames.count))
+        if n > 0 {
+            HGCrash.frames.withUnsafeMutableBufferPointer { bp in
+                backtrace_symbols_fd(bp.baseAddress, n, HGCrash.fd)
             }
-            tailC.withUnsafeBufferPointer { _ = write(fd, $0.baseAddress, tailC.count - 1) }
         }
-        signal(sg, SIG_DFL)
-        raise(sg)
+        HGCrash.tailC.withUnsafeBufferPointer { _ = write(HGCrash.fd, $0.baseAddress, HGCrash.tailC.count - 1) }
     }
+    signal(sg, SIG_DFL)
+    raise(sg)
 }
 
 // MARK: - 墓碑面包屑：每阶段同步写 Documents/HGTrail.txt，闪退也留遗嘱
