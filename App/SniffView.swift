@@ -49,9 +49,12 @@ final class SniffVM: ObservableObject {
 
     func log(_ s: String) {
         let t = Int(Date().timeIntervalSince1970) % 86400
-        logs.append(String(format: "[%02d:%02d:%02d] ", t / 3600, (t / 60) % 60, t % 60) + s)
+        let line = String(format: "[%02d:%02d:%02d] ", t / 3600, (t / 60) % 60, t % 60) + s
+        logs.append(line)
         if logs.count > 160 { logs.removeFirst(logs.count - 160) }
+        forward?(line)
     }
+    var forward: ((String) -> Void)?
 
     private static func qv(_ url: String, _ k: String) -> String {
         guard let r = url.range(of: k + "=") else { return "" }

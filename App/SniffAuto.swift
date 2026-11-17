@@ -30,6 +30,10 @@ final class SniffAutoVM: ObservableObject {
     weak var agent: SniffAgent?
     private var job: Task<Void, Never>?
 
+    init() {
+        cand.forward = { [weak self] s in self?.log("　↳ " + s) }
+    }
+
     func log(_ s: String) {
         let t = Int(Date().timeIntervalSince1970) % 86400
         logs.append(String(format: "[%02d:%02d:%02d] ", t / 3600, (t / 60) % 60, t % 60) + s)
@@ -42,9 +46,9 @@ final class SniffAutoVM: ObservableObject {
     // 打开播放器设置→列出可用画质→点最高档
     func setBestQuality() async -> String {
         guard let agent = agent else { return "演员缺席" }
-        let g = await agent.js("(function(){try{var g=[...document.querySelectorAll('[aria-label]')].filter(function(e){var l=e.getAttribute('aria-label')||'';return l==='视频设置'||l==='设置';});if(!g.length){g=[...document.querySelectorAll('i,div,span')].filter(function(e){var c=(e.getAttribute('class')||'');return /setting|config/i.test(c)&&c.length<50;});}if(g.length){g[0].click();return '齿轮✓';}return '齿轮✗';}catch(e){return '齿轮异常';}})()")
+        let g = await agent.js("(function(){try{var g=[...document.querySelectorAll('[aria-label]')].filter(function(e){var l=e.getAttribute('aria-label')||'';return l==='视频设置'||l==='设置';});if(!g.length){g=[...document.querySelectorAll('i,div,span')].filter(function(e){var c=(e.getAttribute('class')||'');return /setting|config/i.test(c)&&c.length<50;});}if(g.length){var t=g[0];['pointerover','mouseover','pointerdown','mousedown','pointerup','mouseup','click'].forEach(function(n){try{t.dispatchEvent(new MouseEvent(n,{bubbles:true,cancelable:true,view:window}));}catch(e){}});return '齿轮✓';}return '齿轮✗';}catch(e){return '齿轮异常';}})()")
         try? await Task.sleep(nanoseconds: 1_600_000_000)
-        let m = await agent.js("(function(){try{var all=[...document.querySelectorAll('li,span,div,button')];var names=[];var hi=[];for(var i=0;i<all.length;i++){var t=(all[i].textContent||'').trim();if(t.length>0&&t.length<=10&&/1080|超清|最高|720P|高清/.test(t)){if(names.indexOf(t)<0)names.push(t);if(/1080|最高|超清/.test(t))hi.push(all[i]);}}if(hi.length){try{hi[hi.length-1].click();return names.join('/')+'→档位已点';}catch(e){}}return names.length?names.join('/'):'无档位选项';}catch(e){return '选档异常';}})()")
+        let m = await agent.js("(function(){try{var all=[...document.querySelectorAll('li,span,div,button')];var names=[];var hi=[];for(var i=0;i<all.length;i++){var t=(all[i].textContent||'').trim();if(t.length>0&&t.length<=10&&/1080|超清|最高|720P|高清/.test(t)){if(names.indexOf(t)<0)names.push(t);if(/1080|最高|超清/.test(t))hi.push(all[i]);}}if(hi.length){var leaf=hi.filter(function(e){return e.children.length===0;});var tgt=(leaf.length?leaf:hi).pop();['pointerover','mouseover','pointerdown','mousedown','pointerup','mouseup','click'].forEach(function(n){try{tgt.dispatchEvent(new MouseEvent(n,{bubbles:true,cancelable:true,view:window}));}catch(e){}});return names.join('/')+'→档位已点';}return names.length?names.join('/'):'无档位选项';}catch(e){return '选档异常';}})()")
         return g + " " + m
     }
 
@@ -79,6 +83,9 @@ final class SniffAutoVM: ObservableObject {
                 // 开页后代点播放（双保险：通行证+JS 亲踢）
                 try? await Task.sleep(nanoseconds: 2_500_000_000)
                 _ = await agent.js("(function(){var v=document.querySelector('video');if(!v)return'无video';try{v.muted=true;var p=v.play();if(p)p.catch(function(){});return'踢播✓';}catch(e){return'踢播异常';}})()")
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                let state = await agent.js("(function(){var v=document.querySelector('video');if(!v)return'video✗';var s=(v.currentSrc||v.src||'');return 't='+(v.currentTime||0).toFixed(1)+' paused='+v.paused+' rs='+v.readyState+' vw='+(v.videoWidth||0)+' src='+(s.indexOf('blob')===0?'blob(MSE)':s.slice(0,42));})()")
+                log("EP\(ep.num) 播放器状态: \(state)")
                 var picked: SniffVM.Snip?
                 for _ in 0..<20 {
                     try? await Task.sleep(nanoseconds: 1_000_000_000)
@@ -267,7 +274,8 @@ final class SniffAgent: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
 struct AgentStage: UIViewRepresentable {
     let agent: SniffAgent
     func makeUIView(context: Context) -> WKWebView {
-        agent.wv.frame = CGRect(x: 0, y: 0, width: 8, height: 8)
+        // 真尺寸舞台：播放器有可见性检测，8px 工位只配 576 试看流
+        agent.wv.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         return agent.wv
     }
     func updateUIView(_ uiView: WKWebView, context: Context) {}
@@ -317,7 +325,7 @@ struct SniffAutoView: View {
         List {
             Section {
                 AgentStage(agent: box.agent)
-                    .frame(height: 10)
+                    .frame(height: 220)
                 HStack {
                     if vm.running {
                         Button("停止", role: .destructive) { vm.stopRun() }
