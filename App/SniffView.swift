@@ -26,7 +26,15 @@ final class SniffVM: ObservableObject {
     @Published var pageURL = ""
     @Published var pageTitle = ""
     @Published var hint = ""
+    @Published var logs: [String] = []
     var currentVid = ""          // 当前播放页的 video id（判定"本集"）
+    var currentFileVid = ""      // 页面报告的自身文件指纹(v0xxx)，用于流地址比对
+
+    func log(_ s: String) {
+        let t = Int(Date().timeIntervalSince1970) % 86400
+        logs.append(String(format: "[%02d:%02d:%02d] ", t / 3600, (t / 60) % 60, t % 60) + s)
+        if logs.count > 160 { logs.removeFirst(logs.count - 160) }
+    }
 
     private static func qv(_ url: String, _ k: String) -> String {
         guard let r = url.range(of: k + "=") else { return "" }
@@ -49,7 +57,7 @@ final class SniffVM: ObservableObject {
             let ds = Int(Self.qv(low, "ds")) ?? 99
             var tag = ""
             if kindIsMp4(low) {
-                if !vid.isEmpty, vid == currentVid { tag += "本集·" }
+                if !vid.isEmpty, vid == currentFileVid { tag += "本集·" }
                 else if !vid.isEmpty { tag += "预载·" }
                 tag += ds == 4 ? "1080" : (ds == 6 ? "576" : (ds < 99 ? "档\(ds)" : ""))
             }
@@ -61,16 +69,21 @@ final class SniffVM: ObservableObject {
                 // 同集重复到达：只留更清晰档位那条
                 if ds < items[i].dsRank {
                     items[i] = Snip(id: url, kind: kindIsMp4(low) ? "mp4" : "m3u8", tag: tag, dsRank: ds)
+                    log("归并升级 ds\(ds) \(url.suffix(24))")
                     resort()
+                } else {
+                    log("丢弃(同集更低档 ds\(ds)) \(url.suffix(24))")
                 }
                 return
             }
             let k = kindIsMp4(low) ? "mp4" : "m3u8"
             items.append(Snip(id: url, kind: k, tag: tag, dsRank: ds))
+            log("候选+1 [\(k)] \(tag.isEmpty ? "无标" : tag) …\(url.suffix(28))")
             resort()
         }
     }
     private func kindIsMp4(_ low: String) -> Bool { !low.contains("m3u8") }
+    static func qvStatic(_ url: String, _ k: String) -> String { qv(url, k) }
     private func resort() {
         items.sort { a, b in
             if (a.kind == "mp4") != (b.kind == "mp4") { return a.kind == "mp4" }
@@ -139,6 +152,21 @@ struct SniffView: View {
                 Text(vm.hint.isEmpty ? "候选 \(vm.items.count) 个 —— 网页里点播放即可自动嗅取，也可点「重扫」" : vm.hint)
                     .font(.caption).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 10).padding(.vertical, 6)
+                if !vm.logs.isEmpty {
+                    DisclosureGroup("调试日志（\(vm.logs.count)）") {
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(vm.logs.joined(separator: "\n"))
+                                    .font(.system(.caption2, design: .monospaced))
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                        .frame(maxHeight: 130)
+                        .contextMenu { Button("复制全部日志") { UIPasteboard.general.string = vm.logs.joined(separator: "\n") } }
+                    }
+                    .font(.caption)
+                    .padding(.horizontal, 10)
+                }
                 if vm.items.isEmpty {
                     Spacer()
                 } else {
@@ -232,6 +260,7 @@ struct SniffView: View {
         let ext = s.kind == "m3u8" ? "ts" : "mp4"
         let destRel = "\(title)_\(stamp).\(ext)"
         vm.update(s.id) { $0.frac = 0; $0.note = "开始…" }
+        vm.log("下载启动 [\(s.kind)]\(s.tag.isEmpty ? "" : " \(s.tag)") …\(s.id.suffix(20))")
         Task { @MainActor in
             do {
                 if s.kind == "m3u8" {
@@ -287,6 +316,7 @@ struct SniffView: View {
                         } catch {
                             lastErr = error
                             vm.update(s.id) { $0.note = "换姿势重试…" }
+                            vm.log("尝试失败: \(error.localizedDescription)")
                         }
                     }
                     guard let got = file else { throw lastErr ?? GError.failed("下载失败") }
@@ -297,6 +327,7 @@ struct SniffView: View {
                     } else if SavePaths.write(got, rel: destRel) {
                         try? FileManager.default.removeItem(at: got)
                         vm.update(s.id) { $0.frac = 1; $0.done = true; $0.downloaded = true; $0.note = "已存入视频库(\(destRel))" }
+                        vm.log("✓ 入库 \(destRel) · \(sz / 1_048_576)MB")
                         app.refresh()
                     } else {
                         vm.update(s.id) { $0.frac = -1; $0.note = "保存失败" }
@@ -328,6 +359,22 @@ final class BrowserBridge: ObservableObject {
     func hintBlocked() {
         Task { @MainActor in
             self.vm?.hint = "媒体直链已拦进列表（不再被全屏播放器抢走），点按该行即可下载"
+        }
+    }
+    func reportVid(_ v: String) {
+        Task { @MainActor in
+            guard !v.isEmpty, self.vm?.currentFileVid != v else { return }
+            self.vm?.currentFileVid = v
+            self.vm?.log("页面 vid=" + v)
+            // 回填：已有候选里属于本集的改标"本集"
+            if let vm = self.vm {
+                for i in vm.items.indices {
+                    if SniffVM.qvStatic(vm.items[i].id.lowercased(), "video_id") == v,
+                       vm.items[i].tag.contains("预载") {
+                        vm.items[i].tag = vm.items[i].tag.replacingOccurrences(of: "预载", with: "本集")
+                    }
+                }
+            }
         }
     }
     func report(t: String, u: String) {
@@ -406,6 +453,7 @@ struct SiteBrowser: UIViewRepresentable {
                let d = try? JSONSerialization.jsonObject(with: Data(s.utf8)) as? [String: Any] {
                 if let u = d["u"] as? String { bridge.report(t: "net", u: u) }
                 if let lst = d["list"] as? [String] { bridge.reportList(lst) }
+                if let vv = d["v"] as? String { bridge.reportVid(vv) }
             }
         }
     }
@@ -428,10 +476,12 @@ struct SiteBrowser: UIViewRepresentable {
       XMLHttpRequest.prototype.open=function(m,u){ this.__u=u; return oo.apply(this,arguments); };
       XMLHttpRequest.prototype.send=function(){ var x=this; x.addEventListener('load',function(){ try{ var t=x.responseText||''; if(t.indexOf('#EXTM3U')>-1){ say(x.__u||location.href); } scanText(t); }catch(e){} }); return os.apply(this,arguments); };
       function videoScan(){ try{ var vs=document.querySelectorAll('video,source'); for(var i=0;i<vs.length;i++){ var src=vs[i].currentSrc||vs[i].src||''; if(src.indexOf('m3u8')>-1||src.indexOf('.mp4')>-1||src.indexOf('video_id=')>-1||src.indexOf('douyinvod')>-1){ say(src); } } }catch(e){} }
+      var lastVid='';
+      function vidScan(){ try{ var d=document.documentElement.innerHTML||''; var i=d.indexOf('\"vid\":\"v'); if(i<0){ i=d.indexOf('\"video_id\":\"v'); } if(i>-1){ var m=d.slice(i, i+80).match(/v[0-9a-z]{16,40}/); if(m && m[0]!==lastVid){ lastVid=m[0]; send({t:'vid', v:m[0]}); } } }catch(e){} }
       function perfScan(){ try{ var es=performance.getEntriesByType('resource'); for(var i=0;i<es.length;i++){ var n=es[i].name||''; if(n.indexOf('douyinvod')>-1||n.indexOf('mime_type=video_mp4')>-1||n.indexOf('/video/tos/')>-1||n.indexOf('.m3u8')>-1||n.indexOf('.mp4')>-1){ say(n); } } }catch(e){} }
       window.__deepScan=function(){ try{ scanText(document.documentElement.innerHTML.slice(0,300000));
-        var t=''; [].forEach.call(document.querySelectorAll('script'), function(s){ t+=s.textContent.slice(0,150000); }); scanText(t); videoScan(); perfScan(); }catch(e){} };
-      setInterval(function(){ videoScan(); perfScan(); }, 3000);
+        var t=''; [].forEach.call(document.querySelectorAll('script'), function(s){ t+=s.textContent.slice(0,150000); }); scanText(t); videoScan(); perfScan(); vidScan(); }catch(e){} };
+      setInterval(function(){ videoScan(); perfScan(); vidScan(); }, 3000);
       try{ var mo=new MutationObserver(function(){ videoScan(); }); mo.observe(document.documentElement||document, {childList:true, subtree:true}); }catch(e){}
     })();
     """
