@@ -60,22 +60,27 @@ struct SeriesGrid: View {
                 ForEach(list) { s in
                     NavigationLink(value: s) {
                         VStack(alignment: .leading, spacing: 4) {
-                            ZStack {
-                                if let c = s.cover {
-                                    Thumb(url: c)
-                                } else {
-                                    Color(white: 0.15)
+                            // 固定 2:3 底座: 横版/竖版/方图一律裁进同框, 网格永不变形
+                            Color.clear
+                                .frame(maxWidth: .infinity)
+                                .aspectRatio(0.667, contentMode: .fit)
+                                .overlay {
+                                    Group {
+                                        if let c = s.cover {
+                                            Thumb(url: c)
+                                        } else {
+                                            Color(white: 0.15)
+                                        }
+                                    }
+                                    .clipped()
                                 }
-                            }
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 160)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                            .overlay(alignment: .bottomTrailing) {
-                                Text("\(s.count)集")
-                                    .font(.caption2).foregroundStyle(.white)
-                                    .padding(4).background(.black.opacity(0.5), in: Capsule())
-                                    .padding(4)
-                            }
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                .overlay(alignment: .bottomTrailing) {
+                                    Text("\(s.count)集")
+                                        .font(.caption2).foregroundStyle(.white)
+                                        .padding(4).background(.black.opacity(0.5), in: Capsule())
+                                        .padding(4)
+                                }
                             Text(s.name).font(.caption).lineLimit(1).foregroundStyle(.primary)
                         }
                     }
