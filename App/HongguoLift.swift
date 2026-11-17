@@ -134,6 +134,9 @@ enum HGBase {
     static func readBE32(_ d: Data, _ at: Int) -> UInt32 {
         (UInt32(d[at]) << 24) | (UInt32(d[at + 1]) << 16) | (UInt32(d[at + 2]) << 8) | UInt32(d[at + 3])
     }
+    static func readLE32(_ d: Data, _ at: Int) -> UInt32 {
+        (UInt32(d[at + 3]) << 24) | (UInt32(d[at + 2]) << 16) | (UInt32(d[at + 1]) << 8) | UInt32(d[at])
+    }
     static func rotl32(_ x: UInt32, _ n: UInt32) -> UInt32 {
         let m = n & 31
         return m == 0 ? x : ((x << m) | (x >> (32 &- m)))
@@ -413,7 +416,7 @@ enum HongguoLift {
         var bean = Data()
         bean += protoVar(1, UInt64(0x2020_0929) &* 2)
         bean += protoVar(2, 2)
-        bean += protoVar(3, UInt64(UInt32(truncatingIfNeeded: HGBase.readLE64(nonce, 6)) & 0x7fff_ffff))
+        bean += protoVar(3, UInt64(HGBase.readLE32(nonce, 6) & 0x7fff_ffff))
         bean += protoBytes(4, Data("8662".utf8))
         bean += protoBytes(5, Data(deviceId.utf8))
         bean += protoBytes(6, Data("1611921764".utf8))
