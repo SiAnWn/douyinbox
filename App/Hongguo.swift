@@ -110,6 +110,8 @@ enum Hongguo {
 
     // 解析成清晰度列表（hg:// 占位链接，pick 时特判走整剧批量）
     static func parse(_ link: String) async throws -> ParseResult {
+        HGTrail.note("parse enter " + String(link.prefix(80)))
+        defer { HGTrail.note("parse exit") }
         guard let sid = await seriesID(from: link) else {
             throw GError.failed("红果链接里没找到剧集ID（可能版本过新）")
         }
@@ -117,10 +119,12 @@ enum Hongguo {
         let s = try? await c.getSeries(sid)
         let eps = try await attempt(c) { try await episodes(sid) }
         guard let first = eps.first else { throw GError.failed("红果这部剧没有分集") }
+        HGTrail.note("parse sid=\(sid) eps=\(eps.count)")
         let pr: Openhongguo.PlaybackResult?
-        do { pr = try await attempt(c) { try await c.resolvePlayback(first.id) } } catch { pr = nil }
+        do { pr = try await attempt(c) { try await c.resolvePlayback(first.id) } } catch { pr = nil; HGTrail.note("sdk resolve threw: " + String(error.localizedDescription.prefix(80))) }
         var opts: [QualityOption] = []
         if let pr = pr {
+            HGTrail.note("sdk ok streams=\(pr.playback.streams.count) protected=\(pr.playback.protected)")
             if pr.playback.protected, (pr.contentKey?.key.isEmpty ?? true) {
                 throw GError.failed("拿不到红果内容密钥（风控掐了密钥）：去 设置→红果短剧 重置设备，或换节点再试")
             }
@@ -141,7 +145,10 @@ enum Hongguo {
             // SDK 闸紧或空流表（11 月匿名空响应）→ lift 注册设备通道：注册合法匿名手机 + 三头签名 + 直连中国出口
             if !HongguoLift.didSelfCheck {
                 HongguoLift.didSelfCheck = true
-                NSLog("HGlift selfcheck " + HongguoLift.selfCheckLine())
+                HGTrail.note("selfcheck begin")
+                let chk = HongguoLift.selfCheckLine()
+                NSLog("HGlift selfcheck " + chk)
+                HGTrail.note("selfcheck " + chk)
             }
             var lf: HongguoLift.Lift?
             if let dev = try? await HongguoLift.register() {

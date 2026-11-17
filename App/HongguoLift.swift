@@ -2,6 +2,39 @@ import Foundation
 import CommonCrypto
 import Compression
 
+// MARK: - 墓碑面包屑：每阶段同步写 Documents/HGTrail.txt，闪退也留遗嘱
+enum HGTrail {
+    private static var url: URL {
+        SavePaths.docs.appendingPathComponent("HGTrail.txt")
+    }
+    static func note(_ s: String) {
+        let df = DateFormatter()
+        df.dateFormat = "HH:mm:ss"
+        let line = "[" + df.string(from: Date()) + "] " + s + "\n"
+        guard let d = line.data(using: .utf8) else { return }
+        let f = url
+        if fm.fileExists(atPath: f.path) {
+            if let sz = try? fm.attributesOfItem(atPath: f.path)[.size] as? Int, sz > 200_000 {
+                // 防爆：留后 80KB
+                if let h = try? FileHandle(forReadingFrom: f) {
+                    try? h.seek(toOffset: UInt64(max(0, sz - 80_000)))
+                    let tail = (try? h.readToEnd()) ?? Data()
+                    try? tail.write(to: f)
+                    try? h.close()
+                }
+            }
+            if let h = try? FileHandle(forWritingTo: f) {
+                _ = try? h.seekToEnd()
+                try? h.write(contentsOf: d)
+                try? h.close()
+            }
+        } else {
+            try? d.write(to: f)
+        }
+    }
+    private static let fm = FileManager.default
+}
+
 // ===================== 🍅 红果"注册身份"播放通道（借鉴 HongGuo-PC, GPL-3.0） =====================
 // 背景：11 月起服务端对"每次随机临时 device_id"的匿名播放请求一律回空。
 // 解法（HongGuo-PC 实证）：先向 fqnovel 日志口注册一台合法匿名手机设备（不登录），
@@ -256,6 +289,7 @@ enum HongguoLift {
 
     // MARK: 注册
     static func register() async throws -> Device {
+        HGTrail.note("reg start")
         let nowMs = Int(Date().timeIntervalSince1970 * 1000)
         let cdid = UUID().uuidString.lowercased()
         let header: [String: Any] = [
@@ -309,6 +343,7 @@ enum HongguoLift {
         req.setValue(HGBase.hexU(HGBase.md5(blob)), forHTTPHeaderField: "x-ss-stub")
         let (data, resp) = try await direct.data(for: req)
         let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
+        HGTrail.note("reg http=\(code) len=\(data.count) head=" + String(decoding: data.prefix(160), as: UTF8.self).replacingOccurrences(of: "\n", with: " "))
         guard code == 200 else { throw GError.failed("lift 注册 HTTP \(code)") }
         guard let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw GError.failed("lift 注册响应非 JSON")
@@ -322,8 +357,10 @@ enum HongguoLift {
         let biz = (j["code"] as? NSNumber)?.intValue ?? (j["Code"] as? NSNumber)?.intValue ?? 0
         let dev = bigId("device_id"), iid = bigId("install_id")
         guard biz == 0, !dev.isEmpty, !iid.isEmpty else {
+            HGTrail.note("reg rejected code=\(biz)")
             throw GError.failed("lift 注册被拒 code=\(biz)")
         }
+        HGTrail.note("reg ok dev=\(dev) iid=\(iid)")
         return Device(deviceId: dev, iid: iid, cdid: cdid)
     }
 
@@ -459,6 +496,7 @@ enum HongguoLift {
 
     // MARK: tab 请求 + 解析
     static func resolve(vid: String, device: Device) async throws -> Lift {
+        HGTrail.note("lift start vid=\(vid)")
         let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
         let khronos = UInt32(truncatingIfNeeded: nowMs / 1000)
         var pairs = deviceParams
@@ -495,6 +533,7 @@ enum HongguoLift {
             do {
                 let (data, resp) = try await direct.data(for: req)
                 let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
+                HGTrail.note("tab \(host.split(separator: "/")[2]) http=\(code) len=\(data.count) head=" + String(decoding: data.prefix(160), as: UTF8.self).replacingOccurrences(of: "\n", with: " "))
                 guard code == 200, data.count > 20 else {
                     lastErr = "\(host.split(separator: "/")[2]) HTTP\(code) len=\(data.count)"
                     continue
@@ -503,12 +542,16 @@ enum HongguoLift {
                     lastErr = "非JSON head=" + String(decoding: data.prefix(100), as: UTF8.self)
                     continue
                 }
-                if let lift = parseTab(j, vid: vid) { return lift }
+                if let lift = parseTab(j, vid: vid) {
+                    HGTrail.note("lift ok def=\(lift.definition) \(lift.width)x\(lift.height) key=\(lift.keyHex.isEmpty ? "none" : String(lift.keyHex.prefix(8))) url=" + String(lift.url.absoluteString.prefix(90)))
+                    return lift
+                }
                 lastErr = "JSON ok 但无可用流 keys=" + j.keys.prefix(8).joined(separator: ",")
             } catch {
                 lastErr = "网络 " + String(String(describing: error).prefix(60))
             }
         }
+        HGTrail.note("lift fail " + lastErr)
         throw GError.failed("lift: " + lastErr)
     }
 
