@@ -128,7 +128,7 @@ struct SniffView: View {
             SiteBrowser(bridge: bridge, onURL: { u, t in
                 vm.pageURL = u ?? vm.pageURL
                 if let u = u, let r = u.range(of: "/video/(\\d{15,20})", options: .regularExpression) {
-                    vm.currentVid = String(r.dropFirst("/video/".count))
+                    vm.currentVid = String(u[r].dropFirst("/video/".count))
                 }
                 if let t = t, !t.isEmpty { vm.pageTitle = t }
                 vm.hint = ""
@@ -206,7 +206,7 @@ struct SniffView: View {
             if !seed.isEmpty && urlInput.isEmpty {
                 urlInput = seed
                 if let r = seed.range(of: "/video/(\\d{15,20})", options: .regularExpression) {
-                    vm.currentVid = String(r.dropFirst("/video/".count))
+                    vm.currentVid = String(seed[r].dropFirst("/video/".count))
                 }
                 bridge.load(seed)
             }
