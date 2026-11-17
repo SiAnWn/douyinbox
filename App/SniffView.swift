@@ -45,30 +45,37 @@ final class SniffVM: ObservableObject {
 
     func add(_ url: String) {
         guard url.hasPrefix("http"), items.count < 40 else { return }
-        let low = url.lowercased()
+        let low0 = url.lowercased()
+        let cleanURL = url.replacingOccurrences(of: "\\u0026", with: "&")
+                          .replacingOccurrences(of: "\\u002F", with: "/")
+        let low = cleanURL.lowercased()
         let isVid = low.contains("m3u8") || low.contains(".mp4")
             || low.contains("douyinvod") || low.contains("video_mp4") || low.contains("/video/tos/")
-        if isVid {
+        if isVid, !low.contains("m3u8_url") {   // 剔除页面 JSON 占位假地址
             // 过滤明显非媒体
             for drop in [".js", ".css", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".woff", ".ico", ".webp", ".html"] where low.contains(drop) && !low.contains("m3u8") { return }
-            // 按视频本体归并：video_id 优先，退回 host+path
+            // 归并键：video_id 参数 → 路径里的 15~20 位数字号 → host+path
             let vid = Self.qv(low, "video_id")
-            let key = !vid.isEmpty ? vid : ((low.components(separatedBy: "?").first) ?? low)
+            let nvid = Self.nidInPath(low)
+            let key = !vid.isEmpty ? vid : (!nvid.isEmpty ? nvid : ((low.components(separatedBy: "?").first) ?? low))
             let ds = Int(Self.qv(low, "ds")) ?? 99
             var tag = ""
             if kindIsMp4(low) {
                 if !vid.isEmpty, vid == currentFileVid { tag += "本集·" }
-                else if !vid.isEmpty { tag += "预载·" }
+                else if !nvid.isEmpty, nvid == currentVid { tag += "本集·" }
+                else if !vid.isEmpty || !nvid.isEmpty { tag += "预载·" }
                 tag += ds == 4 ? "1080" : (ds == 6 ? "576" : (ds < 99 ? "档\(ds)" : ""))
             }
             if let i = items.firstIndex(where: {
-                let kv = Self.qv($0.id.lowercased(), "video_id")
-                return (!vid.isEmpty && !kv.isEmpty && kv == vid) ||
-                       (vid.isEmpty && kv.isEmpty && (($0.id.lowercased().components(separatedBy: "?").first) ?? "") == key)
+                let kl = $0.id.lowercased().replacingOccurrences(of: "\\u0026", with: "&")
+                let kv = Self.qv(kl, "video_id")
+                let kn = Self.nidInPath(kl)
+                let kOther = !kv.isEmpty ? kv : (!kn.isEmpty ? kn : ((kl.components(separatedBy: "?").first) ?? kl))
+                return kOther == key
             }) {
                 // 同集重复到达：只留更清晰档位那条
                 if ds < items[i].dsRank {
-                    items[i] = Snip(id: url, kind: kindIsMp4(low) ? "mp4" : "m3u8", tag: tag, dsRank: ds)
+                    items[i] = Snip(id: cleanURL, kind: kindIsMp4(low) ? "mp4" : "m3u8", tag: tag, dsRank: ds)
                     log("归并升级 ds\(ds) \(url.suffix(24))")
                     resort()
                 } else {
@@ -77,13 +84,21 @@ final class SniffVM: ObservableObject {
                 return
             }
             let k = kindIsMp4(low) ? "mp4" : "m3u8"
-            items.append(Snip(id: url, kind: k, tag: tag, dsRank: ds))
+            items.append(Snip(id: cleanURL, kind: k, tag: tag, dsRank: ds))
             log("候选+1 [\(k)] \(tag.isEmpty ? "无标" : tag) …\(url.suffix(28))")
             resort()
         }
     }
     private func kindIsMp4(_ low: String) -> Bool { !low.contains("m3u8") }
     static func qvStatic(_ url: String, _ k: String) -> String { qv(url, k) }
+    static func nidInPathStatic(_ low: String) -> String { nidInPath(low) }
+    static func nidInPath(_ low: String) -> String {
+        // 新签名地址把数字集号藏在路径段: /<hexsig>/<aweme_id>/<file>/
+        guard let u = URL(string: low) else { return "" }
+        for seg in u.path.split(separator: "/")
+        where seg.count >= 15 && seg.count <= 20 && seg.allSatisfy({ $0.isNumber }) { return String(seg) }
+        return ""
+    }
     private func resort() {
         items.sort { a, b in
             if (a.kind == "mp4") != (b.kind == "mp4") { return a.kind == "mp4" }
@@ -368,9 +383,9 @@ final class BrowserBridge: ObservableObject {
             self.vm?.log("页面 vid=" + v)
             // 回填：已有候选里属于本集的改标"本集"
             if let vm = self.vm {
-                for i in vm.items.indices {
-                    if SniffVM.qvStatic(vm.items[i].id.lowercased(), "video_id") == v,
-                       vm.items[i].tag.contains("预载") {
+                for i in vm.items.indices where vm.items[i].tag.contains("预载") {
+                    let kl = vm.items[i].id.lowercased().replacingOccurrences(of: "\\u0026", with: "&")
+                    if SniffVM.qvStatic(kl, "video_id") == v || SniffVM.nidInPathStatic(kl) == vm.currentVid {
                         vm.items[i].tag = vm.items[i].tag.replacingOccurrences(of: "预载", with: "本集")
                     }
                 }
