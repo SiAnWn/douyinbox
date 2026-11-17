@@ -298,7 +298,7 @@ enum HGV5 {
         let (hash, mask) = keyHash(ent.random)
         var transformed = flags + xmxor(message, Array(hash))
         transformed = Array(transformed.reversed())
-        for i in 0..<transformed.count { transformed[i] ^= mask[Int(Int(bitwiseNoting: i) & 3)] }
+        for i in 0..<transformed.count { transformed[i] ^= mask[(~i) & 3] }
         var check = UInt32(0x18000001)
         check |= UInt32(queryHash[queryHash.startIndex] & 63) << 14
         check |= UInt32(digest[digest.startIndex] & 63) << 8
@@ -351,7 +351,7 @@ enum HGV5 {
         addCon(0)
         for i in 1..<3 {
             var old = state
-            for a in 0..<4 { for b in 0..<4 { old[a][b] = box[state[a][b]] } }
+            for a in 0..<4 { for b in 0..<4 { old[a][b] = box[Int(state[a][b])] } }
             for a in 0..<4 { state[a] = old[con2[a]] }
             var flat = [UInt8]()
             for a in 0..<4 { flat.append(contentsOf: state[a]) }
@@ -439,7 +439,7 @@ enum HGV5 {
             let headers: [String: String] = [
                 "x-khronos": String(ts),
                 "x-helios": heliosV5(ts: ts, random: ent.heliosRandom),
-                "x-medusa": medusa(query: query, queryHash: queryHash, bodyMD5: Array(bodyMD5), ts: ts, ent: ent),
+                "x-medusa": medusa(query: query, queryHash: queryHash, bodyMD5: bodyMD5, ts: ts, ent: ent),
                 "Content-Type": "application/json; charset=utf-8",
                 "x-ss-stub": HGBase.hexU(bodyMD5),
             ]
