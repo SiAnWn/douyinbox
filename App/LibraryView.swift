@@ -423,11 +423,13 @@ struct ResTag: View {
     let url: URL
     @State private var s = ""
     var body: some View {
-        if !s.isEmpty {
-            Text(s).font(.caption2).foregroundStyle(.secondary)
+        Group {
+            if !s.isEmpty {
+                Text(s).font(.caption2).foregroundStyle(.secondary)
+            }
         }
-    }
-    .task(id: url) {
-        if s.isEmpty { s = await ResCache.shared.tag(url) }
+        .task(id: url) {
+            if s.isEmpty { s = await ResCache.shared.tag(url) }
+        }
     }
 }
