@@ -561,6 +561,7 @@ struct SiteBrowser: UIViewRepresentable {
         while((m=re.exec(t)) && out.length<12){ var x=clean(m[0]); if(x){ out.push(x); } }
         if(out.length){ send({t:'urls', list:out}); } }
       var seen={};
+      window.__resetSeen=function(){ seen={}; };
       function say(u){ if(!seen[u]){ seen[u]=1; send({t:'net', u:u}); } }
       var of=window.fetch;
       if(of){ window.fetch=function(){ var a=arguments; var p=of.apply(this,a); var uu=(a[0]&&a[0].url)||a[0]||'';

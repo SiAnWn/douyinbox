@@ -48,7 +48,7 @@ final class SniffAutoVM: ObservableObject {
         guard let agent = agent else { return "演员缺席" }
         let g = await agent.js("(function(){try{var g=[...document.querySelectorAll('[aria-label]')].filter(function(e){var l=e.getAttribute('aria-label')||'';return l==='视频设置'||l==='设置';});if(!g.length){g=[...document.querySelectorAll('i,div,span')].filter(function(e){var c=(e.getAttribute('class')||'');return /setting|config/i.test(c)&&c.length<50;});}if(g.length){var t=g[0];['pointerover','mouseover','pointerdown','mousedown','pointerup','mouseup','click'].forEach(function(n){try{t.dispatchEvent(new MouseEvent(n,{bubbles:true,cancelable:true,view:window}));}catch(e){}});return '齿轮✓';}return '齿轮✗';}catch(e){return '齿轮异常';}})()")
         try? await Task.sleep(nanoseconds: 1_600_000_000)
-        let m = await agent.js("(function(){try{var all=[...document.querySelectorAll('li,span,div,button')];var names=[];var hi=[];for(var i=0;i<all.length;i++){var t=(all[i].textContent||'').trim();if(t.length>0&&t.length<=10&&/1080|超清|最高|720P|高清/.test(t)){if(names.indexOf(t)<0)names.push(t);if(/1080|最高|超清/.test(t))hi.push(all[i]);}}if(hi.length){var leaf=hi.filter(function(e){return e.children.length===0;});var tgt=(leaf.length?leaf:hi).pop();['pointerover','mouseover','pointerdown','mousedown','pointerup','mouseup','click'].forEach(function(n){try{tgt.dispatchEvent(new MouseEvent(n,{bubbles:true,cancelable:true,view:window}));}catch(e){}});return names.join('/')+'→档位已点';}return names.length?names.join('/'):'无档位选项';}catch(e){return '选档异常';}})()")
+        let m = await agent.js("(function(){try{var all=[...document.querySelectorAll('li,span,div,button')];var names=[];var hi=[];var mid=[];for(var i=0;i<all.length;i++){var t=(all[i].textContent||'').trim();if(t.length>0&&t.length<=10&&/1080|超清|最高|720P|高清/.test(t)){if(names.indexOf(t)<0)names.push(t);if(/1080|超清|最高/.test(t))hi.push(all[i]);else if(/720P|高清/.test(t))mid.push(all[i]);}}var pool=hi.length?hi:mid;if(pool.length){var leaf=pool.filter(function(e){return e.children.length===0;});var tgt=(leaf.length?leaf:pool).pop();['pointerover','mouseover','pointerdown','mousedown','pointerup','mouseup','click'].forEach(function(n){try{tgt.dispatchEvent(new MouseEvent(n,{bubbles:true,cancelable:true,view:window}));}catch(e){}});return names.join('/')+'→档位已点';}return names.length?names.join('/'):'无档位选项';}catch(e){return '选档异常';}})()")
         return g + " " + m
     }
 
@@ -87,17 +87,34 @@ final class SniffAutoVM: ObservableObject {
                 let state = await agent.js("(function(){var v=document.querySelector('video');if(!v)return'video✗';var s=(v.currentSrc||v.src||'');return 't='+(v.currentTime||0).toFixed(1)+' paused='+v.paused+' rs='+v.readyState+' vw='+(v.videoWidth||0)+' src='+(s.indexOf('blob')===0?'blob(MSE)':s.slice(0,42));})()")
                 log("EP\(ep.num) 播放器状态: \(state)")
                 var picked: SniffVM.Snip?
+                // 等 ABR 升级稳定：播放锁定同一持续 ≥5 秒才收货（起步常 576，6~10 秒后自动升 1080）
+                var lastPlay = ""
+                var stable = 0
                 for _ in 0..<20 {
                     try? await Task.sleep(nanoseconds: 1_000_000_000)
                     if stop { break }
-                    // 优先级：正在播的直链(video.src 认证) → url 含集号 → video_id==页面指纹
+                    if !cand.playURL.isEmpty, cand.playURL == lastPlay {
+                        stable += 1
+                        if stable >= 5 {
+                            let playTos = SniffVM.tosFileStatic(cand.playURL.lowercased())
+                            if let m = cand.items.first(where: {
+                                $0.kind == "mp4" && SniffVM.tosFileStatic($0.id.lowercased()) == playTos
+                            }) { picked = m; break }
+                        }
+                    } else {
+                        lastPlay = cand.playURL
+                        stable = 0
+                    }
+                }
+                // 没等到稳定锁：退回旧优先级
+                if picked == nil {
                     let playTos = SniffVM.tosFileStatic(cand.playURL.lowercased())
-                    if let m = cand.items.first(where: {
+                    picked = cand.items.first(where: {
                         $0.kind == "mp4" && (
                             (!playTos.isEmpty && SniffVM.tosFileStatic($0.id.lowercased()) == playTos)
                             || $0.id.lowercased().contains(ep.id)
                             || SniffVM.qvStatic($0.id.lowercased(), "video_id") == cand.currentFileVid)
-                    }) { picked = m; break }
+                    })
                 }
                 // 兜底：播放器本集先请求，第一条 mp4 大概率就是它
                 if picked == nil { picked = cand.items.first { $0.kind == "mp4" } }
@@ -134,14 +151,21 @@ final class SniffAutoVM: ObservableObject {
                         log("EP\(ep.num) 画质探测: \(q)")
                         if q.contains("档位已点") {
                             try? await Task.sleep(nanoseconds: 3_000_000_000)
+                            _ = await agent.js("(function(){try{window.__resetSeen&&window.__resetSeen();return'r';}catch(e){return'e';}})()")
                             cand.items = []
-                            cand.playURL = ""
                             var up: SniffVM.Snip?
-                            for _ in 0..<8 {
+                            for _ in 0..<14 {
                                 try? await Task.sleep(nanoseconds: 1_000_000_000)
-                                if let m = cand.items.first(where: { $0.kind == "mp4" }) { up = m; break }
+                                let pt = SniffVM.tosFileStatic(cand.playURL.lowercased())
+                                if let m = cand.items.first(where: {
+                                    $0.kind == "mp4" && $0.id != snip.id
+                                        && !pt.isEmpty && SniffVM.tosFileStatic($0.id.lowercased()) == pt
+                                }) { up = m; break }
                             }
-                            if let b = up, b.id != snip.id {
+                            if up == nil {
+                                up = cand.items.first { $0.kind == "mp4" && $0.id != snip.id }
+                            }
+                            if let b = up {
                                 if let f3 = try? await autoFetch(b.id, { _ in }) {
                                     let w3 = sniffRealWidth(f3)
                                     if w3 > w {
