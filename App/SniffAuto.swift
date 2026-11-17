@@ -31,13 +31,18 @@ final class SniffAutoVM: ObservableObject {
     private var job: Task<Void, Never>?
 
     init() {
-        cand.forward = { [weak self] s in self?.log("　↳ " + s) }
+        cand.forward = { [weak self] s in
+            guard let self = self else { return }
+            // 高频噪音行不进面板（仍在 cand 全量日志里）
+            if s.contains("已有同集") || s.contains("丢弃:") || s.contains("归并升级") { return }
+            self.log("　↳ " + s)
+        }
     }
 
     func log(_ s: String) {
         let t = Int(Date().timeIntervalSince1970) % 86400
         logs.append(String(format: "[%02d:%02d:%02d] ", t / 3600, (t / 60) % 60, t % 60) + s)
-        if logs.count > 400 { logs.removeFirst(logs.count - 400) }
+        if logs.count > 120 { logs.removeFirst(logs.count - 120) }
     }
     func setRow(_ i: Int, _ st: String) {
         if i < rows.count { rows[i].state = st }
@@ -87,24 +92,28 @@ final class SniffAutoVM: ObservableObject {
                 let state = await agent.js("(function(){var v=document.querySelector('video');if(!v)return'video✗';var s=(v.currentSrc||v.src||'');return 't='+(v.currentTime||0).toFixed(1)+' paused='+v.paused+' rs='+v.readyState+' vw='+(v.videoWidth||0)+' src='+(s.indexOf('blob')===0?'blob(MSE)':s.slice(0,42));})()")
                 log("EP\(ep.num) 播放器状态: \(state)")
                 var picked: SniffVM.Snip?
-                // 等 ABR 升级稳定：播放锁定同一持续 ≥5 秒才收货（起步常 576，6~10 秒后自动升 1080）
-                var lastPlay = ""
+                // 白吃 ABR：盯播放锁的"换流"动作——起步多是 576，~10 秒内自动升 1080；
+                // 看到升级(换锁)稳定 3 秒立刻收货，整场没升级则 14 秒后按现状收
+                var initial = ""
+                var last = ""
                 var stable = 0
-                for _ in 0..<20 {
+                for _ in 0..<18 {
                     try? await Task.sleep(nanoseconds: 1_000_000_000)
                     if stop { break }
-                    if !cand.playURL.isEmpty, cand.playURL == lastPlay {
-                        stable += 1
-                        if stable >= 5 {
-                            let playTos = SniffVM.tosFileStatic(cand.playURL.lowercased())
-                            if let m = cand.items.first(where: {
-                                $0.kind == "mp4" && SniffVM.tosFileStatic($0.id.lowercased()) == playTos
-                            }) { picked = m; break }
-                        }
-                    } else {
-                        lastPlay = cand.playURL
-                        stable = 0
+                    let cur = cand.playURL
+                    if cur.isEmpty { continue }
+                    if initial.isEmpty { initial = cur; last = cur; stable = 1; continue }
+                    if cur == last { stable += 1 } else { last = cur; stable = 1 }
+                    let pt = SniffVM.tosFileStatic(cur.lowercased())
+                    let hero: SniffVM.Snip? = cand.items.first {
+                        $0.kind == "mp4" && SniffVM.tosFileStatic($0.id.lowercased()) == pt
                     }
+                    if cur != initial, stable >= 3, let h = hero { picked = h; break }
+                    if cur == initial, stable >= 14, let h = hero { picked = h; break }
+                }
+                // 拿到地址就掐播放，省一半冤枉流量
+                if picked != nil {
+                    _ = await agent.js("(function(){var v=document.querySelector('video');if(v){try{v.pause();}catch(e){}}return'p';})()")
                 }
                 // 没等到稳定锁：退回旧优先级
                 if picked == nil {
@@ -145,8 +154,9 @@ final class SniffAutoVM: ObservableObject {
                             } catch { continue }
                         }
                     }
-                    // 还不行就拧播放器画质档重试（网页默认智能档常给 576）
+                    // 还不行就拧播放器画质档重试（先复活播放，档位切换需要活体播放器）
                     if w < 1000 {
+                        _ = await agent.js("(function(){var v=document.querySelector('video');if(v){try{v.muted=true;var p=v.play();if(p)p.catch(function(){});}catch(e){}}return'k';})()")
                         let q = await setBestQuality()
                         log("EP\(ep.num) 画质探测: \(q)")
                         if q.contains("档位已点") {
@@ -195,12 +205,12 @@ final class SniffAutoVM: ObservableObject {
                     setRow(i, "✗下载败"); miss += 1
                     log("EP\(ep.num) 下载失败: \(error.localizedDescription)")
                 }
-                // 节奏：5~9 秒喘息；每 20 集歇 1 分钟压风控
-                if i > 0 && i % 20 == 19 {
-                    hint = "已连续 \(i + 1) 集，歇 60 秒压节奏…"
-                    try? await Task.sleep(nanoseconds: 60_000_000_000)
+                // 节奏：2.5~4.5 秒喘息；每 25 集歇 45 秒压风控
+                if i > 0 && i % 25 == 24 {
+                    hint = "已连续 \(i + 1) 集，歇 45 秒压节奏…"
+                    try? await Task.sleep(nanoseconds: 45_000_000_000)
                 }
-                let jitter = UInt64(5_000_000_000 + Int.random(in: 0...4_000_000_000))
+                let jitter = UInt64(2_500_000_000 + Int.random(in: 0...2_000_000_000))
                 try? await Task.sleep(nanoseconds: jitter)
                 // 掉线保险：连续两集抓不到提示登录
                 if miss >= 2, got == 0, have == 0 {
@@ -383,8 +393,8 @@ struct SniffAutoView: View {
                 }
             }
             if !vm.logs.isEmpty {
-                Section("调试日志") {
-                    Text(vm.logs.joined(separator: "\n"))
+                Section("调试日志（共 \(vm.logs.count) 条 · 显示最近 50）") {
+                    Text(vm.logs.suffix(50).joined(separator: "\n"))
                         .font(.system(.caption2, design: .monospaced))
                         .textSelection(.enabled)
                 }

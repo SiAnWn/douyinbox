@@ -227,7 +227,7 @@ struct SniffView: View {
                     DisclosureGroup("调试日志（\(vm.logs.count)）") {
                         ScrollView {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(vm.logs.joined(separator: "\n"))
+                                Text(vm.logs.suffix(60).joined(separator: "\n"))
                                     .font(.system(.caption2, design: .monospaced))
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
