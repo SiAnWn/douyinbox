@@ -28,18 +28,16 @@ struct PrivateView: View {
                 } else if shown.isEmpty {
                     ContentUnavailableView("没有匹配", systemImage: "magnifyingglass", description: Text("换个关键词"))
                 } else {
-                    List(shown) { s in
-                        NavigationLink(value: s) { SeriesRow(series: s) }
-                    }
-                    .searchable(text: $search, prompt: "搜索私密")
-                    .toolbar {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Menu {
-                                Button("名称") { sort = 0 }
-                                Button("数量") { sort = 1 }
-                            } label: { Image(systemName: "arrow.up.arrow.down") }
+                    SeriesGrid(list: shown)
+                        .searchable(text: $search, prompt: "搜索私密")
+                        .toolbar {
+                            ToolbarItem(placement: .topBarTrailing) {
+                                Menu {
+                                    Button("名称") { sort = 0 }
+                                    Button("数量") { sort = 1 }
+                                } label: { Image(systemName: "arrow.up.arrow.down") }
+                            }
                         }
-                    }
                 }
             }
             .navigationTitle(app.privateUnlocked ? "私密 · \(app.privateSeries.count)" : "私密")

@@ -26,9 +26,7 @@ struct DramaView: View {
                 } else if shown.isEmpty {
                     ContentUnavailableView("没有匹配", systemImage: "magnifyingglass", description: Text("换个关键词"))
                 } else {
-                    List(shown) { s in
-                        NavigationLink(value: s) { SeriesRow(series: s) }
-                    }
+                    SeriesGrid(list: shown)
                 }
             }
             .navigationTitle("短剧 · \(app.dramaSeries.count)")
@@ -49,6 +47,42 @@ struct DramaView: View {
             .navigationDestination(for: Series.self) { s in DramaEpisodes(series: s) }
             .refreshable { await app.refreshSeriesAsync() }
             .sheet(isPresented: $showSubs) { SubsView().environmentObject(app) }
+        }
+    }
+}
+
+struct SeriesGrid: View {
+    let list: [Series]
+    private let cols = [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())]
+    var body: some View {
+        ScrollView {
+            LazyVGrid(columns: cols, spacing: 10) {
+                ForEach(list) { s in
+                    NavigationLink(value: s) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            ZStack {
+                                if let c = s.cover {
+                                    Thumb(url: c)
+                                } else {
+                                    Color(white: 0.15)
+                                }
+                            }
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 160)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .overlay(alignment: .bottomTrailing) {
+                                Text("\(s.count)集")
+                                    .font(.caption2).foregroundStyle(.white)
+                                    .padding(4).background(.black.opacity(0.5), in: Capsule())
+                                    .padding(4)
+                            }
+                            Text(s.name).font(.caption).lineLimit(1).foregroundStyle(.primary)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding()
         }
     }
 }
