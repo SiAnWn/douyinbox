@@ -95,7 +95,10 @@ struct DramaEpisodes: View {
                                     CoverTile(v: v)
                                         .clipShape(RoundedRectangle(cornerRadius: 8))
                                     Text(v.title).font(.caption).lineLimit(1).foregroundStyle(.primary)
-                                    Text(Naming.fmtSize(v.size)).font(.caption2).foregroundStyle(.secondary)
+                                    HStack(spacing: 5) {
+                                        Text(Naming.fmtSize(v.size)).font(.caption2).foregroundStyle(.secondary)
+                                        ResTag(url: v.url)
+                                    }
                                 }
                             }.buttonStyle(.plain)
                                 .contextMenu {
