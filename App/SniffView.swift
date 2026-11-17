@@ -33,7 +33,9 @@ final class SniffVM: ObservableObject {
         if isVid {
             // 过滤明显非媒体
             for drop in [".js", ".css", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".woff", ".ico", ".webp", ".html"] where low.contains(drop) && !low.contains("m3u8") { return }
-            if items.contains(where: { $0.id == url }) { return }
+            // 同一视频常被播放器多次带不同签名请求 → 按 域名+路径 去重
+            let key = low.components(separatedBy: "?").first ?? low
+            if items.contains(where: { (($0.id.lowercased()).components(separatedBy: "?").first ?? "") == key }) { return }
             let k = low.contains("m3u8") ? "m3u8" : "mp4"
             items.append(Snip(id: url, kind: k))
         }
@@ -217,8 +219,19 @@ struct SniffView: View {
                     var lastErr: Error?
                     for (ua, rf, cok) in attempts {
                         do {
-                            file = try await DouyinAPI.download(u, referer: rf, cookie: cok,
-                                                                uaOverride: ua, progress: prog)
+                            let got = try await DouyinAPI.download(u, referer: rf, cookie: cok,
+                                                                   uaOverride: ua, progress: prog)
+                            // 魔数验货：合法 mp4 第 4~8 字节必为 ftyp，防 CDN 错误页冒充
+                            let magicOK: Bool = {
+                                guard let h = try? Data(contentsOf: got, options: .mappedIfSafe).prefix(12),
+                                      h.count >= 8 else { return false }
+                                return String(data: h.subdata(in: 4..<8), encoding: .ascii) == "ftyp"
+                            }()
+                            guard magicOK else {
+                                try? FileManager.default.removeItem(at: got)
+                                throw GError.failed("非视频内容(疑似错误页)")
+                            }
+                            file = got
                             break
                         } catch {
                             lastErr = error
