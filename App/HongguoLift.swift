@@ -616,6 +616,15 @@ enum HongguoLift {
     private static func digStr(_ d: [String: Any], _ k: String) -> String {
         (d[k] as? String) ?? ((d["video_meta"] as? [String: Any])?[k] as? String) ?? ""
     }
+    // 参考假值集合 [false,0,'0','false']=明文可用; 缺失(=nil)按参考属'缺解密信息'→ 不可用
+    private static func isPlainFlag(_ v: Any?) -> Bool {
+        if let n = v as? NSNumber {
+            if CFGetTypeID(n as CFTypeRef) == CFBooleanGetTypeID() { return !n.boolValue }
+            return n.intValue == 0
+        }
+        if let s = v as? String { return s == "0" || s == "false" }
+        return false
+    }
 
     static func parseTab(_ j: [String: Any], vid: String) -> Lift? {
         let biz = ((j["code"] ?? j["Code"]) as? NSNumber)?.intValue ?? 0
@@ -631,21 +640,35 @@ enum HongguoLift {
         } else if let s = e["video_model"] as? String, let d2 = s.data(using: .utf8) {
             model = (try? JSONSerialization.jsonObject(with: d2)) as? [String: Any]
         }
-        guard let mo = model, let vlist = mo["video_list"] as? [String: Any] else { return nil }
+        guard let mo = model else { return nil }
+        var vlist: [String: Any]? = mo["video_list"] as? [String: Any]
+        if vlist == nil, let arr = mo["video_list"] as? [Any] {           // 参考 Object.values 兼容数组形
+            vlist = Dictionary(uniqueKeysWithValues: arr.enumerated().compactMap { i, v in
+                (v as? [String: Any]).map { (String(i), $0) } })
+        }
+        guard let vl = vlist else { return nil }
         let seed = (mo["key_seed"] as? String).flatMap { HGBase.b64urlToData($0) }
         var best: Lift?
         var bestPx = 0
-        for (_, raw) in vlist {
+        for (_, raw) in vl {
             guard let item = raw as? [String: Any] else { continue }
             let codec = digStr(item, "codec_type").lowercased()
             guard ["h264", "avc", "avc1", "hevc", "h265", "hvc1", "hev1", "bytevc1"].contains(codec) else { continue }
-            let w = digInt(item, "vwidth")
-            let hh = digInt(item, "vheight")
+            var w = digInt(item, "vwidth")
+            var hh = digInt(item, "vheight")
+            if w == 0 { w = digInt(item, "width") }
+            if hh == 0 { hh = digInt(item, "height") }
             let px = min(w > 0 ? w : 99_999, hh > 0 ? hh : 99_999)
-            let def = digStr(item, "quality_desc")
+            var def = digStr(item, "quality_desc")
+            if def.isEmpty { def = digStr(item, "definition") }
             var keyHex = ""
-            let spade = digStr(item, "spade_a")
+            let ei = item["encrypt_info"] as? [String: Any]
+            var spade = digStr(item, "spade_a")
+            if spade.isEmpty, let e2 = ei { spade = (e2["spade_a"] as? String) ?? "" }
             if !spade.isEmpty { keyHex = spadeKey(spade) ?? "" }
+            // 参考闸: encrypt_info.encrypt ?? item.encrypt; 无密钥而旗标又非 [false,0,'0','false'] → 密文废件跳过
+            let encVal: Any? = ei?["encrypt"] ?? item["encrypt"]
+            if keyHex.isEmpty && !isPlainFlag(encVal) { continue }
             var urls = [String]()
             if let m = item["main_url"] as? String { urls.append(m) }
             if let bk = item["backup_url"] as? String { urls.append(bk) }
