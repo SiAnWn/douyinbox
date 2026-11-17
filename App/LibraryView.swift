@@ -1,4 +1,5 @@
 import SwiftUI
+import AVFoundation
 
 // 容量显示：GB 优先，小文件退 MB/KB
 private func fmtGB(_ b: Int) -> String {
@@ -202,7 +203,10 @@ struct LibraryView: View {
                                     }
                                     .clipShape(RoundedRectangle(cornerRadius: 8))
                                 Text(v.title).font(.caption).lineLimit(1).foregroundStyle(.primary)
-                                Text(Naming.fmtSize(v.size)).font(.caption2).foregroundStyle(.secondary)
+                                HStack(spacing: 5) {
+                                    Text(Naming.fmtSize(v.size)).font(.caption2).foregroundStyle(.secondary)
+                                    ResTag(url: v.url)
+                                }
                             }
                         }
                         .buttonStyle(.plain)
@@ -381,5 +385,49 @@ struct Thumb: View {
         }
         .clipped()
         .task(id: url) { img = await ThumbCache.shared.image(url) }
+    }
+}
+
+// ===================== 分辨率角标（库卡片大小旁, 用户点单） =====================
+// 每卡读一次视频轨 naturalSize(轻, 只解析 moov), 会话级缓存;
+// 6% 容差归一到标准档位(1088 之类编码宏块垫边 -> 1080P)
+@MainActor
+final class ResCache {
+    static let shared = ResCache()
+    private var memo: [URL: String] = [:]
+    private var inflight: [URL: Task<String, Never>] = [:]
+    private let standard = [240, 270, 360, 480, 540, 576, 720, 1080, 1440, 2160, 2880]
+    func tag(_ url: URL) async -> String {
+        if let s = memo[url] { return s }
+        if let t = inflight[url] { return await t.value }
+        let t = Task.detached(priority: .utility) { () -> String in
+            let asset = AVURLAsset(url: url)
+            guard let tr = asset.tracks(withMediaType: .video).first else { return "" }
+            let sz = tr.naturalSize
+            let p = Int(round(min(fabs(sz.width), fabs(sz.height))))
+            guard p >= 144 else { return "" }
+            if let c = standard.min(by: { abs($0 - p) < abs($1 - p) }), abs(c - p) <= max(2, Int(Double(c) * 0.06)) {
+                return "\(c)P"
+            }
+            return "\(p)P"
+        }
+        inflight[url] = t
+        let r = await t.value
+        memo[url] = r
+        inflight[url] = nil
+        return r
+    }
+}
+
+struct ResTag: View {
+    let url: URL
+    @State private var s = ""
+    var body: some View {
+        if !s.isEmpty {
+            Text(s).font(.caption2).foregroundStyle(.secondary)
+        }
+    }
+    .task(id: url) {
+        if s.isEmpty { s = await ResCache.shared.tag(url) }
     }
 }
