@@ -524,7 +524,43 @@ struct ParseView: View {
                     catch let e { prbOpt = nil; resolveErr = e.localizedDescription }
                     guard resolveErr.isEmpty, let prb = prbOpt,
                           let st = Hongguo.chooseStream(prb.playback, def: def),
-                          let su = Hongguo.streamURL(st) else { lastWhy = "resolve: " + (resolveErr.isEmpty ? "no stream" : resolveErr); continue }
+                          let su = Hongguo.streamURL(st) else {
+                        // SDK 路被闸死 → lift 注册设备通道（直连=中国蜂窝出口）
+                        var liftOK = false
+                        var liftWhy = ""
+                        do {
+                            if !HongguoLift.didSelfCheck {
+                                HongguoLift.didSelfCheck = true
+                                NSLog("HGlift selfcheck " + HongguoLift.selfCheckLine())
+                            }
+                            let dev = try await HongguoLift.register()
+                            let lf = try await HongguoLift.resolve(vid: ep.id, device: dev)
+                            status = "lift 注册设备取流 \(lf.definition)，下载中…"
+                            let tmpL = try await HongguoLift.download(lf.url)
+                            if lf.keyHex.isEmpty {
+                                liftOK = SavePaths.write(tmpL, rel: rel)
+                                if !liftOK { liftWhy = "lift 明文存盘失败" }
+                            } else if let data = try? Data(contentsOf: tmpL),
+                                      let clear = CencMP4.decrypt(data, keyHex: lf.keyHex) {
+                                let dest = SavePaths.docs.appendingPathComponent(rel)
+                                try? FileManager.default.createDirectory(at: dest.deletingLastPathComponent(),
+                                                                         withIntermediateDirectories: true)
+                                try? FileManager.default.removeItem(at: dest)
+                                liftOK = (try? clear.write(to: dest)) != nil
+                                if !liftOK { liftWhy = "lift 解密后存盘失败" }
+                            } else {
+                                liftWhy = "lift 解密失败 key=\(lf.keyHex.prefix(8))…"
+                            }
+                            try? FileManager.default.removeItem(at: tmpL)
+                        } catch let e { liftWhy = "lift " + e.localizedDescription }
+                        if liftOK {
+                            lastWhy = ""
+                            savedOK = true
+                            continue
+                        }
+                        lastWhy = (resolveErr.isEmpty ? "no stream" : resolveErr) + " | " + liftWhy
+                        continue
+                    }
                     let baseFrac = Double(i) / Double(n)
                     let tmp: URL
                     do {

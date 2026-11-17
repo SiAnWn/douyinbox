@@ -111,23 +111,43 @@ enum Hongguo {
         let s = try? await c.getSeries(sid)
         let eps = try await attempt(c) { try await episodes(sid) }
         guard let first = eps.first else { throw GError.failed("红果这部剧没有分集") }
-        let pr = try await attempt(c) { try await c.resolvePlayback(first.id) }
-        if pr.playback.protected, (pr.contentKey?.key.isEmpty ?? true) {
-            throw GError.failed("拿不到红果内容密钥（风控掐了密钥）：去 设置→红果短剧 重置设备，或换节点再试")
-        }
-        let ladder = pr.playback.streams
-            .filter { !$0.url.isEmpty && !$0.hls && !$0.dash }
-            .sorted { a, b in (a.height * a.bitrate) > (b.height * b.bitrate) }
-        guard !ladder.isEmpty else { throw GError.noStream }
+        let pr: Openhongguo.PlaybackResult?
+        do { pr = try await attempt(c) { try await c.resolvePlayback(first.id) } } catch { pr = nil }
         var opts: [QualityOption] = []
-        for st in ladder {
-            let perEp = st.size
-            let total = perEp * max(1, eps.count)
-            let szTxt = total > 0 ? "约\(Naming.fmtSize(total))" : (perEp > 0 ? "约\(Naming.fmtSize(perEp))/集" : "")
+        if let pr = pr {
+            if pr.playback.protected, (pr.contentKey?.key.isEmpty ?? true) {
+                throw GError.failed("拿不到红果内容密钥（风控掐了密钥）：去 设置→红果短剧 重置设备，或换节点再试")
+            }
+            let ladder = pr.playback.streams
+                .filter { !$0.url.isEmpty && !$0.hls && !$0.dash }
+                .sorted { a, b in (a.height * a.bitrate) > (b.height * b.bitrate) }
+            for st in ladder {
+                let perEp = st.size
+                let total = perEp * max(1, eps.count)
+                let szTxt = total > 0 ? "约\(Naming.fmtSize(total))" : (perEp > 0 ? "约\(Naming.fmtSize(perEp))/集" : "")
+                opts.append(QualityOption(
+                    label: "红果 \(st.definition) · 全\(eps.count)集" + (szTxt.isEmpty ? "" : " · \(szTxt)"),
+                    url: URL(string: "hg://\(sid)/\(st.definition)")!,
+                    width: st.width, height: st.height, sizeBytes: total, isOriginal: false))
+            }
+        }
+        if opts.isEmpty {
+            // SDK 闸紧或空流表（11 月匿名空响应）→ lift 注册设备通道：注册合法匿名手机 + 三头签名 + 直连中国出口
+            if !HongguoLift.didSelfCheck {
+                HongguoLift.didSelfCheck = true
+                NSLog("HGlift selfcheck " + HongguoLift.selfCheckLine())
+            }
+            var lf: HongguoLift.Lift?
+            if let dev = try? await HongguoLift.register() {
+                lf = try? await HongguoLift.resolve(vid: first.id, device: dev)
+            }
+            guard let lf = lf else {
+                throw GError.failed("红果播放口被收紧，注册设备通道也没打通（等下版）")
+            }
             opts.append(QualityOption(
-                label: "红果 \(st.definition) · 全\(eps.count)集" + (szTxt.isEmpty ? "" : " · \(szTxt)"),
-                url: URL(string: "hg://\(sid)/\(st.definition)")!,
-                width: st.width, height: st.height, sizeBytes: total, isOriginal: false))
+                label: "红果 \(lf.definition) · 全\(eps.count)集 · 注册设备",
+                url: URL(string: "hg://\(sid)/\(lf.definition)")!,
+                width: lf.width, height: lf.height, sizeBytes: 0, isOriginal: false))
         }
         let title = (s?.title.isEmpty == false ? s!.title : (first.title.isEmpty ? "红果短剧" : first.title))
         return ParseResult(videoID: "hg_\(sid)", title: title, author: "红果", options: opts)

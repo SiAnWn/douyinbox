@@ -13,8 +13,8 @@ settings:
     SWIFT_VERSION: "5.9"
     # ⚠️ 此文件只用 write/edit 工具改（PS 管道替换必坏中文）
     # ⚠️ 升版本要三处同步：此处 MARKETING/CURRENT + DouyinBox.info.properties 两行（plist 不做变量替换，主页版本读它）
-    MARKETING_VERSION: "1.9.30"
-    CURRENT_PROJECT_VERSION: "187"
+    MARKETING_VERSION: "1.9.31"
+    CURRENT_PROJECT_VERSION: "189"
     TARGETED_DEVICE_FAMILY: "1"
     ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
 targets:
@@ -38,8 +38,8 @@ targets:
       path: Generated/ShareInfo.plist
       properties:
         CFBundleDisplayName: 百宝箱
-        CFBundleShortVersionString: "1.9.30"
-        CFBundleVersion: "187"
+        CFBundleShortVersionString: "1.9.31"
+        CFBundleVersion: "189"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.share-services
           NSExtensionPrincipalClass: ShareRootViewController
@@ -66,8 +66,8 @@ targets:
       path: Generated/IslandInfo.plist
       properties:
         CFBundleDisplayName: 百宝箱灵动岛
-        CFBundleShortVersionString: "1.9.30"
-        CFBundleVersion: "187"
+        CFBundleShortVersionString: "1.9.31"
+        CFBundleVersion: "189"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
   DouyinBox:
@@ -86,8 +86,8 @@ targets:
       properties:
         CFBundleDisplayName: 百宝箱
         CFBundleDevelopmentRegion: zh_CN
-        CFBundleShortVersionString: "1.9.30"
-        CFBundleVersion: "187"
+        CFBundleShortVersionString: "1.9.31"
+        CFBundleVersion: "189"
         CFBundleURLTypes:
           - CFBundleURLName: com.sian.douyinbox
             CFBundleURLSchemes:
