@@ -203,10 +203,7 @@ struct LibraryView: View {
                                     }
                                     .clipShape(RoundedRectangle(cornerRadius: 8))
                                 Text(v.title).font(.caption).lineLimit(1).foregroundStyle(.primary)
-                                HStack(spacing: 5) {
-                                    Text(Naming.fmtSize(v.size)).font(.caption2).foregroundStyle(.secondary)
-                                    ResTag(url: v.url)
-                                }
+                                SizeLine(v: v)
                             }
                         }
                         .buttonStyle(.plain)
@@ -404,10 +401,13 @@ final class ResCache {
         let std = standard
         let t = Task.detached(priority: .utility) { () -> String in
             let asset = AVURLAsset(url: url)
-            guard let tr = try? await asset.loadTracks(withMediaType: .video).first else { return "" }
-            guard let sz = try? await tr.load(.naturalSize) else { return "" }
+            let vt = (try? await asset.loadTracks(withMediaType: .video)) ?? []
+            let tr = vt.first
+            guard let tr2 = tr, let sz = try? await tr2.load(.naturalSize) else {
+                return "#" + String(vt.count) + "/" + (FileManager.default.fileExists(atPath: url.path) ? "f" : "x")
+            }
             let p = Int(round(min(fabs(sz.width), fabs(sz.height))))
-            guard p >= 144 else { return "" }
+            guard p >= 144 else { return "#" + String(Int(sz.width)) + "x" + String(Int(sz.height)) }
             if let c = std.min(by: { abs($0 - p) < abs($1 - p) }), abs(c - p) <= max(2, Int(Double(c) * 0.06)) {
                 return "\(c)P"
             }
@@ -415,7 +415,7 @@ final class ResCache {
         }
         inflight[url] = t
         let r = await t.value
-        if Self.probe < 40 { Self.probe += 1; HGTrail.note("res \(url.lastPathComponent) -> " + (r.isEmpty ? "none(" + (FileManager.default.fileExists(atPath: url.path) ? "fexist" : "nofile") + ")" : r)) }
+        if Self.probe < 40 { Self.probe += 1; HGTrail.note("res " + r + " | " + url.lastPathComponent) }
         memo[url] = r
         inflight[url] = nil
         return r
@@ -434,5 +434,22 @@ struct ResTag: View {
         .task(id: url) {
             if s.isEmpty { s = await ResCache.shared.tag(url) }
         }
+    }
+}
+
+// 大小·分辨率合一行: 大小永远在, 分辨率读到即追加(单视图单 task, 无嵌套可疑结构)
+struct SizeLine: View {
+    let v: VideoItem
+    @State private var res = ""
+    var body: some View {
+        Text(Naming.fmtSize(v.size) + (res.isEmpty ? "" : " · " + res))
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+            .task(id: v.url) {
+                if res.isEmpty { res = await ResCache.shared.tag(v.url) }
+                else if v.isAudio { res = "" }
+            }
     }
 }

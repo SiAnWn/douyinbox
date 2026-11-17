@@ -102,10 +102,7 @@ struct PrivateEpisodes: View {
                                     CoverTile(v: v)
                                         .clipShape(RoundedRectangle(cornerRadius: 8))
                                     Text(v.title).font(.caption).lineLimit(1).foregroundStyle(.primary)
-                                    HStack(spacing: 5) {
-                                        Text(Naming.fmtSize(v.size)).font(.caption2).foregroundStyle(.secondary)
-                                        ResTag(url: v.url)
-                                    }
+                                    SizeLine(v: v)
                                 }
                             }.buttonStyle(.plain)
                                 .contextMenu {
