@@ -484,7 +484,7 @@ enum HongguoLift {
         for i in 4..<72 {
             let mixed = (HGBase.ror64(rounds[i - 1], 3) ^ rounds[i - 3])
                 ^ HGBase.ror64(HGBase.ror64(rounds[i - 1], 3) ^ rounds[i - 3], 1)
-            let bit = (0x03dc_94c3_a046_d678 as UInt64 >> UInt64((i - 4) % 62)) & 1
+            let bit = (0x3dc9_4c3a_046d_678b &>> UInt64((i - 4) % 62)) & 1
             rounds[i] = (~rounds[i - 4]) ^ mixed ^ (bit ^ 3)
         }
         var off = 0
