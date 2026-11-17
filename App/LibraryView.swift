@@ -404,8 +404,8 @@ final class ResCache {
         let std = standard
         let t = Task.detached(priority: .utility) { () -> String in
             let asset = AVURLAsset(url: url)
-            guard let tr = asset.tracks(withMediaType: .video).first else { return "" }
-            let sz = tr.naturalSize
+            guard let tr = try? await asset.loadTracks(withMediaType: .video).first else { return "" }
+            guard let sz = try? await tr.load(.naturalSize) else { return "" }
             let p = Int(round(min(fabs(sz.width), fabs(sz.height))))
             guard p >= 144 else { return "" }
             if let c = std.min(by: { abs($0 - p) < abs($1 - p) }), abs(c - p) <= max(2, Int(Double(c) * 0.06)) {
