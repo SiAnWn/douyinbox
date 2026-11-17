@@ -152,12 +152,15 @@ enum Hongguo {
             }
             let lf = try? await HongguoLift.resolve(vid: first.id)
             guard let lf = lf else {
-                throw GError.failed("红果取流被 IP 风控（设备与签名已全绿仍回空；短剧请走抖音合集，红果侧待上游更新）")
+                throw GError.failed("红果取流失败（V5 新协议+五头旧协议都试过仍空；请回传 HGTrail 遗嘱）")
             }
+            let perEp = lf.sizeBytes
+            let hgTotal = perEp * max(1, eps.count)
+            let szTxt = hgTotal > 0 ? " · 约\(Naming.fmtSize(hgTotal))" : ""
             opts.append(QualityOption(
-                label: "红果 \(lf.definition) · 全\(eps.count)集 · 注册设备",
+                label: "红果 \(lf.definition) · 全\(eps.count)集 · 注册设备" + szTxt,
                 url: Hongguo.hgURL(sid, lf.definition),
-                width: lf.width, height: lf.height, sizeBytes: 0, isOriginal: false))
+                width: lf.width, height: lf.height, sizeBytes: hgTotal, isOriginal: false))
         }
         let title = (s?.title.isEmpty == false ? s!.title : (first.title.isEmpty ? "红果短剧" : first.title))
         return ParseResult(videoID: "hg_\(sid)", title: title, author: "红果", options: opts)

@@ -257,6 +257,7 @@ enum HongguoLift {
         let definition: String
         let width: Int
         let height: Int
+        let sizeBytes: Int
     }
     struct Device {
         let deviceId: String
@@ -643,7 +644,11 @@ enum HongguoLift {
 
     private static func digInt(_ d: [String: Any], _ k: String) -> Int {
         if let n = d[k] as? NSNumber { return n.intValue }
-        if let m = d["video_meta"] as? [String: Any], let n = m[k] as? NSNumber { return n.intValue }
+        if let s = d[k] as? String, let dv = Double(s) { return Int(dv) }
+        if let m = d["video_meta"] as? [String: Any] {
+            if let n = m[k] as? NSNumber { return n.intValue }
+            if let s = m[k] as? String, let dv = Double(s) { return Int(dv) }
+        }
         return 0
     }
     private static func digStr(_ d: [String: Any], _ k: String) -> String {
@@ -681,6 +686,9 @@ enum HongguoLift {
         }
         guard let vl = vlist else { return nil }
         let seed = (mo["key_seed"] as? String).flatMap { HGBase.b64urlToData($0) }
+        // 时长(秒): video_duration 优先, 兼容 duration / 字符串小数
+        var dur = max(digInt(mo, "video_duration"), digInt(mo, "duration"))
+        if dur == 0, let s = mo["video_duration"] as? String, let dv = Double(s) { dur = Int(dv) }
         var best: Lift?
         var bestPx = 0
         for (_, raw) in vl {
@@ -713,7 +721,13 @@ enum HongguoLift {
                         || host.hasSuffix("douyinvod.com") || host.hasSuffix("novelsite-qc.com")
                 else { continue }
                 if px >= bestPx {
-                    best = Lift(url: url, keyHex: keyHex, definition: def, width: w, height: hh)
+                    // 码率: bit_rate 字段(kbps 与 bit/s 混合生态, <10万判为 kbps 折算)×时长 = 估算体积
+                    var br = digInt(item, "bit_rate")
+                    if br == 0 { br = digInt(item, "normalized_bit_rate") }
+                    if br == 0 { br = digInt(mo, "bit_rate") }
+                    if br > 0 && br < 100_000 { br &*= 1000 }
+                    let est = (br > 0 && dur > 0) ? br / 8 * dur : 0
+                    best = Lift(url: url, keyHex: keyHex, definition: def, width: w, height: hh, sizeBytes: est)
                     bestPx = px
                 }
                 break
