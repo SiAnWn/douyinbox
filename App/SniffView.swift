@@ -54,10 +54,11 @@ final class SniffVM: ObservableObject {
         if isVid, !low.contains("m3u8_url") {   // 剔除页面 JSON 占位假地址
             // 过滤明显非媒体
             for drop in [".js", ".css", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".woff", ".ico", ".webp", ".html"] where low.contains(drop) && !low.contains("m3u8") { return }
-            // 归并键：video_id 参数 → 路径里的 15~20 位数字号 → host+path
+            // 归并键四级 ladder：tos文件指纹 → video_id 参数 → 路径数字集号 → host+path
+            let tos = Self.tosFile(low)
             let vid = Self.qv(low, "video_id")
             let nvid = Self.nidInPath(low)
-            let key = !vid.isEmpty ? vid : (!nvid.isEmpty ? nvid : ((low.components(separatedBy: "?").first) ?? low))
+            let key = !tos.isEmpty ? tos : (!vid.isEmpty ? vid : (!nvid.isEmpty ? nvid : ((low.components(separatedBy: "?").first) ?? low)))
             let ds = Int(Self.qv(low, "ds")) ?? 99
             if ds == 3 { log("丢弃:ds3加密档(下载不可播) …\(cleanURL.suffix(20))"); return }
             var tag = ""
@@ -69,24 +70,25 @@ final class SniffVM: ObservableObject {
             }
             if let i = items.firstIndex(where: {
                 let kl = $0.id.lowercased().replacingOccurrences(of: "\\u0026", with: "&")
+                let kt = Self.tosFile(kl)
                 let kv = Self.qv(kl, "video_id")
                 let kn = Self.nidInPath(kl)
-                let kOther = !kv.isEmpty ? kv : (!kn.isEmpty ? kn : ((kl.components(separatedBy: "?").first) ?? kl))
+                let kOther = !kt.isEmpty ? kt : (!kv.isEmpty ? kv : (!kn.isEmpty ? kn : ((kl.components(separatedBy: "?").first) ?? kl)))
                 return kOther == key
             }) {
                 // 同集重复到达：只留更清晰档位那条
                 if ds < items[i].dsRank {
                     items[i] = Snip(id: cleanURL, kind: kindIsMp4(low) ? "mp4" : "m3u8", tag: tag, dsRank: ds)
-                    log("归并升级 ds\(ds) \(url.suffix(24))")
+                    log("归并升级 ds\(ds) \(cleanURL.suffix(24))")
                     resort()
                 } else {
-                    log("丢弃(同集更低档 ds\(ds)) \(url.suffix(24))")
+                    log("已有同集同/更高档，丢新来的 ds\(ds) \(cleanURL.suffix(24))")
                 }
                 return
             }
             let k = kindIsMp4(low) ? "mp4" : "m3u8"
             items.append(Snip(id: cleanURL, kind: k, tag: tag, dsRank: ds))
-            log("候选+1 [\(k)] \(tag.isEmpty ? "无标" : tag) …\(url.suffix(28))")
+            log("候选+1 [\(k)] \(tag.isEmpty ? "无标" : tag) …\(cleanURL.suffix(28))")
             resort()
         }
     }
@@ -98,6 +100,15 @@ final class SniffVM: ObservableObject {
         guard let u = URL(string: low) else { return "" }
         for seg in u.path.split(separator: "/")
         where seg.count >= 15 && seg.count <= 20 && seg.allSatisfy({ $0.isNumber }) { return String(seg) }
+        return ""
+    }
+    static func tosFile(_ low: String) -> String {
+        // 稳定归并键: tos-cn-ve-xx/ 后的文件指纹段(每次请求签名变但它不变)
+        let segs = low.split(separator: "/")
+        for (i, s) in segs.enumerated() where s.hasPrefix("tos-cn-") && i + 1 < segs.count {
+            let f = String(segs[i + 1])
+            if f.count >= 15 { return f }
+        }
         return ""
     }
     private func resort() {
@@ -478,10 +489,15 @@ struct SiteBrowser: UIViewRepresentable {
             guard message.name == "sniff" else { return }
             if let s = message.body as? String,
                let d = try? JSONSerialization.jsonObject(with: Data(s.utf8)) as? [String: Any] {
-                if let u = d["u"] as? String { bridge.report(t: "net", u: u) }
-                if let lst = d["list"] as? [String] { bridge.reportList(lst) }
-                if let vv = d["v"] as? String { bridge.reportVid(vv) }
-                if let tt = d["title"] as? String { bridge.reportTitle(tt) }
+                let t = d["t"] as? String ?? "net"
+                switch t {
+                case "vid":   if let vv = d["v"] as? String { bridge.reportVid(vv) }
+                case "title": if let tt = d["v"] as? String { bridge.reportTitle(tt) }
+                case "urls":  if let lst = d["list"] as? [String] { bridge.reportList(lst) }
+                default:
+                    if let u = d["u"] as? String { bridge.report(t: "net", u: u) }
+                    if let lst = d["list"] as? [String] { bridge.reportList(lst) }
+                }
             }
         }
     }
