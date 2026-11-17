@@ -102,6 +102,12 @@ enum Hongguo {
         try? meta.write(to: dir.appendingPathComponent(base + ".txt"), atomically: false, encoding: .utf8)
     }
 
+    // hg:// 占位链接构造：档位名可能是中文带空格，percent 编码 + 双保险防强解崩溃
+    static func hgURL(_ sid: String, _ def: String) -> URL {
+        let enc = def.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "d"
+        return URL(string: "hg://\(sid)/\(enc)") ?? URL(string: "hg://\(sid)/d")!
+    }
+
     // 解析成清晰度列表（hg:// 占位链接，pick 时特判走整剧批量）
     static func parse(_ link: String) async throws -> ParseResult {
         guard let sid = await seriesID(from: link) else {
@@ -127,7 +133,7 @@ enum Hongguo {
                 let szTxt = total > 0 ? "约\(Naming.fmtSize(total))" : (perEp > 0 ? "约\(Naming.fmtSize(perEp))/集" : "")
                 opts.append(QualityOption(
                     label: "红果 \(st.definition) · 全\(eps.count)集" + (szTxt.isEmpty ? "" : " · \(szTxt)"),
-                    url: URL(string: "hg://\(sid)/\(st.definition)")!,
+                    url: Hongguo.hgURL(sid, st.definition),
                     width: st.width, height: st.height, sizeBytes: total, isOriginal: false))
             }
         }
@@ -146,7 +152,7 @@ enum Hongguo {
             }
             opts.append(QualityOption(
                 label: "红果 \(lf.definition) · 全\(eps.count)集 · 注册设备",
-                url: URL(string: "hg://\(sid)/\(lf.definition)")!,
+                url: Hongguo.hgURL(sid, lf.definition),
                 width: lf.width, height: lf.height, sizeBytes: 0, isOriginal: false))
         }
         let title = (s?.title.isEmpty == false ? s!.title : (first.title.isEmpty ? "红果短剧" : first.title))

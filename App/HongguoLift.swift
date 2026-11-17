@@ -479,7 +479,8 @@ enum HongguoLift {
         let nonce = Data((0..<11).map { _ in UInt8.random(in: 0...255) })
         var lastErr = "空响应"
         for host in tabHosts {
-            var req = URLRequest(url: URL(string: host + "?" + query)!)
+            guard let u = URL(string: host + "?" + query) else { lastErr = "URL 构造失败"; continue }
+            var req = URLRequest(url: u)
             req.setValue(tabUA, forHTTPHeaderField: "User-Agent")
             req.setValue("application/json; charset=utf-8,application/x-protobuf", forHTTPHeaderField: "Accept")
             req.setValue(String(nowMs), forHTTPHeaderField: "x-ss-req-ticket")
