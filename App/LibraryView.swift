@@ -273,9 +273,14 @@ struct LibraryView: View {
                 ForEach(app.albums) { a in
                     Button { app.openAlbum = a } label: {
                         VStack(alignment: .leading, spacing: 4) {
-                            AlbumThumb(url: a.cover)
-                                .frame(height: 150)
+                            Color.clear
+                                .frame(maxWidth: .infinity)
+                                .aspectRatio(0.667, contentMode: .fit)
                                 .background(Color.gray.opacity(0.15))
+                                .overlay {
+                                    AlbumThumb(url: a.cover)
+                                        .clipped()
+                                }
                                 .overlay(alignment: .bottomTrailing) {
                                     Text("\(a.count)图")
                                         .font(.caption2).foregroundStyle(.white)
@@ -311,31 +316,33 @@ struct LibraryView: View {
 struct CoverTile: View {
     let v: VideoItem
     @State private var img: UIImage?
-    @State private var landscape = false
 
     var body: some View {
-        ZStack {
-            Color(white: 0.12)
-            if v.isAudio {
-                LinearGradient(colors: [Color(white: 0.22), Color(white: 0.10)],
-                               startPoint: .top, endPoint: .bottom)
-                Image(systemName: "music.note")
-                    .font(.system(size: 40))
-                    .foregroundStyle(.secondary)
-            } else if let i = img {
-                Image(uiImage: i).resizable().scaledToFill()
-            } else {
-                ProgressView().tint(.white)
+        // 固定 2:3 底座(v1.9.50 同款铁律): 横版视频封面不再撑爆行/错峰, 一律居中裁切
+        Color.clear
+            .frame(maxWidth: .infinity)
+            .aspectRatio(0.667, contentMode: .fit)
+            .overlay {
+                ZStack {
+                    Color(white: 0.12)
+                    if v.isAudio {
+                        LinearGradient(colors: [Color(white: 0.22), Color(white: 0.10)],
+                                       startPoint: .top, endPoint: .bottom)
+                        Image(systemName: "music.note")
+                            .font(.system(size: 40))
+                            .foregroundStyle(.secondary)
+                    } else if let i = img {
+                        Image(uiImage: i).resizable().scaledToFill()
+                    } else {
+                        ProgressView().tint(.white)
+                    }
+                }
+                .clipped()
             }
-        }
-        .frame(height: (landscape && !v.isAudio) ? 96 : 160)   // 横版压扁一行，竖版满格
-        .clipped()
-        .task(id: v.url) {
-            if v.isAudio { return }
-            let i = await ThumbCache.shared.image(v.url)
-            img = i
-            if let s = i?.size, s.height > 0 { landscape = s.width > s.height * 1.05 }
-        }
+            .task(id: v.url) {
+                if v.isAudio { return }
+                img = await ThumbCache.shared.image(v.url)
+            }
     }
 }
 
