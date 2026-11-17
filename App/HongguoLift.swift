@@ -532,6 +532,7 @@ enum HongguoLift {
         pairs.append(("_rticket", String(nowMs)))
         let query = pairs.map { HGBase.pct($0.0) + "=" + HGBase.pct($0.1) }.joined(separator: "&")
         let nonce = Data((0..<11).map { _ in UInt8.random(in: 0...255) })
+        HGTrail.note("query built len=\(query.count)")
         var lastErr = "空响应"
         for host in tabHosts {
             guard let u = URL(string: host + "?" + query) else { lastErr = "URL 构造失败"; continue }
@@ -544,10 +545,13 @@ enum HongguoLift {
             req.setValue("0", forHTTPHeaderField: "x-xs-from-web")
             req.setValue("2", forHTTPHeaderField: "sdk-version")
             req.setValue(gorgon(query: query, khronos: khronos), forHTTPHeaderField: "x-gorgon")
+            HGTrail.note("g done")
             req.setValue(argus(query: query, khronos: khronos, deviceId: device.deviceId, nonce: nonce),
                          forHTTPHeaderField: "x-argus")
+            HGTrail.note("a done")
             req.setValue(ladon(aid: "8662", khronos: khronos, prefix: nonce.subdata(in: 2..<6)),
                          forHTTPHeaderField: "x-ladon")
+            HGTrail.note("l done")
             HGTrail.note("tab send " + String(host.split(separator: "/")[2]))
             do {
                 let (data, resp) = try await direct.data(for: req)
@@ -689,15 +693,21 @@ enum HongguoLift {
         return tmp
     }
 
-    // MARK: 首跑自检（日志核对移植正确性）
+    // MARK: 首跑自检（日志核对移植正确性：sm3+三签名定点向量，哪个坏当场见光）
     static func selfCheckLine() -> String {
         var out: [String] = []
         let sm = HGBase.hexL(HGBase.sm3Data(Data("abc".utf8)))
-        let smOK = sm == "66c7f0f462eeedd9d1f2d46bdc10e4e24167c4875cf2f7a2297da02b8f4ba8e0"
-        out.append("sm3" + (smOK ? "✓" : "✗" + sm))
-        let g = gorgon(query: sampleQuery, khronos: 1_794_890_799)
-        out.append("gorgon" + (g == "8404401c000039a7c1c5cc232d3d7022103fad22c9296a72c127" ? "✓" : "✗" + g))
+        out.append("sm3" + (sm == "66c7f0f462eeedd9d1f2d46bdc10e4e24167c4875cf2f7a2297da02b8f4ba8e0" ? "✓" : "✗" + sm))
+        let nonce = Data([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+        let k: UInt32 = 1_794_895_810
+        let did = "1360575828634539"
+        let g = gorgon(query: sampleQuery, khronos: k)
+        out.append("gor" + (g == "8404401c0000a3cdf96bcc232d3d7022103fad22c9296abeba05" ? "✓" : "✗" + g.prefix(28)))
+        let a = argus(query: sampleQuery, khronos: k, deviceId: did, nonce: nonce)
+        out.append("arg" + (a == "PMxgwBGTyTyTyVyMS+7eO8hBy5PXoolAytHgfVVPain2x9rgLXbTqnriP/5EAx7ujoENJuPliBVKG6mnoDiRELL1KS3wvfmgNuIUCBYcVzcp9jynFJKVC3F0TbnaFi6E9qZdiy0c9P/t9RvHbVVMzy4h/CxLRVvYlVTl2hLsqY8UdcMx8sj+VhNqqVnV1VtESyTnu7B9Y4q/lvYdO4EVDn9/8aBuHG/5dpWwVB1QCq7pXIG7YqM3BfNRECJgCcFxbiHw7yx4fN4rmy59NSxFFjlrqsJN2k8phaIIJtWObwGfhg==" ? "✓" : "✗" + a.prefix(40)))
+        let l = ladon(aid: "8662", khronos: k, prefix: nonce.subdata(in: 2..<6))
+        out.append("lad" + (l == "AgMEBcVLCboS0D7C+jrWMY3g/LHJpdxRfjTl94yWLoz6K/SQ" ? "✓" : "✗" + l.prefix(28)))
         return out.joined(separator: " ")
     }
-    private static let sampleQuery = "ac=wifi&channel=update_64&aid=8662&app_name=novelread&version_code=73532&version_name=7.3.5.32&device_platform=android&os=android&ssmix=a&device_type=25053RT47C&device_brand=Redmi&language=zh&os_api=36&os_version=16&manifest_version_code=73532&resolution=1280*2772&dpi=520&update_version_code=73532&host_abi=arm64-v8a&dragon_device_type=phone&pv_player=73532&compliance_status=0&need_personal_recommend=1&player_so_load=1&is_android_pad_screen=0&device_id=3190163155747113&iid=3190163155751209&cdid=a67425ad-0000-4000-8000-000000000000&video_id=7578923420084079641&video_id_type=0&device_level=1&need_all_video_definition=1&need_mp4_align=0&use_os_player=0&video_platform=1024&source=0&from_video_id=&_rticket=1794890799494"
+    private static let sampleQuery = "ac=wifi&channel=update_64&aid=8662&app_name=novelread&version_code=73532&version_name=7.3.5.32&device_platform=android&os=android&ssmix=a&device_type=25053RT47C&device_brand=Redmi&language=zh&os_api=36&os_version=16&manifest_version_code=73532&resolution=1280*2772&dpi=520&update_version_code=73532&host_abi=arm64-v8a&dragon_device_type=phone&pv_player=73532&compliance_status=0&need_personal_recommend=1&player_so_load=1&is_android_pad_screen=0&device_id=1360575828634539&iid=1360575828638635&cdid=f47ac10b-58cc-4372-a567-0e02b2c3d479&video_id=7705624880623914046&video_id_type=0&device_level=1&need_all_video_definition=1&need_mp4_align=0&use_os_player=0&video_platform=1024&source=0&from_video_id=&_rticket=1794895810123"
 }
