@@ -63,7 +63,7 @@ final class SniffAutoVM: ObservableObject {
                     if let r = ep.title.range(of: "第\\d+集", options: .regularExpression) {
                         return String(ep.title[..<r.upperBound])
                     }
-                    return String(ep.title.prefix(16))
+                    return "第\(ep.num)集 " + String(ep.title.prefix(10))
                 }()
                 let rel = "\(base)/\(folder)/\(Naming.epName(num: ep.num, title: shortT))"
                 if SavePaths.exists(rel: rel)
@@ -76,6 +76,9 @@ final class SniffAutoVM: ObservableObject {
                 cand.currentFileVid = ""
                 cand.playURL = ""
                 agent.load("https://www.douyin.com/video/\(ep.id)", into: cand)
+                // 开页后代点播放（双保险：通行证+JS 亲踢）
+                try? await Task.sleep(nanoseconds: 2_500_000_000)
+                _ = await agent.js("(function(){var v=document.querySelector('video');if(!v)return'无video';try{v.muted=true;var p=v.play();if(p)p.catch(function(){});return'踢播✓';}catch(e){return'踢播异常';}})()")
                 var picked: SniffVM.Snip?
                 for _ in 0..<20 {
                     try? await Task.sleep(nanoseconds: 1_000_000_000)
@@ -198,6 +201,8 @@ final class SniffAgent: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         let ucc = WKUserContentController()
         cfg.userContentController = ucc
         cfg.allowsInlineMediaPlayback = true
+        // 关键：免用户手势自动播放（否则永远只收到 576 预载流，1080 正片流不发货）
+        cfg.mediaTypesRequiringUserActionForPlayback = []
         wv = WKWebView(frame: .zero, configuration: cfg)
         super.init()
         ucc.add(self, name: "sniff")
