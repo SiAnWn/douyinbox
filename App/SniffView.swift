@@ -126,6 +126,7 @@ final class SniffVM: ObservableObject {
             if tag.hasPrefix("预载") && pick?.id == cleanURL {
                 tag = "本集·" + String(tag.dropFirst("预载".count))
             }
+            let k = kindIsMp4(low) ? "mp4" : "m3u8"
             items.append(Snip(id: cleanURL, kind: k, tag: tag, dsRank: ds))
             log("候选+1 [\(k)] \(tag.isEmpty ? "无标" : tag) …\(cleanURL.suffix(28))")
             resort()
