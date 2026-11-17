@@ -39,6 +39,15 @@ final class SniffAutoVM: ObservableObject {
         if i < rows.count { rows[i].state = st }
     }
 
+    // 打开播放器设置→列出可用画质→点最高档
+    func setBestQuality() async -> String {
+        guard let agent = agent else { return "演员缺席" }
+        let g = await agent.js("(function(){try{var g=[...document.querySelectorAll('[aria-label]')].filter(function(e){var l=e.getAttribute('aria-label')||'';return l==='视频设置'||l==='设置';});if(!g.length){g=[...document.querySelectorAll('i,div,span')].filter(function(e){var c=(e.getAttribute('class')||'');return /setting|config/i.test(c)&&c.length<50;});}if(g.length){g[0].click();return '齿轮✓';}return '齿轮✗';}catch(e){return '齿轮异常';}})()")
+        try? await Task.sleep(nanoseconds: 1_600_000_000)
+        let m = await agent.js("(function(){try{var all=[...document.querySelectorAll('li,span,div,button')];var names=[];var hi=[];for(var i=0;i<all.length;i++){var t=(all[i].textContent||'').trim();if(t.length>0&&t.length<=10&&/1080|超清|最高|720P|高清/.test(t)){if(names.indexOf(t)<0)names.push(t);if(/1080|最高|超清/.test(t))hi.push(all[i]);}}if(hi.length){try{hi[hi.length-1].click();return names.join('/')+'→档位已点';}catch(e){}}return names.length?names.join('/'):'无档位选项';}catch(e){return '选档异常';}})()")
+        return g + " " + m
+    }
+
     func start(eps: [MixEpisode], base: String, folder: String, mixID: String) {
         guard !running else { return }
         guard let agent = agent else { hint = "演员未就位(重试或退出重进)"; return }
@@ -49,8 +58,18 @@ final class SniffAutoVM: ObservableObject {
             var got = 0, have = 0, miss = 0
             for (i, ep) in eps.enumerated() {
                 if stop { setRow(i, "⏸暂停"); break }
-                let rel = "\(base)/\(folder)/\(Naming.epName(num: ep.num, title: ep.title))"
-                if SavePaths.exists(rel: rel) { setRow(i, "✓已有"); have += 1; continue }
+                // 文件名瘦身：简介再长也只留到"第N集"
+                let shortT: String = {
+                    if let r = ep.title.range(of: "第\\d+集", options: .regularExpression) {
+                        return String(ep.title[..<r.upperBound])
+                    }
+                    return String(ep.title.prefix(16))
+                }()
+                let rel = "\(base)/\(folder)/\(Naming.epName(num: ep.num, title: shortT))"
+                if SavePaths.exists(rel: rel)
+                    || SavePaths.exists(rel: "\(base)/\(folder)/\(Naming.epName(num: ep.num, title: ep.title))") {
+                    setRow(i, "✓已有"); have += 1; continue
+                }
                 setRow(i, "嗅流…")
                 cand.items = []
                 cand.currentVid = ep.id
@@ -97,6 +116,33 @@ final class SniffAutoVM: ObservableObject {
                                 } else { try? FileManager.default.removeItem(at: f2) }
                                 if w >= 1000 { break }
                             } catch { continue }
+                        }
+                    }
+                    // 还不行就拧播放器画质档重试（网页默认智能档常给 576）
+                    if w < 1000 {
+                        let q = await setBestQuality()
+                        log("EP\(ep.num) 画质探测: \(q)")
+                        if q.contains("档位已点") {
+                            try? await Task.sleep(nanoseconds: 3_000_000_000)
+                            cand.items = []
+                            cand.playURL = ""
+                            var up: SniffVM.Snip?
+                            for _ in 0..<8 {
+                                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                                if let m = cand.items.first(where: { $0.kind == "mp4" }) { up = m; break }
+                            }
+                            if let b = up, b.id != snip.id {
+                                if let f3 = try? await autoFetch(b.id, { _ in }) {
+                                    let w3 = sniffRealWidth(f3)
+                                    if w3 > w {
+                                        try? FileManager.default.removeItem(at: file)
+                                        file = f3; w = w3
+                                        log("EP\(ep.num) 拧档后升级成功 宽 \(w)")
+                                    } else {
+                                        try? FileManager.default.removeItem(at: f3)
+                                    }
+                                }
+                            }
                         }
                     }
                     log("EP\(ep.num) 实测宽度 \(w)")
@@ -163,6 +209,15 @@ final class SniffAgent: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         vmc = vm
         guard let url = URL(string: u) else { return }
         wv.load(URLRequest(url: url))
+    }
+    // 在页面里跑一段 JS 拿字符串回传（画质探针/自动拧档用）
+    func js(_ code: String) async -> String {
+        await withCheckedContinuation { (c: CheckedContinuation<String, Never>) in
+            wv.evaluateJavaScript(code) { r, e in
+                _ = e
+                c.resume(returning: (r as? String) ?? "")
+            }
+        }
     }
     func detach() {
         wv.navigationDelegate = nil
