@@ -26,6 +26,18 @@ enum Hongguo {
         return queryValue(final, "video_series_id")
     }
 
+    // 红果分享短链跳完后 URL 自带 vid=<首集视频id>，列表接口打不开时拿来顶首集
+    static func shareVid(from link: String) async -> String? {
+        guard let u = URL(string: link) else { return nil }
+        var req = URLRequest(url: u, timeoutInterval: 12)
+        req.setValue(DouyinAPI.ua, forHTTPHeaderField: "User-Agent")
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.timeoutIntervalForResource = 15
+        let r = try? await URLSession(configuration: cfg).data(for: req)
+        guard let final = r?.1.url?.absoluteString else { return nil }
+        return queryValue(final, "vid")
+    }
+
     private static func queryValue(_ s: String, _ k: String) -> String? {
         guard var c = URLComponents(string: s) else { return nil }
         if c.query == nil, let q = s.range(of: "?") {
@@ -56,6 +68,7 @@ enum Hongguo {
             return "红果风控：当前网络出口被回了空结果。请在 Clash 换个节点（大陆/港优）重试；反复不行就在设置里重置红果设备"
         }
         if m.contains("rate limited") { return "红果限流：歇一两分钟再试" }
+        if m.contains("guest identity") || m.contains("registration") { return "红果注册口暂时不发号（常为晚高峰收紧）：已自动退避重试仍不行，过十分钟再试或换个出口" }
         if m.contains("signature") { return "红果签名被拒：重置红果设备后重试" }
         if m.contains("authentication") { return "这部剧需要登录红果账号才能匿名取流" }
         if m.contains("transport") { return "红果网络不通：检查代理后重试" }
@@ -64,15 +77,24 @@ enum Hongguo {
 
     // 遇到"匿名空结果"风控：自动换一台匿名设备重试一次，仍败则中文报错
     static func attempt<T>(_ c: OpenhongguoClient, _ op: () async throws -> T) async throws -> T {
+        // 四段渐进: 原证直试 → 退避2s重试 → 重置设备换证 → 退避4s终试
+        // (红果注册口晚高峰会瞬时拒发访客号, 单次重置正好撞枪口; 多段退避实测可救)
         do { return try await op() }
         catch {
-            let e1 = error
-            if e1.localizedDescription.contains("anonymous") {
+            HGTrail.note("try1 fail " + String(error.localizedDescription.prefix(70)))
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            do { return try await op() }
+            catch {
+                HGTrail.note("try2 fail, reset dev. " + String(error.localizedDescription.prefix(70)))
                 try? await c.resetDevice()
                 do { return try await op() }
-                catch { throw GError.failed(friendly(e1)) }
+                catch {
+                    HGTrail.note("try3 fail " + String(error.localizedDescription.prefix(70)))
+                    try? await Task.sleep(nanoseconds: 4_000_000_000)
+                    do { return try await op() }
+                    catch { throw GError.failed(friendly(error)) }
+                }
             }
-            throw GError.failed(friendly(e1))
         }
     }
 
@@ -117,7 +139,14 @@ enum Hongguo {
         }
         guard let c = client else { throw GError.failed("红果引擎初始化失败") }
         let s = try? await c.getSeries(sid)
-        let eps = try await attempt(c) { try await episodes(sid) }
+        var eps: [Episode]
+        do { eps = try await attempt(c) { try await episodes(sid) } }
+        catch {
+            // 列表接口被注册抖动拖死时的兜底: 红果分享链跳转里自带 vid=, 用它当首集让 V5 通道先跑起来
+            guard let vid = await shareVid(from: link) else { throw error }
+            HGTrail.note("eps fallback vid=" + vid)
+            eps = [Episode(id: vid, seriesId: sid, number: 1, title: "第1集", playable: true, vertical: true)]
+        }
         guard let first = eps.first else { throw GError.failed("红果这部剧没有分集") }
         HGTrail.note("parse sid=\(sid) eps=\(eps.count)")
         let pr: Openhongguo.PlaybackResult?
