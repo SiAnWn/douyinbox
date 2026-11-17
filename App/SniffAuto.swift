@@ -1,5 +1,13 @@
 import SwiftUI
 import WebKit
+import AVFoundation
+
+// 实测文件宽度（真身验货，徽章会骗人像素不会）
+func sniffRealWidth(_ f: URL) -> Int {
+    let asset = AVURLAsset(url: f)
+    guard let tr = asset.tracks(withMediaType: .video).first else { return 0 }
+    return Int(tr.naturalSize.width)
+}
 
 // ===================== 🤖 整剧 1080 自动补漏流水线 =====================
 // 人工只点一次钮：逐集开剧集页(桌面登录态) → 嗅本集流 → 验货 → 入库 → 喘息
@@ -47,13 +55,18 @@ final class SniffAutoVM: ObservableObject {
                 cand.items = []
                 cand.currentVid = ep.id
                 cand.currentFileVid = ""
+                cand.playURL = ""
                 agent.load("https://www.douyin.com/video/\(ep.id)", into: cand)
                 var picked: SniffVM.Snip?
                 for _ in 0..<20 {
                     try? await Task.sleep(nanoseconds: 1_000_000_000)
                     if stop { break }
+                    // 优先级：正在播的直链(video.src 认证) → url 含集号 → video_id==页面指纹
+                    let playTos = SniffVM.tosFileStatic(cand.playURL.lowercased())
                     if let m = cand.items.first(where: {
-                        $0.kind == "mp4" && ($0.id.lowercased().contains(ep.id)
+                        $0.kind == "mp4" && (
+                            (!playTos.isEmpty && SniffVM.tosFileStatic($0.id.lowercased()) == playTos)
+                            || $0.id.lowercased().contains(ep.id)
                             || SniffVM.qvStatic($0.id.lowercased(), "video_id") == cand.currentFileVid)
                     }) { picked = m; break }
                 }
@@ -67,13 +80,30 @@ final class SniffAutoVM: ObservableObject {
                 }
                 setRow(i, "下载… \(snip.tag)")
                 do {
-                    let file = try await autoFetch(snip.id) { frac in
+                    var file = try await autoFetch(snip.id) { frac in
                         Task { @MainActor in self.setRow(i, "下载…\(Int(frac * 100))%") }
                     }
+                    // 徽章会被 ds 错位骗，宽度不会——低于1000当场换候选再枪毙一轮
+                    var w = sniffRealWidth(file)
+                    if w < 1000 {
+                        for alt in cand.items.filter({ $0.kind == "mp4" && $0.id != snip.id }).prefix(2) {
+                            log("EP\(ep.num) 实测宽 \(w) 不清，换下一候选重试")
+                            do {
+                                let f2 = try await autoFetch(alt.id) { _ in }
+                                let w2 = sniffRealWidth(f2)
+                                if w2 > w {
+                                    try? FileManager.default.removeItem(at: file)
+                                    file = f2; w = w2
+                                } else { try? FileManager.default.removeItem(at: f2) }
+                                if w >= 1000 { break }
+                            } catch { continue }
+                        }
+                    }
+                    log("EP\(ep.num) 实测宽度 \(w)")
                     if SavePaths.write(file, rel: rel) {
                         try? FileManager.default.removeItem(at: file)
                         MixManifest.record(mixID, epID: ep.id, rel: rel)
-                        setRow(i, "✓入库 \(snip.tag.isEmpty ? "mp4" : snip.tag)"); got += 1
+                        setRow(i, "✓入库 \(w ≥ 1000 ? "1080" : "\(w)p)") \(snip.tag)"; got += 1
                         log("EP\(ep.num) ✓入库 \(rel)")
                     } else {
                         try? FileManager.default.removeItem(at: file)
@@ -154,6 +184,8 @@ final class SniffAgent: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         switch t {
         case "vid":
             if let v = d["v"] as? String { Task { @MainActor in vm.currentFileVid = v } }
+        case "play":
+            if let pv = d["v"] as? String { Task { @MainActor in vm.markPlay(pv) } }
         case "title":
             if let tt = d["v"] as? String, !tt.isEmpty {
                 Task { @MainActor in

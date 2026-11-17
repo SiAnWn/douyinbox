@@ -29,6 +29,23 @@ final class SniffVM: ObservableObject {
     @Published var logs: [String] = []
     var currentVid = ""          // 当前播放页的 video id（判定"本集"）
     var currentFileVid = ""      // 页面报告的自身文件指纹(v0xxx)，用于流地址比对
+    var playURL = ""             // 播放器 video.src 正在放的直链 = 本集铁证
+
+    func markPlay(_ u: String) {
+        playURL = u
+        let pt = Self.tosFile(u.lowercased())
+        var hit = false
+        for i in items.indices where kindIsMp4(items[i].id.lowercased()) {
+            let match = (!pt.isEmpty && Self.tosFile(items[i].id.lowercased()) == pt) || items[i].id == u
+            if match, !items[i].downloaded {
+                if !items[i].tag.contains("本集") {
+                    items[i].tag = "本集·" + items[i].tag.replacingOccurrences(of: "本集·", with: "")
+                }
+                hit = true
+            }
+        }
+        log(hit ? "播放锁定：本集流已用 video.src 认证" : "播放src非直链(可能MSE)，无锁")
+    }
 
     func log(_ s: String) {
         let t = Int(Date().timeIntervalSince1970) % 86400
@@ -86,7 +103,29 @@ final class SniffVM: ObservableObject {
                 }
                 return
             }
-            let k = kindIsMp4(low) ? "mp4" : "m3u8"
+            // 真身验证：播放器正在放的地址(video.src 直链) = 本集铁证
+            var hero: SniffVM.Snip?
+            if !playURL.isEmpty {
+                let pt = Self.tosFile(playURL.lowercased())
+                hero = items.first {
+                    kindIsMp4($0.id.lowercased())
+                        && (!pt.isEmpty ? Self.tosFile($0.id.lowercased()) == pt
+                                        : $0.id == playURL)
+                }
+                if hero == nil, !currentFileVid.isEmpty {
+                    hero = items.first {
+                        kindIsMp4($0.id.lowercased())
+                            && $0.id.lowercased().contains("/" + currentFileVid.lowercased() + "/")
+                    }
+                }
+            }
+            let pick = hero ?? items.first(where: { $0.kind == "mp4" })   // 兜底：播放器先请求本集
+            if let i = items.firstIndex(where: { $0.id == pick?.id }), !items[i].downloaded {
+                items[i].tag = "本集·" + items[i].tag.replacingOccurrences(of: "本集·", with: "")
+            }
+            if tag.hasPrefix("预载") && pick?.id == cleanURL {
+                tag = "本集·" + String(tag.dropFirst("预载".count))
+            }
             items.append(Snip(id: cleanURL, kind: k, tag: tag, dsRank: ds))
             log("候选+1 [\(k)] \(tag.isEmpty ? "无标" : tag) …\(cleanURL.suffix(28))")
             resort()
@@ -95,6 +134,7 @@ final class SniffVM: ObservableObject {
     private func kindIsMp4(_ low: String) -> Bool { !low.contains("m3u8") }
     static func qvStatic(_ url: String, _ k: String) -> String { qv(url, k) }
     static func nidInPathStatic(_ low: String) -> String { nidInPath(low) }
+    static func tosFileStatic(_ low: String) -> String { tosFile(low) }
     static func nidInPath(_ low: String) -> String {
         // 新签名地址把数字集号藏在路径段: /<hexsig>/<aweme_id>/<file>/
         guard let u = URL(string: low) else { return "" }
@@ -352,9 +392,11 @@ struct SniffView: View {
                         try? FileManager.default.removeItem(at: got)
                         vm.update(s.id) { $0.frac = -1; $0.note = "站点拒直下(仅\(sz / 1024)KB)：优先用HLS候选，或先在网页里点播放再试" }
                     } else if SavePaths.write(got, rel: destRel) {
+                        let w = sniffRealWidth(got)
                         try? FileManager.default.removeItem(at: got)
-                        vm.update(s.id) { $0.frac = 1; $0.done = true; $0.downloaded = true; $0.note = "已存入视频库(\(destRel))" }
-                        vm.log("✓ 入库 \(destRel) · \(sz / 1_048_576)MB")
+                        vm.update(s.id) { $0.frac = 1; $0.done = true; $0.downloaded = true
+                            $0.note = "已存入视频库(\(destRel))" + (w > 0 && w < 1000 ? " ·实测 \(w)p，非满 1080" : " ·\(w)p 已验") }
+                        vm.log("✓ 入库 \(destRel) · \(sz / 1_048_576)MB · 实测 \(w)p")
                         app.refresh()
                     } else {
                         vm.update(s.id) { $0.frac = -1; $0.note = "保存失败" }
@@ -387,6 +429,9 @@ final class BrowserBridge: ObservableObject {
         Task { @MainActor in
             self.vm?.hint = "媒体直链已拦进列表（不再被全屏播放器抢走），点按该行即可下载"
         }
+    }
+    func reportPlay(_ u: String) {
+        Task { @MainActor in self.vm?.markPlay(u) }
     }
     func reportTitle(_ t: String) {
         Task { @MainActor in
@@ -493,6 +538,7 @@ struct SiteBrowser: UIViewRepresentable {
                 switch t {
                 case "vid":   if let vv = d["v"] as? String { bridge.reportVid(vv) }
                 case "title": if let tt = d["v"] as? String { bridge.reportTitle(tt) }
+                case "play":  if let pv = d["v"] as? String { bridge.reportPlay(pv) }
                 case "urls":  if let lst = d["list"] as? [String] { bridge.reportList(lst) }
                 default:
                     if let u = d["u"] as? String { bridge.report(t: "net", u: u) }
@@ -519,8 +565,8 @@ struct SiteBrowser: UIViewRepresentable {
       var oo=XMLHttpRequest.prototype.open, os=XMLHttpRequest.prototype.send;
       XMLHttpRequest.prototype.open=function(m,u){ this.__u=u; return oo.apply(this,arguments); };
       XMLHttpRequest.prototype.send=function(){ var x=this; x.addEventListener('load',function(){ try{ var t=x.responseText||''; if(t.indexOf('#EXTM3U')>-1){ say(x.__u||location.href); } scanText(t); }catch(e){} }); return os.apply(this,arguments); };
-      function videoScan(){ try{ var vs=document.querySelectorAll('video,source'); for(var i=0;i<vs.length;i++){ var src=vs[i].currentSrc||vs[i].src||''; if(src.indexOf('m3u8')>-1||src.indexOf('.mp4')>-1||src.indexOf('video_id=')>-1||src.indexOf('douyinvod')>-1){ say(src); } } }catch(e){} }
-      var lastVid='';var lastTitle='';
+      function videoScan(){ try{ var vs=document.querySelectorAll('video,source'); for(var i=0;i<vs.length;i++){ var src=vs[i].currentSrc||vs[i].src||''; if(src.indexOf('m3u8')>-1||src.indexOf('.mp4')>-1||src.indexOf('video_id=')>-1||src.indexOf('douyinvod')>-1){ say(src); } if(src.indexOf('http')===0 && src!==lastPlay && (vs[i].currentTime||0)>0.2){ lastPlay=src; send({t:'play', v:src}); } } }catch(e){} }
+      var lastVid='';var lastTitle='';var lastPlay='';
       function titleScan(){ try{ var de=document.querySelector('[data-e2e="video-desc"]'); var tx=de?((de.textContent||'').trim().slice(0,50)):''; if(tx && tx!==lastTitle){ lastTitle=tx; send({t:'title', v:tx}); } }catch(e){} }
       function vidScan(){ try{ var d=document.documentElement.innerHTML||''; var i=d.indexOf('\"vid\":\"v'); if(i<0){ i=d.indexOf('\"video_id\":\"v'); } if(i>-1){ var m=d.slice(i, i+80).match(/v[0-9a-z]{16,40}/); if(m && m[0]!==lastVid){ lastVid=m[0]; send({t:'vid', v:m[0]}); } } }catch(e){} }
       function perfScan(){ try{ var es=performance.getEntriesByType('resource'); for(var i=0;i<es.length;i++){ var n=es[i].name||''; if(n.indexOf('douyinvod')>-1||n.indexOf('mime_type=video_mp4')>-1||n.indexOf('/video/tos/')>-1||n.indexOf('.m3u8')>-1||n.indexOf('.mp4')>-1){ say(n); } } }catch(e){} }
