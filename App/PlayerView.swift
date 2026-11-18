@@ -10,6 +10,21 @@ enum ProgressStore {
 }
 
 @MainActor
+final class AVPlayerRegistry {
+    static let shared = AVPlayerRegistry()
+    // 弱引用池: 播放器销毁自动出列, 孤儿 AVPlayer(view 没了但声音还在跑)也会被点名掐掉
+    private let table = NSHashTable<AnyObject>.weakObjects()
+    func register(_ c: AnyObject) { table.add(c) }
+    func quiet(except c: AnyObject) {
+        for p in table.allObjects where p !== c {
+            guard let other = p as? PlayerController, other.playing else { continue }
+            other.player.pause()
+            other.playing = false
+        }
+    }
+}
+
+@MainActor
 final class PlayerController: ObservableObject {
     let player = AVPlayer()
     @Published var currentTime: Double = 0
@@ -17,8 +32,11 @@ final class PlayerController: ObservableObject {
     @Published var rate: Float = 1
     @Published var playing = true
 
+    init() { AVPlayerRegistry.shared.register(self) }
+
     func togglePlay() {
         if player.timeControlStatus == .paused {
+            AVPlayerRegistry.shared.quiet(except: self)
             player.playImmediately(atRate: max(rate, 0.5))
             playing = true
         } else {
@@ -48,6 +66,7 @@ final class PlayerController: ObservableObject {
                 }
             }
         }
+        AVPlayerRegistry.shared.quiet(except: self)
         player.playImmediately(atRate: rate)
         playing = true
         timeObs = player.addPeriodicTimeObserver(
@@ -230,7 +249,11 @@ struct PlayerView: View {
             pc.observeEnd { if app.autoAdvance { goNext() } else { pc.seek(pc.currentTime) } }
         }
         .onChange(of: app.selection) { sel in
-            if sel == .play { pc.player.playImmediately(atRate: pc.rate) } else { pc.pause() }
+            if sel == .play {
+                AVPlayerRegistry.shared.quiet(except: pc)
+                pc.player.playImmediately(atRate: pc.rate)
+                pc.playing = true
+            } else { pc.pause() }
         }
         .onDisappear { pc.pause(); pc.removeObs() }
         .background(TabBarAccessor(hidden: app.immersive))
