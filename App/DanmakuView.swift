@@ -17,7 +17,7 @@ struct DanmakuLayer: View {
     static var lastVisible = 0
     static var lastNow = -999.0     // 上次读到的视频秒(-999=还没跑, NaN 场景会显 -9)
     // 帧源=Timer 发布器(最原始可靠): TimelineView(.animation) 实测在坊页内被 SwiftUI 判休眠
-    private let beat = Timer.publish(every: 1.0 / 24.0, on: .main, in: .common).autoconnect()
+    private let beat = Timer.publish(every: 1.0 / 15.0, on: .main, in: .common).autoconnect()
     @State private var now = Date()
 
     var body: some View {
@@ -35,27 +35,30 @@ struct DanmakuLayer: View {
             let lanes = max(4, Int((size.height * 0.30 - 40) / rowH))
             let speed = 150.0            // px/s 匀速飘
             let topPad: CGFloat = 76     // 躲灵动岛
-            g.addFilter(.shadow(color: .black.opacity(0.75), radius: 2))
+            // 性能版: 弃全局投影滤镜(整屏 offscreen 通道最贵), 改红果同款半透胶囊底=纯矩形填充
             var drawn = 0
             for (i, it) in items.enumerated() {
                 if Double(it.t) > nowMs + 300 { break }    // items 按时间排序, 后面都更晚
                 let age = nowMs - Double(it.t)
                 if age < 0 { continue }
-                let w = CGFloat(it.x.count) * 14 + 12
+                let w = CGFloat(it.x.count) * 13 + 20
                 let x = Double(size.width) - age / 1000.0 * speed
                 if x < -w { continue }
                 var ln = (i * 7 + i / 3) % lanes
                 if ln < 0 { ln += lanes }
                 let y = topPad + CGFloat(ln) * rowH
+                let chip = CGRect(x: x, y: y, width: w, height: rowH - 5)
+                g.fill(Path(roundedRect: chip, cornerRadius: 11),
+                       with: .color(.black.opacity(0.42)))
                 g.draw(Text(it.x).font(.system(size: 13, weight: .medium))
                             .foregroundColor(.white),
-                       at: CGPoint(x: x, y: y), anchor: .leading)
+                       at: CGPoint(x: x + 10, y: y + (rowH - 5) / 2), anchor: .leading)
                 drawn += 1
-                if drawn >= 48 { break }
+                if drawn >= 36 { break }
             }
             DanmakuLayer.lastVisible = drawn
         }
-        .onReceive(beat) { now = $0 }     // 24fps 心跳踢 body 重绘
+        .onReceive(beat) { d in if !items.isEmpty { now = d } }   // 无弹幕不空转
         .allowsHitTesting(false)
     }
 }
