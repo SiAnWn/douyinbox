@@ -25,6 +25,7 @@ final class DanmakuEngineView: UIView {
     private let rowH: CGFloat = 27
     private let topPad: CGFloat = 80      // 躲灵动岛
     private let speed: CGFloat = 150      // px/s 匀速飘
+    private var laneFree: [Double] = Array(repeating: 0, count: 7)   // 各道占用到几毫秒(占用制防叠车)
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -50,11 +51,14 @@ final class DanmakuEngineView: UIView {
         subviews.forEach { $0.removeFromSuperview() }
         idx = 0
         lastT = -1
+        laneFree = Array(repeating: 0, count: laneN)
     }
 
-    private func spawn(_ it: DMItem, slot: Int) {
+    private func spawn(_ it: DMItem, slot: Int, now: Double) {
         let lb = UILabel()
-        lb.text = it.x
+        // 长弹幕截断: 一屏 30 字封顶, 防超宽条占轨太久引发连环叠
+        let text = it.x.count > 30 ? String(it.x.prefix(29)) + "…" : it.x
+        lb.text = text
         lb.font = .systemFont(ofSize: 13, weight: .medium)
         lb.textColor = .white
         lb.backgroundColor = UIColor.black.withAlphaComponent(0.42)
@@ -62,15 +66,25 @@ final class DanmakuEngineView: UIView {
         lb.layer.masksToBounds = true
         lb.lineBreakMode = .byTruncatingTail
         let attrs: [NSAttributedString.Key: Any] = [.font: lb.font as Any]
-        let tw = (it.x as NSString).size(withAttributes: attrs).width
+        let tw = (text as NSString).size(withAttributes: attrs).width
         let w = ceil(tw) + 20
-        let lane = CGFloat((slot * 5 + slot / 4) % laneN)
-        let y = topPad + lane * rowH + CGFloat((slot * 53) % 7)          // 微错峰防齐边
-        let x0 = bounds.width + CGFloat((slot % 4) * 46)                  // 同刻多条排队出右缘
-        lb.frame = CGRect(x: x0, y: y, width: w, height: 22)
+        let travel = Double(bounds.width + w + 80) / Double(speed) * 1000.0
+        // 占用制: 找最早空闲的道; 全忙则挑最快恢复的道排队(右缘等着, delay 后出发)
+        var lane = 0
+        var delay = 0.0
+        var best = -1
+        for i in 0..<laneN where laneFree[i] <= now { best = i; break }
+        if best < 0 {
+            best = 0
+            for i in 1..<laneN where laneFree[i] < laneFree[best] { best = i }
+            delay = max(0, (laneFree[best] - now) / 1000.0)
+        }
+        lane = best
+        laneFree[lane] = now + delay * 1000.0 + travel
+        let y = topPad + CGFloat(lane) * rowH + CGFloat((slot * 53) % 7)   // 微错峰防齐边
+        lb.frame = CGRect(x: bounds.width, y: y, width: w, height: 22)
         addSubview(lb)
-        let dur = Double(bounds.width + w + 80) / Double(speed)
-        UIView.animate(withDuration: dur, delay: 0,
+        UIView.animate(withDuration: travel / 1000.0, delay: delay,
                        options: [.curveLinear, .allowUserInteraction, .beginFromCurrentState]) {
             lb.frame = CGRect(x: -w - 80, y: y, width: w, height: 22)
         } completion: { _ in
@@ -93,7 +107,7 @@ final class DanmakuEngineView: UIView {
         else if now > lastT + 3000 { idx = lower(now) }           // 前跳直接到位
         lastT = now
         while idx < items.count, Double(items[idx].t) <= now + 150 {
-            if now - Double(items[idx].t) < 2000 { spawn(items[idx], slot: idx) }  // 补档积压不补飘
+            if now - Double(items[idx].t) < 2000 { spawn(items[idx], slot: idx, now: now) }  // 补档积压不补飘
             idx += 1
         }
         DanmakuLayer.lastVisible = subviews.count
@@ -110,6 +124,7 @@ final class DanmakuEngineView: UIView {
     }
     private func rewind(to now: Double) {
         subviews.forEach { $0.layer.removeAllAnimations(); $0.removeFromSuperview() }
+        laneFree = Array(repeating: now, count: laneN)   // seek 后以当前时刻重新占轨
         idx = lower(now)
     }
 }

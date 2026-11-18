@@ -125,6 +125,7 @@ enum DanmakuStore {
     static func harvest(_ c: OpenhongguoClient, sid: String,
                         eps: [(num: Int, id: String)], dir: URL) async {
         var all: [String: [DMEntry]] = [:]
+        var anyPageOK = false          // 至少有一页成功才算"这剧真没弹幕", 防限流空手立假档
         for ep in eps {
             if Task.isCancelled { break }
             var bag: [DMEntry] = []
@@ -138,20 +139,25 @@ enum DanmakuStore {
                                             options: DanmakuOptions(cursor: cursor))
                 })
                 guard let pg else { break }
+                anyPageOK = true
                 bag += pg.items.map { DMEntry(t: $0.offsetMs, x: $0.text) }
                 cursor = pg.hasMore ? pg.cursor : nil
                 try? await Task.sleep(nanoseconds: 250_000_000)      // 匿名口温和
             } while cursor != nil
             if !bag.isEmpty { all["\(ep.num)"] = bag.sorted { $0.t < $1.t } }
         }
-        guard !all.isEmpty else {
-            // 冷门/新剧匿名弹幕池本就是空: 写个空档案当"查过了"记号, 补档按钮不再白跑
-            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        guard anyPageOK else {
+            // 一页都没成功(注册口限流/网络抖动): 不立档不留假证据, 下次补档按钮会再战
+            HGTrail.note("dm fail-all sid=\(sid) 未立档待重试")
+            return
+        }
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        if all.isEmpty {
+            // 页页成功却条条皆空 = 这剧服务器真没弹幕: 立空档当"查过了"记号
             try? Data("{}".utf8).write(to: file(dir))
             HGTrail.note("dm empty sid=\(sid) 立空档")
             return
         }
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         if let j = try? JSONEncoder().encode(all) {
             try? j.write(to: file(dir))
             HGTrail.note("dm ok sid=\(sid) eps=\(all.count) bytes=\(j.count)")
