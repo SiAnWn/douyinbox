@@ -5,7 +5,8 @@ import AVFoundation
 // 数据源 = 已下载"剧"库；每部一页，进来播（未看完的）第一集；
 // 播完自动连播下一集；底部剧名 + "观看全集›" 直达现成分集连播页。
 // 全部本地文件，零流量；进度记忆复用 ProgressStore。
-// iOS17 兼容: 可见度用 GeometryReader 偏好流计算(onScrollVisibilityChange 是 iOS18 货)。
+// 门控=每页用背景 GeometryReader 自测屏上占比(global 坐标), 无偏好回传依赖;
+// 页高=整屏(UIScreen), 分页严丝合缝不漏下一家。iOS17 安全 API 全家桶。
 
 struct FeedPageItem: Identifiable, Equatable {
     let series: Series
@@ -13,17 +14,9 @@ struct FeedPageItem: Identifiable, Equatable {
     var id: String { series.id }
 }
 
-private struct PageFrameKey: PreferenceKey {
-    static var defaultValue: [String: Double] = [:]
-    static func reduce(value: inout [String: Double], nextValue: () -> [String: Double]) {
-        value.merge(nextValue()) { _, n in n }
-    }
-}
-
 struct TheaterFeedView: View {
     @EnvironmentObject var app: AppState
     @State private var pages: [FeedPageItem] = []
-    @State private var currentID = ""
 
     private func rebuild(force: Bool) {
         guard force || pages.isEmpty else { return }
@@ -57,38 +50,25 @@ struct TheaterFeedView: View {
     }
 
     private var feedScroll: some View {
-        GeometryReader { geo in
-            ScrollView(.vertical) {
-                LazyVStack(spacing: 0) {
-                    ForEach(pages) { pg in
-                        FeedReel(page: pg, isCurrent: currentID == pg.id)
-                            .frame(width: geo.size.width, height: geo.size.height)
-                    }
+        ScrollView(.vertical) {
+            LazyVStack(spacing: 0) {
+                ForEach(pages) { pg in
+                    FeedReel(page: pg)
+                        .frame(width: UIScreen.main.bounds.width,
+                               height: UIScreen.main.bounds.height)
                 }
-                .scrollTargetLayout()
             }
-            .scrollTargetBehavior(.paging)
-            .coordinateSpace(name: "feed")
-            .ignoresSafeArea()
-            .background(Color.black)
-            .onPreferenceChange(PageFrameKey.self) { vals in
-                let h = geo.size.height
-                var best = ""
-                var bestD = Double.infinity
-                for (id, minY) in vals {
-                    let d = abs(minY)
-                    if d < h * 0.5, d < bestD { bestD = d; best = id }
-                }
-                currentID = best
-            }
+            .scrollTargetLayout()
         }
+        .scrollTargetBehavior(.paging)
+        .ignoresSafeArea()
+        .background(Color.black)
     }
 }
 
 // 单页：一部剧的一页竖滑视频
 struct FeedReel: View {
     let page: FeedPageItem
-    let isCurrent: Bool
     @StateObject private var pc = PlayerController()
     @State private var epIdx = 0
     @State private var fill = true
@@ -121,18 +101,21 @@ struct FeedReel: View {
                 bottomBar
             }
         }
+        // 自测可见度: 屏上占比 ≥60% 才开播, 滑走即停 (每页独立, 不依赖父级状态)
         .background(GeometryReader { g in
-            Color.clear.preference(key: PageFrameKey.self,
-                                   value: [page.id: g.frame(in: .named("feed")).minY])
+            Color.clear
+                .onAppear { vis(g.frame(in: .global)) }
+                .onChange(of: g.frame(in: .global).minY) { _ in vis(g.frame(in: .global)) }
         })
-        .onAppear { gate() }
-        .onChange(of: isCurrent) { _ in gate() }
         .onDisappear { pc.stop(); loaded = false }
     }
 
-    // 只见得到半屏以上的当前页开播, 滑过即停 — 防分页预建导致的两部同响
-    private func gate() {
-        if isCurrent {
+    private func vis(_ f: CGRect) {
+        let h = UIScreen.main.bounds.height
+        guard h > 0 else { return }
+        let onScreen = min(f.maxY, h) - max(f.minY, 0)
+        let frac = max(0, onScreen) / h
+        if frac > 0.6 {
             if !loaded {
                 loaded = true
                 pc.load(cur.url, id: cur.id)
@@ -185,11 +168,11 @@ struct FeedReel: View {
             }
         }
         .padding(.horizontal, 16)
-        .padding(.bottom, 100)
+        .padding(.bottom, 124)   // 悬在悬浮 tab 条之上
         .background(
             LinearGradient(colors: [.clear, .black.opacity(0.55)],
                            startPoint: .top, endPoint: .bottom)
-                .frame(height: 180)
+                .frame(height: 200)
                 .frame(maxWidth: .infinity, alignment: .bottom)
                 .allowsHitTesting(false)
         )
