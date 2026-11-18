@@ -421,6 +421,8 @@ final class DiscoverVM: ObservableObject {
         fetchSearch(reset: false)
     }
 
+    var searchHasMore: Bool { scur != nil }
+
     private func fetchSearch(reset: Bool) {
         guard !sbusy else { return }
         sbusy = true
@@ -761,12 +763,17 @@ private struct TheaterSearchTab: View {
             }
             if !vm.sres.isEmpty {
                 Section("搜索结果") {
-                    Grid2Cards(rows: vm.sres, nearEnd: { i in
-                        if i >= vm.sres.count - 9 { vm.moreSearch() }
-                    })
+                    // 搜索页绝不自动翻页(v1.10.33 用户实锤: 结果只有5张时
+                    // 任何 onAppear 都触发续页, 列表当场膨胀重排, 手指按下去
+                    // 详情页被布局抖动弹回=闪一下+返回连弹冤案)
+                    Grid2Cards(rows: vm.sres, nearEnd: { _ in })
                         .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
                     if vm.sbusy {
                         HStack { Spacer(); ProgressView(); Spacer() }
+                    } else if vm.searchHasMore {
+                        Button { vm.moreSearch() } label: {
+                            Text("加载更多").font(.subheadline.weight(.medium))
+                        }
                     }
                 }
             }
@@ -1063,7 +1070,7 @@ private struct DiscoverTab: View {
             if !vm.rows.isEmpty {
                 Section {
                     Grid2Cards(rows: vm.rows, nearEnd: { i in
-                        if i >= vm.rows.count - 9 { vm.more() }
+                        if i >= vm.rows.count - 3 { vm.more() }
                     })
                     .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
                     MoreButton(busy: vm.busy, more: { vm.more() })
@@ -1300,7 +1307,7 @@ private struct CatTab: View {
                 }
                 Section {
                     Grid2Cards(rows: vm.rows, nearEnd: { i in
-                        if i >= vm.rows.count - 9 { vm.more() }
+                        if i >= vm.rows.count - 3 { vm.more() }
                     })
                         .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
                     MoreButton(busy: vm.busy, more: { vm.more() })
