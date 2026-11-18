@@ -87,7 +87,7 @@ struct FeedReel: View {
 
             Color.clear.contentShape(Rectangle())
                 .ignoresSafeArea()
-                .gesture(nav)
+                .simultaneousGesture(nav)   // 并行: 竖滑留给分页滚动, 横滑只管显隐(独占会饿死 ScrollView)
                 .onTapGesture(count: 2) { pc.togglePlay() }   // 播放交互定稿: 双击暂停/恢复
 
             if !pc.playing && loaded {
@@ -111,6 +111,14 @@ struct FeedReel: View {
         })
         .onChange(of: app.selection) { s in
             if s != .feed {
+                if loaded, pc.playing { pc.pause() }
+            } else if loaded, frac > 0.6, !pc.playing {
+                pc.togglePlay()
+            }
+        }
+        // 观看全集浮层盖上来时坊页必须闭嘴(fullScreenCover 不触发 onDisappear)
+        .onChange(of: app.feedFull?.id) { v in
+            if v != nil {
                 if loaded, pc.playing { pc.pause() }
             } else if loaded, frac > 0.6, !pc.playing {
                 pc.togglePlay()
