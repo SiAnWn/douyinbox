@@ -41,7 +41,7 @@ final class DanmakuEngineView: UIView {
     private func startLink() {
         guard link == nil else { return }
         let l = CADisplayLink(target: self, selector: #selector(tick))
-        l.add(to: .common, forMode: .common)
+        l.add(to: .main, forMode: .common)
         link = l
     }
     private func stopLink() { link?.invalidate(); link = nil }
