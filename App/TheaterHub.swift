@@ -303,7 +303,8 @@ final class CastVM: ObservableObject {
                 ActorVM.uidByName[it.actor] = it.userId
             }
             CoverBank.registerRank(sr.items)
-            self.cursor = sr.hasMore ? sr.cursor : nil            if self.items.isEmpty { self.note = "榜上空空的" }
+            self.cursor = sr.hasMore ? sr.cursor : nil
+            if self.items.isEmpty { self.note = "榜上空空的" }
         }
     }
 }
