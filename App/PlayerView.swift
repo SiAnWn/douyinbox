@@ -97,8 +97,12 @@ final class PlayerController: ObservableObject {
 
     func observeEnd(_ onEnd: @escaping @MainActor () -> Void) {
         removeEnd()
+        let mine = player
+        // 关键: 播完通知是全 App 广播(object:nil), 必须自滤 item 归属 —
+        // 否则影页看完一部, 映的休眠播放器也以为轮到自己, 后台偷开下一部=幽灵声
         endObs = NotificationCenter.default.addObserver(
-            forName: .AVPlayerItemDidPlayToEndTime, object: nil, queue: .main) { _ in
+            forName: .AVPlayerItemDidPlayToEndTime, object: nil, queue: .main) { note in
+                guard let it = note.object as? AVPlayerItem, it === mine.currentItem else { return }
                 Task { @MainActor in onEnd() }
             }
     }
