@@ -110,7 +110,8 @@ struct ParseView: View {
                 status = "灵动岛下单：自动解析并下载最优档…"
                 Task { await doParse(link: l) }
             }
-            .onAppear { refreshQuota(); autoFillAndParse() }
+            .onAppear { refreshQuota(); autoFillAndParse(); consumeHgWant() }
+        .onChange(of: app.hgWant?.sid) { _ in consumeHgWant() }
             .onChange(of: scenePhase) { _ in
                 if scenePhase == .active { autoFillAndParse() }
             }
@@ -466,6 +467,17 @@ struct ParseView: View {
             showProgress = false
             status = "下载失败：\(error.localizedDescription)"
         }
+    }
+
+    // 剧场页发车单(v1.10.15): 场→详情→整剧下载 送回本页合成 hg:// 单直接批量
+    private func consumeHgWant() {
+        guard let w = app.hgWant else { return }
+        app.hgWant = nil
+        let res = ParseResult(videoID: "hg:" + w.sid, title: w.title, author: "", options: [])
+        let opt = QualityOption(label: "红果 1080P", url: Hongguo.hgURL(w.sid, "1080"),
+                                width: 1080, height: 1920, sizeBytes: 0, isOriginal: false)
+        status = "剧场发车：\(w.title)"
+        Task { await hongguoRun(res, opt) }
     }
 
     // 红果整剧批量：逐集 resolve → 下载 → CENC 解密 → 落库 短剧/<剧名>/第NN集.mp4

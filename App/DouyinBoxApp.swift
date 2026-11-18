@@ -44,6 +44,7 @@ final class AppState: ObservableObject {
     @Published var selection: Tab = .pick
     @Published var feedFull: FeedPageItem?
     @Published var feedFullIdx = 0
+    @Published var hgWant: HgWant?      // 剧场页→拾页发车单
     // 坊页互斥音响登记簿: 每页注册自己的闭嘴函数, 谁开播谁点名其他人全部闭嘴
     var reelPausers: [String: () -> Void] = [:]
     func muteReels(except id: String) {

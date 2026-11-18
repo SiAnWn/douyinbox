@@ -14,6 +14,7 @@ struct StashHubView: View {
                     Text("剧").tag(1)
                     Text("私").tag(2)
                     Text("画廊").tag(3)
+                    Text("场").tag(4)
                 }
                 .pickerStyle(.segmented)
                 .padding([.horizontal], 14)
@@ -24,7 +25,8 @@ struct StashHubView: View {
                     case 0: LibraryView()
                     case 1: DramaView()
                     case 2: PrivateView()
-                    default: GalleryHomeView()
+                    case 3: GalleryHomeView()
+                    default: TheaterHomeView()
                     }
                 }
             }
