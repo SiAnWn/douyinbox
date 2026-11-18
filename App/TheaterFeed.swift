@@ -159,7 +159,7 @@ struct FeedReel: View {
                 }
                 if !dmDbg.isEmpty {
                     Text(dmDbg).font(.caption2).foregroundStyle(.tertiary)
-                    Text("弹幕引擎：帧 \(DanmakuLayer.ticks) · 此刻在屏 \(DanmakuLayer.lastVisible) 条")
+                    Text("弹幕引擎：帧 \(DanmakuLayer.ticks) · 视频钟 \(String(format: "%.1f", DanmakuLayer.lastNow))s · 在屏 \(DanmakuLayer.lastVisible) 条")
                         .font(.caption2).foregroundStyle(.tertiary)
                 }
                 ScrollView {
