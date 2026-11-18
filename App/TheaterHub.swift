@@ -20,10 +20,204 @@ struct HgActor: Hashable {
     let name: String
 }
 
+// MARK: - 精装组件(v1.10.28 抄开心果/红果作业四件套, 适配盒子)
+
+// 热度写法跟红果一致: 4165万 / 1.2亿
+func hgWan(_ n: Int) -> String {
+    if n >= 100_000_000 {
+        var s = String(format: "%.1f", Double(n) / 1e8)
+        if s.hasSuffix(".0") { s.removeLast(2) }
+        return s + "亿"
+    }
+    if n >= 10_000 { return "\(n / 10_000)万" }
+    return "\(n)"
+}
+
+// 上新日历的人话: 今天/明天/昨天/M月D日
+func hgDay(_ d: String, today: String) -> String {
+    let f = DateFormatter()
+    f.calendar = Calendar(identifier: .gregorian)
+    f.locale = Locale(identifier: "en_US_POSIX")
+    f.dateFormat = "yyyyMMdd"
+    guard let dd = f.date(from: d), let tt = f.date(from: today),
+          let n = Calendar(identifier: .gregorian).dateComponents([.day], from: tt, to: dd).day else {
+        return d
+    }
+    switch n {
+    case 0: return "今天"
+    case 1: return "明天"
+    case -1: return "昨天"
+    default:
+        let c = Calendar(identifier: .gregorian).dateComponents([.month, .day], from: dd)
+        return "\(c.month ?? 0)月\(c.day ?? 0)日"
+    }
+}
+
+// 榜单涨跌角标: 新上榜橙NEW / 升红↑ / 降绿↓ / 不变隐身
+func hgArrow(_ ch: RankChange?) -> (String, Color)? {
+    guard let ch else { return nil }
+    switch ch.kind.rawValue {
+    case 0: return ("新", Color.orange)
+    case 1: return ("↑" + (ch.places > 0 ? "\(ch.places)" : ""), Color.red)
+    case 2: return ("↓" + (ch.places > 0 ? "\(ch.places)" : ""), Color.green)
+    default: return nil
+    }
+}
+
+// 前三名金银铜奖牌徽章(开心果同款气质, 颜色自调)
+struct RankBadge2: View {
+    let rank: Int
+    var body: some View {
+        let colors = [Color(red: 0.95, green: 0.68, blue: 0.13),
+                      Color(white: 0.62),
+                      Color(red: 0.76, green: 0.47, blue: 0.27)]
+        Text("\(rank)")
+            .font(.system(size: 11, weight: .heavy, design: .rounded))
+            .monospacedDigit()
+            .foregroundStyle(.white)
+            .padding(.horizontal, 6)
+            .frame(minWidth: 22, minHeight: 20)
+            .background(rank <= 3 ? colors[rank - 1] : Color.black.opacity(0.55),
+                        in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+    }
+}
+
+// 海报底座: 固定比例+封面 overlay+细描边(v1.9.50 铁律的完全体)
+struct Poster2: View {
+    let url: String
+    var radius: CGFloat = 10
+    var body: some View {
+        Color.clear
+            .aspectRatio(3.0 / 4.0, contentMode: .fit)
+            .overlay {
+                AsyncImage(url: URL(string: url)) { $0.resizable().scaledToFill() }
+                    placeholder: { Color.gray.opacity(0.16) }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.06), lineWidth: 0.5)
+            }
+    }
+}
+
+// 首屏骨架: 加载不再干转圈(灰海报格子等人)
+struct GridSkeleton: View {
+    var body: some View {
+        LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)],
+                  spacing: 12) {
+            ForEach(0..<6, id: \.self) { _ in
+                Color.gray.opacity(0.14)
+                    .aspectRatio(0.7, contentMode: .fit)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 8)
+    }
+}
+
+// 横滑卡栏(首页 rails 与上新预告共用)
+struct HRail: View {
+    let title: String
+    let sub: String?
+    let items: [CardLike]
+    var circle = false
+
+    struct CardLike: Hashable {
+        let sid: String
+        let title: String
+        let sub: String
+        let cover: String
+        let rank: Int
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text(title).font(.system(size: 16, weight: .heavy))
+                if let s = sub, !s.isEmpty {
+                    Text(s).font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 14)
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(alignment: .top, spacing: 10) {
+                    ForEach(Array(items.enumerated()), id: \.offset) { i, c in
+                        NavigationLink(value: HgWant(sid: c.sid, title: c.title)) {
+                            VStack(alignment: .leading, spacing: 5) {
+                                Poster2(url: c.cover)
+                                    .overlay(alignment: .topLeading) {
+                                        if c.rank > 0 {
+                                            RankBadge2(rank: c.rank).padding(5)
+                                        }
+                                    }
+                                    .overlay(alignment: .bottomTrailing) {
+                                        if !c.sub.isEmpty {
+                                            Text(c.sub)
+                                                .font(.system(size: 9, weight: .semibold))
+                                                .foregroundStyle(.white)
+                                                .padding(.horizontal, 5).padding(.vertical, 2)
+                                                .background(Color.black.opacity(0.5), in: Capsule())
+                                                .padding(5)
+                                        }
+                                    }
+                                Text(c.title)
+                                    .font(.system(size: 12, weight: .medium))
+                                    .lineLimit(1)
+                                    .frame(width: 104, alignment: .leading)
+                            }
+                            .frame(width: 104)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.bottom, 4)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+// 首页三条横滑榜的数据(热播/新剧/必看, 全部现成匿名榜单口)
+@MainActor
+final class RailVM: ObservableObject {
+    @Published var hot: [HRail.CardLike] = []
+    @Published var fresh: [HRail.CardLike] = []
+    @Published var must: [HRail.CardLike] = []
+    private var loaded = false
+
+    func load() {
+        guard !loaded else { return }
+        loaded = true
+        Task {
+            guard let c = Hongguo.client else { return }
+            let boards: [(String, (RailVM, [HRail.CardLike]) -> Void)] = [
+                ("ranklist_hot_play_sc", { $0.hot = $1 }),
+                ("ranklist_new_rank_sc", { $0.fresh = $1 }),
+                ("ranklist_must_watch", { $0.must = $1 }),
+            ]
+            for (board, set) in boards {
+                if let sr = try? await Hongguo.attempt(c, {
+                    try await c.shortRank(ShortRankQuery(board: board))
+                }) {
+                    var out: [HRail.CardLike] = []
+                    for it in sr.items.prefix(10) where !it.seriesId.isEmpty {
+                        out.append(HRail.CardLike(sid: it.seriesId, title: it.title,
+                                                 sub: it.score, cover: it.coverUrl, rank: it.position))
+                    }
+                    set(self, out)
+                }
+                try? await Task.sleep(nanoseconds: 350_000_000)
+            }
+        }
+    }
+}
+
 enum ActorVM {
     // 演员人气榜攒的名字→账号桥(进过演员段就越来越准)
     static var uidByName: [String: String] = [:]
-
     @MainActor
     static func lookup(_ name: String) async -> String {
         if let u = uidByName[name], !u.isEmpty { return u }
@@ -135,6 +329,8 @@ final class DiscoverVM: ObservableObject {
     @Published var query = ""
     @Published var guesses: [String] = []
     @Published var hotBoards: [HotBoard] = []
+    @Published var suggests: [String] = []
+    private var sugSeq = 0
     @Published var busy = false
     @Published var note = ""
     private var nextCursor: String?
@@ -173,6 +369,19 @@ final class DiscoverVM: ObservableObject {
     func run(_ q: String) {
         mode = q.trimmingCharacters(in: .whitespacesAndNewlines)
         load()
+    }
+
+    // 输入联想(开心果同款 300ms 防抖, 调用方 task(id:) 里睡够再喊)
+    func suggest(_ p: String) {
+        let t = p.trimmingCharacters(in: .whitespacesAndNewlines)
+        if t.isEmpty { suggests = []; return }
+        sugSeq += 1
+        let my = sugSeq
+        guard let c = Hongguo.client else { return }
+        Task {
+            let s = try? await Hongguo.attempt(c, { try await c.suggest(t) })
+            if my == sugSeq { suggests = Array((s ?? []).prefix(8).map { $0.text }) }
+        }
     }
 
     func more() {
@@ -336,6 +545,7 @@ struct TheaterHomeView: View {
     @StateObject private var news = NewVM()
     @StateObject private var cat = CatVM()
     @StateObject private var cast = CastVM()
+    @StateObject private var rails = RailVM()
     private let tabs = ["首页", "榜单", "上新", "分类", "演员"]
 
     var body: some View {
@@ -368,7 +578,7 @@ struct TheaterHomeView: View {
                     case 2: NewTab(vm: news)
                     case 3: CatTab(vm: cat)
                     case 4: CastTab(vm: cast)
-                    default: DiscoverTab(vm: disc)
+                    default: DiscoverTab(vm: disc, rails: rails)
                     }
                 }
             }
@@ -389,7 +599,9 @@ struct TheaterHomeView: View {
                 case 2: if news.items.isEmpty { news.load() }
                 case 3: cat.loadPanel()
                 case 4: if cast.items.isEmpty { cast.load() }
-                default: if disc.rows.isEmpty { disc.load() }
+                default:
+                    if disc.rows.isEmpty { disc.load() }
+                    rails.load()
                 }
             }
         }
@@ -448,9 +660,21 @@ private struct TheaterSearchTab: View {
             if !vm.note.isEmpty {
                 Section { Text(vm.note).font(.caption).foregroundStyle(.secondary) }
             }
+            if !q.isEmpty && !vm.suggests.isEmpty && vm.rows.isEmpty {
+                Section("你是想搜这些吗") {
+                    ForEach(vm.suggests, id: \.self) { s in
+                        Button { q = s; vm.run(s) } label: {
+                            Label(s, systemImage: "magnifyingglass")
+                                .font(.subheadline)
+                        }
+                    }
+                }
+            }
             if !vm.rows.isEmpty {
                 Section("搜索结果") {
-                    Grid2Cards(rows: vm.rows)
+                    Grid2Cards(rows: vm.rows, nearEnd: { i in
+                        if i >= vm.rows.count - 9 { vm.more() }
+                    })
                         .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
                 }
             }
@@ -458,16 +682,27 @@ private struct TheaterSearchTab: View {
         .navigationTitle("搜索")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { if vm.guesses.isEmpty { Task { await vm.fetchHot() } } }
+        .task(id: q) {
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            if Task.isCancelled { return }
+            if q.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                vm.suggests = []
+            } else {
+                vm.suggest(q)
+            }
+        }
     }
 }
 
 // 红果同款双列竖卡(一屏两部的命根子; 固定比例底座铁律 v1.9.50 遗产)
 private struct Grid2Cards: View {
     let rows: [SeriesSummary]
+    var rank0 = 0                                   // >0 则从 rank0 起挂奖牌徽章
+    var nearEnd: (Int) -> Void = { _ in }           // 滚到尾部自动续页
     var body: some View {
         LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)],
                   spacing: 12) {
-            ForEach(rows, id: \.id) { s in
+            ForEach(Array(rows.enumerated()), id: \.offset) { i, s in
                 NavigationLink(value: HgWant(sid: s.id, title: s.title)) {
                     Color.clear.aspectRatio(0.7, contentMode: .fit)
                         .overlay {
@@ -478,6 +713,11 @@ private struct Grid2Cards: View {
                                                startPoint: .top, endPoint: .bottom)
                             }
                         }
+                        .overlay(alignment: .topLeading) {
+                            if rank0 > 0 {
+                                RankBadge2(rank: rank0 + i).padding(6)
+                            }
+                        }
                         .overlay {
                             LinearGradient(colors: [.black.opacity(0.0), .black.opacity(0.7)],
                                            startPoint: .center, endPoint: .bottom)
@@ -486,17 +726,86 @@ private struct Grid2Cards: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(s.title).font(.system(size: 12, weight: .semibold))
                                     .foregroundStyle(.white).lineLimit(2)
-                                Text((s.episodeCount > 0 ? "全\(s.episodeCount)集" : "短剧") +
-                                     (s.category.isEmpty ? "" : " · " + s.category))
-                                    .font(.system(size: 10)).foregroundStyle(.white.opacity(0.8))
-                                    .lineLimit(1)
+                                Text(hgGridSub(s)).font(.system(size: 10))
+                                    .foregroundStyle(.white.opacity(0.8)).lineLimit(1)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(8)
                         }
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 0.5)
+                        }
                 }
                 .buttonStyle(.plain)
+                .onAppear { nearEnd(i) }
+            }
+        }
+        .padding(.horizontal, 2)
+    }
+}
+
+func hgGridSub(_ s: SeriesSummary) -> String {
+    var out = s.episodeCount > 0 ? "全\(s.episodeCount)集" : "短剧"
+    if !s.category.isEmpty { out += " · " + s.category }
+    if s.heat > 0 { out += " · " + hgWan(s.heat) + "热度" }
+    return out
+}
+
+func hgToday() -> String {
+    let f = DateFormatter()
+    f.calendar = Calendar(identifier: .gregorian)
+    f.locale = Locale(identifier: "en_US_POSIX")
+    f.dateFormat = "yyyyMMdd"
+    return f.string(from: Date())
+}
+
+// 双列竖卡的通用版(上新/演员作品等拿不到 SeriesSummary 的场合)
+struct Grid2Lite: View {
+    let items: [HRail.CardLike]
+    var rank0 = 0
+    var nearEnd: (Int) -> Void = { _ in }
+    var body: some View {
+        LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)],
+                  spacing: 12) {
+            ForEach(Array(items.enumerated()), id: \.offset) { i, c in
+                NavigationLink(value: HgWant(sid: c.sid, title: c.title)) {
+                    Color.clear.aspectRatio(0.7, contentMode: .fit)
+                        .overlay {
+                            AsyncImage(url: URL(string: c.cover)) {
+                                $0.resizable().scaledToFill()
+                            } placeholder: { Color.gray.opacity(0.16) }
+                        }
+                        .overlay(alignment: .topLeading) {
+                            if rank0 > 0 {
+                                RankBadge2(rank: rank0 + i).padding(6)
+                            } else if c.rank > 0 {
+                                RankBadge2(rank: c.rank).padding(6)
+                            }
+                        }
+                        .overlay {
+                            LinearGradient(colors: [.black.opacity(0.0), .black.opacity(0.7)],
+                                           startPoint: .center, endPoint: .bottom)
+                        }
+                        .overlay(alignment: .bottomLeading) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(c.title).font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(.white).lineLimit(2)
+                                Text(c.sub).font(.system(size: 10))
+                                    .foregroundStyle(.white.opacity(0.8)).lineLimit(1)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(8)
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 0.5)
+                        }
+                }
+                .buttonStyle(.plain)
+                .onAppear { nearEnd(i) }
             }
         }
         .padding(.horizontal, 2)
@@ -616,6 +925,7 @@ private struct HeroCarousel: View {
 
 private struct DiscoverTab: View {
     @ObservedObject var vm: DiscoverVM
+    @ObservedObject var rails: RailVM
     var body: some View {
         List {
             if vm.rows.count >= 3 {
@@ -625,21 +935,52 @@ private struct DiscoverTab: View {
                         .listRowBackground(Color.clear)
                 }
             }
+            if !rails.hot.isEmpty {
+                Section {
+                    HRail(title: "🔥 热播榜", sub: "红果正在霸屏的", items: rails.hot)
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                }
+            }
+            if !rails.fresh.isEmpty {
+                Section {
+                    HRail(title: "🚀 新剧榜", sub: "刚上架的鲜货", items: rails.fresh)
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                }
+            }
+            if !rails.must.isEmpty {
+                Section {
+                    HRail(title: "🏆 必看榜", sub: "口碑压舱石", items: rails.must)
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                }
+            }
             if !vm.note.isEmpty {
                 Section { Text(vm.note).font(.caption).foregroundStyle(.secondary) }
             }
+            if vm.rows.isEmpty && vm.busy {
+                Section {
+                    GridSkeleton().listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear).listRowSeparator(.hidden)
+                }
+            }
             if !vm.rows.isEmpty {
                 Section {
-                    Grid2Cards(rows: vm.rows)
-                        .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
+                    Grid2Cards(rows: vm.rows, nearEnd: { i in
+                        if i >= vm.rows.count - 9 { vm.more() }
+                    })
+                    .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
                     MoreButton(busy: vm.busy, more: { vm.more() })
                 } header: {
-                    Text("为你推荐")
+                    Text("为你推荐").font(.system(size: 16, weight: .heavy))
                 }
             }
         }
         .listStyle(.plain)
-        .overlay { if vm.busy && vm.rows.isEmpty { ProgressView().controlSize(.large) } }
         .refreshable { vm.run("") }
     }
 }
@@ -683,7 +1024,7 @@ private struct RankTab: View {
             List {
                 if !vm.note.isEmpty { Section { Text(vm.note).font(.caption).foregroundStyle(.secondary) } }
                 Section {
-                    ForEach(Array(vm.items.enumerated()), id: \.offset) { _, it in
+                    ForEach(Array(vm.items.enumerated()), id: \.offset) { i, it in
                         if it.seriesId.isEmpty {
                             // 演员榜行(可点) 或平台推广行: 展示为主
                             let name = it.actor.isEmpty ? it.title : it.actor
@@ -708,10 +1049,40 @@ private struct RankTab: View {
                             }
                             .padding(.vertical, 2)
                         } else {
-                            ShowRow(sid: it.seriesId, title: it.title,
-                                    sub: it.score + (it.episodeCount > 0 ? " · 全\(it.episodeCount)集" : ""),
-                                    cover: it.coverUrl,
-                                    badge: it.promoted ? "荐" : "\(it.position)")
+                            let pair = hgArrow(it.change)
+                            NavigationLink(value: HgWant(sid: it.seriesId, title: it.title)) {
+                                HStack(spacing: 10) {
+                                    Color.clear
+                                        .frame(width: 52, height: 70)
+                                        .overlay {
+                                            AsyncImage(url: URL(string: it.coverUrl)) {
+                                                $0.resizable().scaledToFill()
+                                            } placeholder: { Color.gray.opacity(0.16) }
+                                        }
+                                        .overlay(alignment: .topLeading) {
+                                            RankBadge2(rank: it.position).padding(3)
+                                        }
+                                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(it.title).font(.subheadline.weight(.semibold)).lineLimit(1)
+                                        Text((it.episodeCount > 0 ? "全\(it.episodeCount)集" : "短剧") +
+                                             (it.score.isEmpty ? "" : " · " + it.score))
+                                            .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                    }
+                                    Spacer(minLength: 4)
+                                    VStack(alignment: .trailing, spacing: 6) {
+                                        if let pair {
+                                            Text(pair.0).font(.caption2.bold()).foregroundStyle(pair.1)
+                                        }
+                                        if it.promoted {
+                                            Text("荐").font(.caption2.bold()).foregroundStyle(.orange)
+                                        }
+                                    }
+                                }
+                                .padding(.vertical, 2)
+                            }
+                            .buttonStyle(.plain)
+                            .onAppear { if i >= vm.items.count - 6 { vm.more() } }
                         }
                     }
                     MoreButton(busy: vm.busy, more: { vm.more() })
@@ -749,10 +1120,10 @@ private struct NewTab: View {
                     HStack(spacing: 8) {
                         ForEach(vm.dates, id: \.self) { d in
                             Button { vm.load(date: d) } label: {
-                                Text(fmtDate(d))
-                                    .font(.footnote)
-                                    .padding(.horizontal, 12).padding(.vertical, 6)
-                                    .background(Capsule().fill(d == vm.date ? Color.accentColor.opacity(0.9) : Color.gray.opacity(0.18)))
+                                Text(hgDay(d, today: hgToday()))
+                                    .font(.footnote.weight(d == vm.date ? .bold : .regular))
+                                    .padding(.horizontal, 13).padding(.vertical, 7)
+                                    .background(Capsule().fill(d == vm.date ? Color.orange : Color.gray.opacity(0.15)))
                                     .foregroundStyle(d == vm.date ? .white : .primary)
                             }
                         }
@@ -763,45 +1134,48 @@ private struct NewTab: View {
             }
             List {
                 if !vm.note.isEmpty { Section { Text(vm.note).font(.caption).foregroundStyle(.secondary) } }
-                Section {
-                    ForEach(Array(vm.items.enumerated()), id: \.offset) { _, nr in
-                        if nr.online {
-                            ShowRow(sid: nr.seriesId, title: nr.title,
-                                    sub: (nr.categories.isEmpty ? "短剧" : nr.categories.joined(separator: "·")) +
-                                         " · 全\(nr.episodeCount)集" + (nr.heat.isEmpty ? "" : " · " + nr.heat),
-                                    cover: nr.coverUrl, badge: "新")
-                        } else {
-                            HStack(spacing: 10) {
-                                AsyncImage(url: URL(string: nr.coverUrl)) { $0.resizable().scaledToFill() }
-                                    placeholder: { Color.gray.opacity(0.15) }
-                                    .frame(width: 52, height: 70)
-                                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(nr.title).font(.subheadline).lineLimit(1)
-                                    Text("🗓 " + (nr.note.isEmpty ? nr.publishAt : nr.note) +
-                                         (nr.heat.isEmpty ? "" : " · " + nr.heat))
-                                        .font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                                }
-                                Spacer(minLength: 0)
-                            }
-                            .padding(.vertical, 2)
-                        }
+                let online = vm.items.filter(\.online)
+                let later = vm.items.filter { !$0.online }
+                if !later.isEmpty {
+                    Section {
+                        HRail(title: "🗓 即将上线", sub: "先囤预告, 到点开抢",
+                              items: later.map {
+                                  HRail.CardLike(sid: $0.seriesId, title: $0.title,
+                                                 sub: $0.note.isEmpty ? $0.publishAt : $0.note,
+                                                 cover: $0.coverUrl, rank: 0)
+                              })
+                            .listRowInsets(EdgeInsets())
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
                     }
-                    MoreButton(busy: vm.busy, more: { vm.more() })
-                } header: {
-                    Text("红果上新日历 · 已上线可直接囤")
+                }
+                if vm.items.isEmpty && vm.busy {
+                    Section {
+                        GridSkeleton().listRowInsets(EdgeInsets())
+                            .listRowBackground(Color.clear).listRowSeparator(.hidden)
+                    }
+                }
+                if !online.isEmpty {
+                    Section {
+                        Grid2Lite(items: online.map {
+                            var sub = "全\($0.episodeCount)集"
+                            if !$0.categories.isEmpty { sub += " · " + $0.categories.joined(separator: "·") }
+                            if !$0.heat.isEmpty { sub = $0.heat + " · " + sub }
+                            return HRail.CardLike(sid: $0.seriesId, title: $0.title,
+                                                  sub: sub, cover: $0.coverUrl, rank: 0)
+                        }, nearEnd: { i in
+                            if i >= online.count - 9 { vm.more() }
+                        })
+                        .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
+                        MoreButton(busy: vm.busy, more: { vm.more() })
+                    } header: {
+                        Text("已上线 · 点卡整剧下载").font(.system(size: 16, weight: .heavy))
+                    }
                 }
             }
-            .overlay { if vm.busy && vm.items.isEmpty { ProgressView().controlSize(.large) } }
+            .listStyle(.plain)
             .refreshable { vm.load() }
         }
-    }
-
-    private func fmtDate(_ ymd: String) -> String {
-        guard ymd.count == 8 else { return ymd }
-        let m = ymd.dropFirst(4).prefix(2)
-        let d = ymd.suffix(2)
-        return "\(Int(m) ?? 0)月\(Int(d) ?? 0)日"
     }
 }
 
@@ -813,23 +1187,36 @@ private struct CatTab: View {
         VStack(spacing: 6) {
             ForEach(vm.panel, id: \.key) { row in
                 if !row.options.isEmpty {
-                    ChipScroller(labels: row.options.map { ($0.name, vm.picks[row.key] == $0.value) },
-                                 onPick: { vm.pick(key: row.key, value: row.options[$0].value) })
-                        .padding(.top, 4)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(row.name)
+                            .font(.footnote.weight(.bold))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 14)
+                        ChipScroller(labels: row.options.map { ($0.name, vm.picks[row.key] == $0.value) },
+                                     onPick: { vm.pick(key: row.key, value: row.options[$0].value) })
+                    }
+                    .padding(.top, 2)
                 }
             }
             List {
                 if !vm.note.isEmpty { Section { Text(vm.note).font(.caption).foregroundStyle(.secondary) } }
-                Section {
-                    if !vm.rows.isEmpty {
-                        Grid2Cards(rows: vm.rows)
-                            .listRowInsets(EdgeInsets(top: 4, leading: 6, bottom: 4, trailing: 6))
+                if vm.rows.isEmpty && vm.busy {
+                    Section {
+                        GridSkeleton().listRowInsets(EdgeInsets())
+                            .listRowBackground(Color.clear).listRowSeparator(.hidden)
                     }
+                }
+                Section {
+                    Grid2Cards(rows: vm.rows, nearEnd: { i in
+                        if i >= vm.rows.count - 9 { vm.more() }
+                    })
+                        .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
                     MoreButton(busy: vm.busy, more: { vm.more() })
                 } header: {
-                    Text("官方筛选墙 · 条件随便松紧")
+                    Text("筛选结果 · 条件随便松紧").font(.system(size: 16, weight: .heavy))
                 }
             }
+            .listStyle(.plain)
             .overlay { if vm.busy && vm.rows.isEmpty { ProgressView().controlSize(.large) } }
         }
     }
@@ -861,28 +1248,92 @@ private struct CastRowView: View {
     }
 }
 
+func podRing(_ place: Int) -> Color {
+    switch place {
+    case 1: return Color(red: 0.95, green: 0.68, blue: 0.13)
+    case 2: return Color(white: 0.62)
+    default: return Color(red: 0.76, green: 0.47, blue: 0.27)
+    }
+}
+
 private struct CastTab: View {
     @ObservedObject var vm: CastVM
     var body: some View {
         List {
             if !vm.note.isEmpty { Section { Text(vm.note).font(.caption).foregroundStyle(.secondary) } }
-            Section {
-                ForEach(Array(vm.items.enumerated()), id: \.offset) { _, it in
-                    if it.userId.isEmpty {
-                        CastRowView(it: it)
-                    } else {
-                        NavigationLink(value: HgActorGo(uid: it.userId, name: it.actor)) {
-                            CastRowView(it: it)
+            let top = Array(vm.items.prefix(3))
+            let rest = Array(vm.items.dropFirst(3))
+            if !top.isEmpty {
+                Section {
+                    HStack(spacing: 0) {
+                        ForEach(Array(top.enumerated()), id: \.offset) { i, it in
+                            NavigationLink(value: HgActorGo(uid: it.userId, name: it.actor)) {
+                                CastPodium(it: it, place: i + 1)
+                            }
+                            .buttonStyle(.plain)
+                            .frame(maxWidth: .infinity)
                         }
                     }
+                    .padding(.vertical, 10)
+                    .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
                 }
-                MoreButton(busy: vm.busy, more: { vm.more() })
-            } header: {
-                Text("演员人气榜 · 点进去看 TA 演过啥")
+            }
+            if !rest.isEmpty {
+                Section {
+                    ForEach(Array(rest.enumerated()), id: \.offset) { i, it in
+                        if it.userId.isEmpty {
+                            CastRowView(it: it)
+                        } else {
+                            NavigationLink(value: HgActorGo(uid: it.userId, name: it.actor)) {
+                                CastRowView(it: it)
+                            }
+                            .buttonStyle(.plain)
+                            .onAppear { if i >= rest.count - 6 { vm.more() } }
+                        }
+                    }
+                    MoreButton(busy: vm.busy, more: { vm.more() })
+                } header: {
+                    Text("人气榜 · 点进去看 TA 演过啥").font(.system(size: 16, weight: .heavy))
+                }
             }
         }
+        .listStyle(.plain)
         .overlay { if vm.busy && vm.items.isEmpty { ProgressView().controlSize(.large) } }
         .refreshable { vm.load() }
+    }
+}
+
+// 前三名领奖台(金银铜描边圆头像)
+private struct CastPodium: View {
+    let it: RankItem
+    let place: Int
+    var body: some View {
+        VStack(spacing: 6) {
+            ZStack(alignment: .bottom) {
+                Color.clear
+                    .frame(width: 84, height: 84)
+                    .overlay {
+                        AsyncImage(url: URL(string: it.avatarUrl.isEmpty ? it.coverUrl : it.avatarUrl)) {
+                            $0.resizable().scaledToFill()
+                        } placeholder: { Color.gray.opacity(0.16) }
+                    }
+                    .clipShape(Circle())
+                    .overlay {
+                        Circle().strokeBorder(podRing(place), lineWidth: 3)
+                    }
+                RankBadge2(rank: place).offset(y: 8)
+            }
+            .padding(.top, 6)
+            Text(it.actor)
+                .font(.subheadline.weight(.bold))
+                .lineLimit(1)
+                .padding(.top, 6)
+            Text(it.score)
+                .font(.caption2).foregroundStyle(.orange)
+        }
+        .padding(.vertical, 4)
     }
 }
 
@@ -914,25 +1365,23 @@ struct ActorPage: View {
                 }
                 .padding(.vertical, 4)
             }
-            Section("TA的作品 · 点进去可整剧下载") {
+            Section {
                 if !vm.note.isEmpty { Text(vm.note).font(.caption).foregroundStyle(.secondary) }
-                ForEach(Array(vm.works.enumerated()), id: \.offset) { _, w in
-                    NavigationLink(value: HgWant(sid: w.seriesId, title: w.title)) {
-                        HStack(spacing: 10) {
-                            AsyncImage(url: URL(string: w.coverUrl)) { $0.resizable().scaledToFill() }
-                                placeholder: { Color.gray.opacity(0.15) }
-                                .frame(width: 52, height: 70)
-                                .clipShape(RoundedRectangle(cornerRadius: 6))
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(w.title).font(.subheadline).lineLimit(2)
-                                Text(workSub(w)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                            }
-                            Spacer(minLength: 0)
-                        }
-                        .padding(.vertical, 2)
-                    }
+                if !vm.works.isEmpty {
+                    Grid2Lite(items: vm.works.map { w in
+                        var sub = ""
+                        if w.heat > 0 { sub = hgWan(w.heat) + "热度" }
+                        if !w.tags.isEmpty { sub += (sub.isEmpty ? "" : " · ") + w.tags.joined(separator: "·") }
+                        return HRail.CardLike(sid: w.seriesId, title: w.title,
+                                              sub: sub, cover: w.coverUrl, rank: 0)
+                    }, nearEnd: { i in
+                        if i >= vm.works.count - 9 { vm.more() }
+                    })
+                    .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
                 }
                 MoreButton(busy: vm.busy, more: { vm.more() })
+            } header: {
+                Text("TA的作品 · 点海报整剧下载").font(.system(size: 16, weight: .heavy))
             }
         }
         .navigationTitle(name)
