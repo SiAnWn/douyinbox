@@ -371,6 +371,42 @@ final class DiscoverVM: ObservableObject {
         load()
     }
 
+    // 搜索独立水道(v1.10.29 修叠加冤案: 与首页 discover 共池导致推荐页被
+    // 自动翻页一路 append 进搜索结果, 分开后各走各的游标)
+    @Published var sres: [SeriesSummary] = []
+    @Published var snote = ""
+    @Published var sbusy = false
+    private var scur: String?
+    private var smode = ""
+
+    func doSearch(_ q: String) {
+        smode = q.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !smode.isEmpty else { sres = []; snote = ""; return }
+        fetchSearch(reset: true)
+    }
+
+    func moreSearch() {
+        guard scur != nil, !sbusy else { return }
+        fetchSearch(reset: false)
+    }
+
+    private func fetchSearch(reset: Bool) {
+        guard !sbusy else { return }
+        sbusy = true
+        if reset { snote = "" }
+        let q = smode
+        let cur = reset ? nil : scur
+        Task {
+            defer { sbusy = false }
+            guard let c = Hongguo.client else { snote = "红果引擎未就绪"; return }
+            if let pg = try? await Hongguo.attempt(c, { try await c.search(q) }) {
+                if reset { self.sres = pg.items } else { self.sres += pg.items }
+                self.scur = pg.hasMore ? pg.cursor : nil
+                if self.sres.isEmpty { self.snote = "搜不到「\(q)」，换个词试试" }
+            } else { self.snote = "搜索口这次没搭手，再来一次" }
+        }
+    }
+
     // 输入联想(开心果同款 300ms 防抖, 调用方 task(id:) 里睡够再喊)
     func suggest(_ p: String) {
         let t = p.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -620,7 +656,7 @@ private struct TheaterSearchTab: View {
                     TextField("搜红果剧名 / 演员", text: $q)
                         .textFieldStyle(.plain)
                         .autocorrectionDisabled()
-                        .onSubmit { vm.run(q) }
+                        .onSubmit { vm.doSearch(q) }
                 }
                 .padding(10)
                 .background(RoundedRectangle(cornerRadius: 12).fill(Color.gray.opacity(0.12)))
@@ -630,7 +666,7 @@ private struct TheaterSearchTab: View {
                         .font(.footnote)
                 }
                 if !vm.guesses.isEmpty {
-                    FlowGuess(words: vm.guesses) { q = $0; vm.run($0) }
+                    FlowGuess(words: vm.guesses) { q = $0; vm.doSearch($0) }
                         .listRowInsets(EdgeInsets(top: 2, leading: 8, bottom: 2, trailing: 8))
                 }
                 ForEach(Array(vm.hotBoards.enumerated()), id: \.offset) { _, b in
@@ -638,7 +674,7 @@ private struct TheaterSearchTab: View {
                         ForEach(Array(b.items.enumerated()), id: \.offset) { _, it in
                             Button {
                                 q = it.title
-                                vm.run(it.title)
+                                vm.doSearch(it.title)
                             } label: {
                                 HStack(spacing: 8) {
                                     Text("\(it.position)")
@@ -657,25 +693,28 @@ private struct TheaterSearchTab: View {
                     }
                 }
             }
-            if !vm.note.isEmpty {
-                Section { Text(vm.note).font(.caption).foregroundStyle(.secondary) }
+            if !vm.snote.isEmpty {
+                Section { Text(vm.snote).font(.caption).foregroundStyle(.secondary) }
             }
-            if !q.isEmpty && !vm.suggests.isEmpty && vm.rows.isEmpty {
+            if !q.isEmpty && !vm.suggests.isEmpty && vm.sres.isEmpty {
                 Section("你是想搜这些吗") {
                     ForEach(vm.suggests, id: \.self) { s in
-                        Button { q = s; vm.run(s) } label: {
+                        Button { q = s; vm.doSearch(s) } label: {
                             Label(s, systemImage: "magnifyingglass")
                                 .font(.subheadline)
                         }
                     }
                 }
             }
-            if !vm.rows.isEmpty {
+            if !vm.sres.isEmpty {
                 Section("搜索结果") {
-                    Grid2Cards(rows: vm.rows, nearEnd: { i in
-                        if i >= vm.rows.count - 9 { vm.more() }
+                    Grid2Cards(rows: vm.sres, nearEnd: { i in
+                        if i >= vm.sres.count - 9 { vm.moreSearch() }
                     })
                         .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
+                    if vm.sbusy {
+                        HStack { Spacer(); ProgressView(); Spacer() }
+                    }
                 }
             }
         }
