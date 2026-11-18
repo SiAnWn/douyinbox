@@ -616,6 +616,11 @@ struct ParseView: View {
                 status = failN > 0
                     ? "已保存：短剧/\(seriesName)（\(okN)/\(n) 集，缺 \(failN) 集）"
                     : "已保存：短剧/\(seriesName)（共 \(n) 集）"
+                // 顺手领一份剧档案(演员/评分/分类), 静默不挡道
+                Task {
+                    await SeriesMetaStore.harvest(c, sid: sid, title: seriesName,
+                                                  dir: SavePaths.docs.appendingPathComponent("短剧/\(seriesName)", isDirectory: true))
+                }
             } else if !status.hasPrefix("红果失败于") {
                 status = "红果下载失败：没有一集成功（可能接口风控，稍后再试）"
             }

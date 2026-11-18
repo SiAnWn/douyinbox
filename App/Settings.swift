@@ -13,6 +13,8 @@ struct SettingsView: View {
     @State private var svInput = ""
     @State private var hgBusy = false
     @State private var hgMsg = ""
+    @State private var metaMsg = ""
+    @State private var metaBusy = false
 
     var body: some View {
         NavigationStack {
@@ -75,6 +77,23 @@ struct SettingsView: View {
                             Image(systemName: "dot.radiowaves.right").foregroundStyle(.purple)
                         }
                     }
+                    Button {
+                        metaBusy = true
+                        Task {
+                            await SeriesMetaStore.backfill(app) { s in
+                                Task { @MainActor in
+                                    metaMsg = s
+                                    if s.hasPrefix("补齐完成") { metaBusy = false }
+                                }
+                            }
+                        }
+                    } label: {
+                        Label("补齐旧剧档案（演员·评分·分类）", systemImage: "person.2.badge.plus")
+                    }
+                    .disabled(metaBusy)
+                    if !metaMsg.isEmpty { Text(metaMsg).font(.caption).foregroundStyle(.secondary) }
+                    Text("整剧下载完成会自动领档案；这里给已经下过的旧剧按剧名补一份（一部一次查询，全程匿名不耗配额）。坊页底条会显示演员·评分。")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("灵动岛") {
                     Toggle("切到后台时常驻待命", isOn: $app.islandOn)

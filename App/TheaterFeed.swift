@@ -73,6 +73,7 @@ struct FeedReel: View {
     @State private var fill = true
     @State private var loaded = false
     @State private var frac: Double = 0
+    @State private var metaLine = ""
 
     private var cur: VideoItem {
         page.eps[min(epIdx, page.eps.count - 1)]
@@ -190,6 +191,13 @@ struct FeedReel: View {
                 .foregroundStyle(.white)
                 .shadow(color: .black.opacity(0.7), radius: 4)
                 .lineLimit(2)
+            if !metaLine.isEmpty {
+                Text(metaLine)
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.75))
+                    .shadow(color: .black.opacity(0.7), radius: 3)
+                    .lineLimit(1)
+            }
             HStack(spacing: 10) {
                 Text("第\(min(epIdx + 1, page.eps.count))集 · 全\(page.eps.count)集")
                     .font(.subheadline)
@@ -226,5 +234,8 @@ struct FeedReel: View {
                 .allowsHitTesting(false)
         )
         .frame(maxWidth: .infinity, alignment: .bottom)
+        .task(id: page.id) {   // 底条恒渲染宿主挂 task(lesson 47): 档案有则显
+            metaLine = SeriesMetaStore.line(SeriesMetaStore.load(page.series.url))
+        }
     }
 }
