@@ -126,25 +126,47 @@ enum DanmakuStore {
                         eps: [(num: Int, id: String)], dir: URL) async {
         var all: [String: [DMEntry]] = [:]
         var anyPageOK = false          // 至少有一页成功才算"这剧真没弹幕", 防限流空手立假档
-        for ep in eps {
-            if Task.isCancelled { break }
-            var bag: [DMEntry] = []
-            var cursor: String?
-            var hops = 0
-            repeat {
-                hops += 1
-                guard hops < 30 else { break }                       // 单集最多 30 页保险丝
-                let pg = try? await Hongguo.attempt(c, {
-                    try await c.listDanmaku(sid, episodeId: ep.id,
-                                            options: DanmakuOptions(cursor: cursor))
-                })
-                guard let pg else { break }
-                anyPageOK = true
-                bag += pg.items.map { DMEntry(t: $0.offsetMs, x: $0.text) }
-                cursor = pg.hasMore ? pg.cursor : nil
-                try? await Task.sleep(nanoseconds: 250_000_000)      // 匿名口温和
-            } while cursor != nil
-            if !bag.isEmpty { all["\(ep.num)"] = bag.sorted { $0.t < $1.t } }
+        // 提速(用户投诉太慢): 每集页循环打包 3 集一组并发, 页间歇 250→120ms(PC 探针 40 连页 200ms 实测无风控)
+        await withTaskGroup(of: (Int, [DMEntry], Bool).self) { grp in
+            var i = 0
+            var inflight = 0
+            while i < eps.count {
+                if Task.isCancelled { break }
+                let ep = eps[i]
+                grp.addTask {
+                    var bag: [DMEntry] = []
+                    var ok = false
+                    var cursor: String?
+                    var hops = 0
+                    repeat {
+                        hops += 1
+                        guard hops < 30 else { break }                   // 单集最多 30 页保险丝
+                        let pg = try? await Hongguo.attempt(c, {
+                            try await c.listDanmaku(sid, episodeId: ep.id,
+                                                    options: DanmakuOptions(cursor: cursor))
+                        })
+                        guard let pg else { break }
+                        ok = true
+                        bag += pg.items.map { DMEntry(t: $0.offsetMs, x: $0.text) }
+                        cursor = pg.hasMore ? pg.cursor : nil
+                        try? await Task.sleep(nanoseconds: 120_000_000)
+                    } while cursor != nil
+                    return (ep.num, bag.sorted { $0.t < $1.t }, ok)
+                }
+                inflight += 1
+                i += 1
+                if inflight >= 3 {
+                    if let r = await grp.next() {
+                        inflight -= 1
+                        if r.2 { anyPageOK = true }
+                        if !r.1.isEmpty { all["\(r.0)"] = r.1 }
+                    }
+                }
+            }
+            for await r in grp {
+                if r.2 { anyPageOK = true }
+                if !r.1.isEmpty { all["\(r.0)"] = r.1 }
+            }
         }
         guard anyPageOK else {
             // 一页都没成功(注册口限流/网络抖动): 不立档不留假证据, 下次补档按钮会再战
@@ -183,7 +205,7 @@ enum DanmakuStore {
                 .filter { $0.num > 0 }
             await harvest(c, sid: hit.id, eps: pairs, dir: s.url)
             if FileManager.default.fileExists(atPath: file(s.url).path) { ok += 1 }
-            try? await Task.sleep(nanoseconds: 900_000_000)
+            try? await Task.sleep(nanoseconds: 300_000_000)
         }
         progress("弹幕补齐：\(ok)/\(list.count) 部（后台继续加载坊即生效）")
     }
