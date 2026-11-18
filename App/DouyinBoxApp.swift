@@ -26,7 +26,7 @@ enum Orient {
     }
 }
 
-enum Tab: Hashable { case pick, feed, stash, seal }
+enum Tab: Hashable { case pick, feed, play, stash, seal }
 
 @MainActor
 final class AppState: ObservableObject {
@@ -41,7 +41,7 @@ final class AppState: ObservableObject {
     @Published var aspectFill = true
     @Published var order: [String] = []
     @Published var idx = -1
-    @Published var selection: Tab = .feed
+    @Published var selection: Tab = .pick
     @Published var feedFull: FeedPageItem?
     @Published var feedFullIdx = 0
     @Published var coverVideo: VideoItem?
@@ -68,7 +68,7 @@ final class AppState: ObservableObject {
     static let shared = AppState()
     let keepAlive = BGKeepAlive()
 
-    var immersive: Bool { false }   // 映tab 退役; 全屏播放由 InlinePlayer/CleanPlayer 自管沉浸
+    var immersive: Bool { (selection == .play || selection == .feed) && !revealUI }
 
     // 灵动岛“开始下载”按钮 → 回 App 自动解析+下最优档
     func islandDownload(_ link: String) {
@@ -266,6 +266,7 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     private var tabOrientMask: UIInterfaceOrientationMask {
+        if app.selection == .play { return .all }
         return .portrait
     }
 
@@ -275,13 +276,17 @@ struct RootView: View {
                 .tabItem { Label("拾", systemImage: "tray.and.arrow.down") }.tag(Tab.pick)
             TheaterFeedView()
                 .tabItem { Label("坊", systemImage: "play.rectangle.fill") }.tag(Tab.feed)
+            PlayerView()
+                .tabItem { Label("映", systemImage: "play.rectangle") }.tag(Tab.play)
             StashHubView()
                 .tabItem { Label("藏", systemImage: "books.vertical") }.tag(Tab.stash)
                 .badge(app.subsBadge)
             SettingsView()
                 .tabItem { Label("印", systemImage: "seal") }.tag(Tab.seal)
         }
-        .onChange(of: app.selection) { _ in Orient.forcePortrait() }
+        .onChange(of: app.selection) { sel in
+            if sel != .play { Orient.forcePortrait() }
+        }
         .fullScreenCover(item: $app.coverVideo) { v in
             InlinePlayer(video: v).environmentObject(app)
         }

@@ -29,45 +29,23 @@ struct TheaterFeedView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if pages.isEmpty {
-                    // 恒渲染宿主+task(lesson 47): 空态也能自己重建
-                    ContentUnavailableView("剧场还空的",
-                                           systemImage: "film.stack",
-                                           description: Text("在 藏→剧 下载短剧后回这里，\n就能像红果一样上下滑换剧刷"))
-                        .task { rebuild(force: true) }
-                } else {
-                    feedScroll
-                }
+        Group {
+            if pages.isEmpty {
+                // 恒渲染宿主+task(lesson 47): 空态也能自己重建
+                ContentUnavailableView("剧场还空的",
+                                       systemImage: "film.stack",
+                                       description: Text("在 藏→剧 下载短剧后回这里，\n就能像红果一样上下滑换剧刷"))
+                    .task { rebuild(force: true) }
+            } else {
+                feedScroll
             }
-            .navigationTitle("坊 · 本地剧场")
-            .toolbar(.hidden, for: .navigationBar)   // 剧场=全幅沉浸, 刷新用下拉
-            .toolbar(.hidden, for: .tabBar)          // tab 条也让位, 左上角浮钮换页
-            .overlay(alignment: .topLeading) {
-                VStack(spacing: 10) {
-                    miniJump(Tab.pick, "tray.and.arrow.down")
-                    miniJump(Tab.stash, "books.vertical")
-                    miniJump(Tab.seal, "seal")
-                }
-                .padding(.leading, 14)
-                .padding(.top, 58)   // 躲开状态栏/岛
-            }
-            .navigationDestination(for: Series.self) { s in DramaEpisodes(series: s) }
-            .onAppear { rebuild(force: false) }
-            .onChange(of: app.dramaSeries.count) { _ in rebuild(force: true) }  // 冷启动扫描晚到自愈
-            .refreshable { rebuild(force: true) }
         }
-    }
-
-    private func miniJump(_ t: Tab, _ sym: String) -> some View {
-        Button { app.selection = t } label: {
-            Image(systemName: sym)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: 34, height: 34)
-                .background(Circle().fill(.black.opacity(0.5)))
-        }
+        .onAppear { app.revealUI = false; rebuild(force: false) }
+        .onChange(of: app.dramaSeries.count) { _ in rebuild(force: true) }  // 冷启动扫描晚到自愈
+        .refreshable { rebuild(force: true) }
+        // 与老映同款沉浸体系: 右滑唤回 tab 条, 左滑隐藏(手势在 FeedReel 里); 空态不藏 tab 条
+        .background(TabBarAccessor(hidden: app.immersive && !pages.isEmpty))
+        .statusBarHidden(app.immersive && !pages.isEmpty)
     }
 
     private var feedScroll: some View {
@@ -95,6 +73,7 @@ struct FeedReel: View {
     @State private var epIdx = 0
     @State private var fill = true
     @State private var loaded = false
+    @State private var frac: Double = 0
 
     private var cur: VideoItem {
         page.eps[min(epIdx, page.eps.count - 1)]
@@ -108,6 +87,7 @@ struct FeedReel: View {
 
             Color.clear.contentShape(Rectangle())
                 .ignoresSafeArea()
+                .gesture(nav)
                 .onTapGesture(count: 2) { pc.togglePlay() }   // 播放交互定稿: 双击暂停/恢复
 
             if !pc.playing && loaded {
@@ -129,14 +109,31 @@ struct FeedReel: View {
                 .onAppear { vis(g.frame(in: .global)) }
                 .onChange(of: g.frame(in: .global).minY) { _ in vis(g.frame(in: .global)) }
         })
+        .onChange(of: app.selection) { s in
+            if s != .feed {
+                if loaded, pc.playing { pc.pause() }
+            } else if loaded, frac > 0.6, !pc.playing {
+                pc.togglePlay()
+            }
+        }
         .onDisappear { pc.stop(); loaded = false }
+    }
+
+    // 老映同款: 横滑右=唤回 tab 条/信息, 横滑左=隐藏; 竖滑留给翻页
+    private var nav: some Gesture {
+        DragGesture().onEnded { g in
+            let dx = g.translation.width, dy = g.translation.height
+            if abs(dx) > abs(dy), abs(dx) > 40 {
+                withAnimation { app.revealUI = (dx > 0) }
+            }
+        }
     }
 
     private func vis(_ f: CGRect) {
         let h = UIScreen.main.bounds.height
         guard h > 0 else { return }
         let onScreen = min(f.maxY, h) - max(f.minY, 0)
-        let frac = max(0, onScreen) / h
+        frac = max(0, onScreen) / h
         if frac > 0.6 {
             if !loaded {
                 loaded = true
