@@ -11,6 +11,122 @@ struct HgWant: Hashable {
     let title: String
 }
 
+// 演员导航两式: 榜上已有 uid 直落 / 简介页只有名字先查人气榜补 uid
+struct HgActorGo: Hashable {
+    let uid: String
+    let name: String
+}
+struct HgActor: Hashable {
+    let name: String
+}
+
+enum ActorVM {
+    // 演员人气榜攒的名字→账号桥(进过演员段就越来越准)
+    static var uidByName: [String: String] = [:]
+
+    @MainActor
+    static func lookup(_ name: String) async -> String {
+        if let u = uidByName[name], !u.isEmpty { return u }
+        guard let c = Hongguo.client else { return "" }
+        var cursor: String?
+        for _ in 0..<5 {                                  // 最多扒 5 页 ≈ 75 位头部演员
+            let sr = try? await Hongguo.attempt(c, {
+                try await c.shortRank(ShortRankQuery(content: "ranklist_celebrity",
+                                                     cursor: cursor))
+            })
+            guard let sr else { break }
+            for it in sr.items where !it.actor.isEmpty && !it.userId.isEmpty {
+                uidByName[it.actor] = it.userId
+            }
+            if let u = uidByName[name], !u.isEmpty { return u }
+            cursor = sr.hasMore ? sr.cursor : nil
+            if cursor == nil { break }
+            try? await Task.sleep(nanoseconds: 300_000_000)
+        }
+        return ""
+    }
+}
+
+// MARK: - 演员榜段 + 演员主页
+
+@MainActor
+final class CastVM: ObservableObject {
+    @Published var items: [RankItem] = []
+    @Published var busy = false
+    @Published var note = ""
+    private var cursor: String?
+
+    func load() {
+        cursor = nil
+        fetch(reset: true)
+    }
+    func more() {
+        guard cursor != nil, !busy else { return }
+        fetch(reset: false)
+    }
+    private func fetch(reset: Bool) {
+        guard !busy else { return }
+        busy = true; if reset { note = "" }
+        let cur = reset ? nil : cursor
+        Task {
+            defer { busy = false }
+            guard let c = Hongguo.client,
+                  let sr = try? await Hongguo.attempt(c, {
+                      try await c.shortRank(ShortRankQuery(content: "ranklist_celebrity", cursor: cur))
+                  }) else {
+                if reset { self.note = "演员榜没搭手，下拉再来" }
+                return
+            }
+            if reset { self.items = sr.items } else { self.items += sr.items }
+            for it in sr.items where !it.actor.isEmpty && !it.userId.isEmpty {
+                ActorVM.uidByName[it.actor] = it.userId
+            }
+            self.cursor = sr.hasMore ? sr.cursor : nil
+            if self.items.isEmpty { self.note = "榜上空空的" }
+        }
+    }
+}
+
+@MainActor
+final class ActorWorksVM: ObservableObject {
+    @Published var p: Person?
+    @Published var works: [Work] = []
+    @Published var busy = false
+    @Published var note = ""
+    private var cursor: String?
+    private var uid = ""
+
+    func load(_ u: String) {
+        guard uid != u else { return }
+        uid = u
+        Task {
+            guard let c = Hongguo.client else { return }
+            busy = true
+            defer { busy = false }
+            if let pg = try? await Hongguo.attempt(c, { try await c.personWorks(u) }) {
+                works = pg.items
+                cursor = pg.hasMore ? pg.cursor : nil
+            }
+            if let per = try? await Hongguo.attempt(c, { try await c.person(u) }) {
+                p = per
+            }
+            if works.isEmpty { note = "作品暂时没拉到手（风控抖动可退出重进）" }
+        }
+    }
+    func more() {
+        guard let cursor, !busy else { return }
+        busy = true
+        let cur = cursor
+        Task {
+            defer { busy = false }
+            guard let c = Hongguo.client,
+                  let pg = try? await Hongguo.attempt(c, { try await c.personWorks(self.uid, cursor: cur) }) else { return }
+            self.works += pg.items
+            self.cursor = pg.hasMore ? pg.cursor : nil
+        }
+    }
+}
+
 // MARK: - 发现(现选+搜索+热搜猜词)
 
 @MainActor
@@ -214,6 +330,7 @@ struct TheaterHomeView: View {
     @StateObject private var rank = RankVM()
     @StateObject private var news = NewVM()
     @StateObject private var cat = CatVM()
+    @StateObject private var cast = CastVM()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -222,6 +339,7 @@ struct TheaterHomeView: View {
                 Text("榜单").tag(1)
                 Text("上新").tag(2)
                 Text("分类").tag(3)
+                Text("演员").tag(4)
             }
             .pickerStyle(.segmented)
             .padding([.horizontal, .top], 12)
@@ -231,16 +349,20 @@ struct TheaterHomeView: View {
                 case 1: RankTab(vm: rank)
                 case 2: NewTab(vm: news)
                 case 3: CatTab(vm: cat)
+                case 4: CastTab(vm: cast)
                 default: DiscoverTab(vm: disc)
                 }
             }
         }
         .navigationDestination(for: HgWant.self) { w in TheaterDetailView(want: w) }
+        .navigationDestination(for: HgActorGo.self) { a in ActorPage(uid: a.uid, name: a.name) }
+        .navigationDestination(for: HgActor.self) { a in ActorResolveView(name: a.name) }
         .task(id: seg) {
             switch seg {
             case 1: if rank.contents.isEmpty { rank.load() }
             case 2: if news.items.isEmpty { news.load() }
             case 3: cat.loadPanel()
+            case 4: if cast.items.isEmpty { cast.load() }
             default: if disc.rows.isEmpty { disc.load() }
             }
         }
@@ -401,21 +523,29 @@ private struct RankTab: View {
                     ForEach(Array(vm.items.enumerated()), id: \.offset) { _, it in
                         if it.seriesId.isEmpty {
                             // 演员榜行(v1.10.25 可点) 或平台推广行: 展示为主
+                            let name = it.actor.isEmpty ? it.title : it.actor
+                            var sub = ""
+                            if it.actor.isEmpty {
+                                sub = it.score
+                            } else {
+                                if !it.intro.isEmpty { sub += it.intro + " · " }
+                                sub += it.score
+                            }
+                            if !it.details.isEmpty { sub += " · " + it.details.joined(separator: " ") }
+                            let cover = it.coverUrl.isEmpty ? it.avatarUrl : it.coverUrl
                             HStack(spacing: 10) {
                                 Text("\(it.position)")
                                     .font(.system(size: 13, weight: .heavy, design: .rounded))
                                     .foregroundStyle(it.position <= 3 ? Color.orange : .secondary)
                                     .frame(width: 26)
-                                AsyncImage(url: URL(string: it.coverUrl)) { $0.resizable().scaledToFill() }
+                                AsyncImage(url: URL(string: cover)) { $0.resizable().scaledToFill() }
                                     placeholder: { Color.gray.opacity(0.15) }
                                     .frame(width: 52, height: 70)
                                     .clipShape(RoundedRectangle(cornerRadius: 6))
                                 VStack(alignment: .leading, spacing: 3) {
-                                    Text(it.actor.isEmpty ? it.title : it.actor)
+                                    Text(name)
                                         .font(.subheadline).lineLimit(1)
-                                    Text((it.actor.isEmpty ? "" : (it.intro.isEmpty ? "" : it.intro + " · ") + it.score) +
-                                         (it.actor.isEmpty ? it.score : "") +
-                                         (!it.details.isEmpty ? " · " + it.details.joined(separator: " ") : ""))
+                                    Text(sub)
                                         .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                                 }
                                 Spacer(minLength: 0)
@@ -539,6 +669,156 @@ private struct CatTab: View {
     }
 }
 
+// MARK: - 演员段
+
+private struct CastRowView: View {
+    let it: RankItem
+    var body: some View {
+        HStack(spacing: 10) {
+            Text("\(it.position)")
+                .font(.system(size: 13, weight: .heavy, design: .rounded))
+                .foregroundStyle(it.position <= 3 ? Color.orange : .secondary)
+                .frame(width: 26)
+            AsyncImage(url: URL(string: it.avatarUrl.isEmpty ? it.coverUrl : it.avatarUrl)) {
+                $0.resizable().scaledToFill()
+            } placeholder: { Color.gray.opacity(0.15) }
+                .frame(width: 56, height: 56)
+                .clipShape(Circle())
+            VStack(alignment: .leading, spacing: 3) {
+                Text(it.actor).font(.subheadline).lineLimit(1)
+                let sub = it.details.isEmpty ? it.score : (it.score + " · " + it.details.joined(separator: " "))
+                Text(sub).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 2)
+    }
+}
+
+private struct CastTab: View {
+    @ObservedObject var vm: CastVM
+    var body: some View {
+        List {
+            if !vm.note.isEmpty { Section { Text(vm.note).font(.caption).foregroundStyle(.secondary) } }
+            Section {
+                ForEach(Array(vm.items.enumerated()), id: \.offset) { _, it in
+                    if it.userId.isEmpty {
+                        CastRowView(it: it)
+                    } else {
+                        NavigationLink(value: HgActorGo(uid: it.userId, name: it.actor)) {
+                            CastRowView(it: it)
+                        }
+                    }
+                }
+                MoreButton(busy: vm.busy, more: { vm.more() })
+            } header: {
+                Text("演员人气榜 · 点进去看 TA 演过啥")
+            }
+        }
+        .overlay { if vm.busy && vm.items.isEmpty { ProgressView().controlSize(.large) } }
+        .refreshable { vm.load() }
+    }
+}
+
+struct ActorPage: View {
+    let uid: String
+    let name: String
+    @StateObject private var vm = ActorWorksVM()
+
+    var body: some View {
+        List {
+            Section {
+                HStack(spacing: 12) {
+                    AsyncImage(url: URL(string: vm.p?.avatarUrl ?? "")) { $0.resizable().scaledToFill() }
+                        placeholder: { Color.gray.opacity(0.15) }
+                        .frame(width: 60, height: 60)
+                        .clipShape(Circle())
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(name).font(.headline)
+                        let tagline = ((vm.p?.tags ?? []) + (vm.p?.labels ?? [])).joined(separator: " · ")
+                        if !tagline.isEmpty {
+                            Text(tagline).font(.caption).foregroundStyle(.secondary)
+                        }
+                        let stats = fmtStats()
+                        if !stats.isEmpty {
+                            Text(stats).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.vertical, 4)
+            }
+            Section("TA的作品 · 点进去可整剧下载") {
+                if !vm.note.isEmpty { Text(vm.note).font(.caption).foregroundStyle(.secondary) }
+                ForEach(Array(vm.works.enumerated()), id: \.offset) { _, w in
+                    NavigationLink(value: HgWant(sid: w.seriesId, title: w.title)) {
+                        HStack(spacing: 10) {
+                            AsyncImage(url: URL(string: w.coverUrl)) { $0.resizable().scaledToFill() }
+                                placeholder: { Color.gray.opacity(0.15) }
+                                .frame(width: 52, height: 70)
+                                .clipShape(RoundedRectangle(cornerRadius: 6))
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(w.title).font(.subheadline).lineLimit(2)
+                                Text(workSub(w)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.vertical, 2)
+                    }
+                }
+                MoreButton(busy: vm.busy, more: { vm.more() })
+            }
+        }
+        .navigationTitle(name)
+        .navigationBarTitleDisplayMode(.inline)
+        .task { vm.load(uid) }
+    }
+
+    private func fmtStats() -> String {
+        guard let p = vm.p, p.followers > 0 || p.likes > 0 else { return "" }
+        var out = ""
+        if p.followers > 0 { out += "粉丝 " + wan(p.followers) }
+        if p.likes > 0 { out += (out.isEmpty ? "" : " · ") + "获赞 " + wan(p.likes) }
+        return out
+    }
+    private func wan(_ n: Int) -> String {
+        n >= 10_000 ? "\((n + 5_000) / 10_000)万" : "\(n)"
+    }
+    private func workSub(_ w: Work) -> String {
+        var sub = w.tags.joined(separator: "·")
+        if w.heat > 0 { sub += (sub.isEmpty ? "" : " · ") + wan(w.heat) + "热度" }
+        return sub
+    }
+}
+
+struct ActorResolveView: View {
+    let name: String
+    @State private var uid = ""
+    @State private var done = false
+
+    var body: some View {
+        Group {
+            if !uid.isEmpty {
+                ActorPage(uid: uid, name: name)
+            } else if done {
+                ContentUnavailableView {
+                    Label("人气榜里没找到「\(name)」", systemImage: "person.crop.circle.badge.questionmark")
+                } description: {
+                    Text("演员桥只认人气榜头部约75位；想看 TA 的剧可以去发现段搜剧名")
+                }
+            } else {
+                ProgressView("在演员榜里找 ta…")
+                    .task {
+                        uid = await ActorVM.lookup(name)
+                        done = true
+                    }
+            }
+        }
+        .navigationTitle(name)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
 // MARK: - 详情(原有, B 菜将加演员行可点)
 
 struct TheaterDetailView: View {
@@ -565,6 +845,7 @@ struct TheaterDetailView: View {
                         }
                     }
                     .padding(.vertical, 4)
+                    castChips(sv)
                 }
                 if !sv.description.isEmpty {
                     Section("简介") { Text(sv.description).font(.callout) }
@@ -598,11 +879,42 @@ struct TheaterDetailView: View {
         }
     }
 
+    @ViewBuilder
+    private func castChips(_ sv: Openhongguo.Series) -> some View {
+        let raw = sv.rows.first(where: { $0.kind == InfoKind.twoActors })?.text ?? ""
+        if raw.contains("演员·") {
+            let names = parseNames(raw)
+            if !names.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        Text("演员").font(.caption).foregroundStyle(.secondary)
+                        ForEach(names, id: \.self) { n in
+                            NavigationLink(value: HgActor(name: n)) {
+                                Text(n).font(.footnote)
+                                    .padding(.horizontal, 10).padding(.vertical, 5)
+                                    .background(Capsule().fill(Color.accentColor.opacity(0.12)))
+                                    .foregroundStyle(Color.accentColor)
+                            }
+                        }
+                    }
+                }
+                .padding(.top, 2)
+            }
+        }
+    }
+
+    private func parseNames(_ raw: String) -> [String] {
+        var s = raw
+        if let r = s.range(of: "演员·") { s.removeSubrange(r.lowerBound..<r.upperBound) }
+        return s.split(whereSeparator: { $0 == " " || $0 == "\u{3000}" || $0 == "、" || $0 == "," })
+            .map(String.init)
+    }
+
     private func rowLines(_ sv: Openhongguo.Series) -> [String] {
         var out: [String] = []
         for r in sv.rows {
             if r.text.isEmpty { continue }
-            if r.kind == InfoKind.twoActors || r.kind == InfoKind.score || r.kind == InfoKind.category {
+            if r.kind == InfoKind.score || r.kind == InfoKind.category {
                 out.append(r.text)
             }
         }
