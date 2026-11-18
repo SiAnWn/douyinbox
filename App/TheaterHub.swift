@@ -450,8 +450,9 @@ final class DiscoverVM: ObservableObject {
         var done = 0
         for s in batch where s.coverUrl.isEmpty && !s.id.isEmpty {
             if done >= 8 { break }
-            guard let sv = try? await Hongguo.attempt(c, { try await c.getSeries(s.id) }) else { break }
-            if !sv.coverUrl.isEmpty {
+            // 演员假号/下架剧会炸, 单部失败跳过继续; 目录口从未被风控, 直连不吃四段退避
+            let sv = try? await c.getSeries(s.id)
+            if let sv, !sv.coverUrl.isEmpty {
                 CoverBank.put(s.id, sv.coverUrl)
                 if let i = sres.firstIndex(where: { $0.id == s.id }) { sres[i].coverUrl = sv.coverUrl }
             }
@@ -1574,10 +1575,46 @@ struct TheaterDetailView: View {
                     Text("送回拾页自动发车；档案+弹幕一并领回。约 \(max(1, sv.episodeCount)) 集，一部大致 1GB 上下，建议 Wi-Fi。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-            } else {
+            } else if busy {
                 Section {
-                    Text(busy ? "取详情中…" : "详情加载中…")
-                        .font(.caption).foregroundStyle(.secondary)
+                    HStack(spacing: 10) {
+                        ProgressView().controlSize(.large)
+                        Text("取详情中… 稍等一两秒")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    .padding(.vertical, 22)
+                }
+            } else {
+                // 红果搜索会把演员包装成假剧目(sid 在详情口 content_gone), 给条明路别让玩家干瞪眼
+                Section {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("红果没有《\(want.title)》")
+                            .font(.subheadline.weight(.semibold))
+                        Text("可能是演员名字、或这部剧已下架。")
+                            .font(.caption).foregroundStyle(.secondary)
+                        HStack(spacing: 10) {
+                            NavigationLink(value: HgActor(name: want.title)) {
+                                Text("看看演员「\(want.title)」")
+                                    .font(.subheadline.weight(.semibold))
+                                    .padding(.horizontal, 12).padding(.vertical, 7)
+                                    .background(Capsule().fill(Color.orange))
+                                    .foregroundStyle(.white)
+                            }
+                            .buttonStyle(.plain)
+                            Button("再试一次") {
+                                busy = true
+                                Task {
+                                    guard let c = Hongguo.client else { busy = false; return }
+                                    s = try? await c.getSeries(want.sid)
+                                    busy = false
+                                }
+                            }
+                            .font(.subheadline)
+                        }
+                        .padding(.top, 2)
+                    }
+                    .padding(.vertical, 8)
                 }
             }
         }
@@ -1587,7 +1624,8 @@ struct TheaterDetailView: View {
             busy = true
             defer { busy = false }
             guard let c = Hongguo.client else { return }
-            s = try? await Hongguo.attempt(c, { try await c.getSeries(want.sid) })
+            // 目录口不吃风控, 直连快进快出(旧四段退避让假号页干转 8 秒)
+            s = try? await c.getSeries(want.sid)
         }
     }
 
