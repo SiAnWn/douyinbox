@@ -394,7 +394,7 @@ final class DiscoverVM: ObservableObject {
         guard let c = Hongguo.client,
               let hs = try? await Hongguo.attempt(c, { try await c.hotSearch() }) else { return }
         guesses = Array(hs.guesses.prefix(10).map(\.title))
-        hotBoards = hs.boards.filter { !$0.items.isEmpty && $0.name != "热点话题榜" }.prefix(2)
+        hotBoards = Array(hs.boards.filter { !$0.items.isEmpty && $0.name != "热点话题榜" }.prefix(2))
     }
 
     func run(_ q: String) {
