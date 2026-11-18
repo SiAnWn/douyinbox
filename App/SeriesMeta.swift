@@ -149,13 +149,13 @@ enum DanmakuStore {
                         ok = true
                         bag += pg.items.map { DMEntry(t: $0.offsetMs, x: $0.text) }
                         cursor = pg.hasMore ? pg.cursor : nil
-                        try? await Task.sleep(nanoseconds: 120_000_000)
+                        try? await Task.sleep(nanoseconds: 60_000_000)
                     } while cursor != nil
                     return (ep.num, bag.sorted { $0.t < $1.t }, ok)
                 }
                 inflight += 1
                 i += 1
-                if inflight >= 3 {
+                if inflight >= 6 {
                     if let r = await grp.next() {
                         inflight -= 1
                         if r.2 { anyPageOK = true }
@@ -205,7 +205,7 @@ enum DanmakuStore {
                 .filter { $0.num > 0 }
             await harvest(c, sid: hit.id, eps: pairs, dir: s.url)
             if FileManager.default.fileExists(atPath: file(s.url).path) { ok += 1 }
-            try? await Task.sleep(nanoseconds: 300_000_000)
+            try? await Task.sleep(nanoseconds: 200_000_000)
         }
         progress("弹幕补齐：\(ok)/\(list.count) 部（后台继续加载坊即生效）")
     }
