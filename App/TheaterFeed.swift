@@ -159,6 +159,8 @@ struct FeedReel: View {
                 }
                 if !dmDbg.isEmpty {
                     Text(dmDbg).font(.caption2).foregroundStyle(.tertiary)
+                    Text("弹幕引擎：帧 \(DanmakuLayer.ticks) · 此刻在屏 \(DanmakuLayer.lastVisible) 条")
+                        .font(.caption2).foregroundStyle(.tertiary)
                 }
                 ScrollView {
                     Text(metaDesc.isEmpty ? "暂无简介" : metaDesc)

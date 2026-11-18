@@ -12,11 +12,18 @@ struct DMItem: Hashable {
 struct DanmakuLayer: View {
     let pc: PlayerController
     let items: [DMItem]
+    // 引擎心跳探针: 简介弹层里可见, 帧数不涨=TimelineView 装死
+    static var ticks = 0
+    static var lastVisible = 0
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 24.0, paused: items.isEmpty)) { _ in
+        // 不传 paused= 参数: iOS17 有 paused 翻转后不再复活的疑案, 空画布 24fps 成本可忽略
+        TimelineView(.animation(minimumInterval: 1.0 / 24.0)) { _ in
             Canvas { g, size in
-                guard !items.isEmpty else { return }
-                let nowMs = max(0, CMTimeGetSeconds(pc.player.currentTime()) * 1000.0)
+                DanmakuLayer.ticks &+= 1
+                guard !items.isEmpty else { DanmakuLayer.lastVisible = 0; return }
+                let t0 = CMTimeGetSeconds(pc.player.currentTime()) * 1000.0
+                guard t0.isFinite else { return }
+                let nowMs = max(0, t0)
                 let rowH: CGFloat = 24
                 let lanes = max(4, Int((size.height * 0.30 - 40) / rowH))
                 let speed = 150.0            // px/s 匀速飘
@@ -24,12 +31,12 @@ struct DanmakuLayer: View {
                 g.addFilter(.shadow(color: .black.opacity(0.75), radius: 2))
                 var drawn = 0
                 for (i, it) in items.enumerated() {
-                    if it.t > Int(nowMs) + 300 { break }      // items 按时间排序, 后面都更晚
+                    if Double(it.t) > nowMs + 300 { break }    // items 按时间排序, 后面都更晚
                     let age = nowMs - Double(it.t)
                     if age < 0 { continue }
                     let w = CGFloat(it.x.count) * 14 + 12
                     let x = Double(size.width) - age / 1000.0 * speed
-                    if x < -Double(w) { continue }
+                    if x < -w { continue }
                     var ln = (i * 7 + i / 3) % lanes
                     if ln < 0 { ln += lanes }
                     let y = topPad + CGFloat(ln) * rowH
@@ -39,6 +46,7 @@ struct DanmakuLayer: View {
                     drawn += 1
                     if drawn >= 48 { break }
                 }
+                DanmakuLayer.lastVisible = drawn
             }
         }
         .allowsHitTesting(false)
