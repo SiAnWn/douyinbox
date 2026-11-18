@@ -47,6 +47,31 @@ func hgCoverUrl(sid: String, _ url: String) -> String {
     return CoverBank.data[sid] ?? ""
 }
 
+// 程序化导航(v1.10.34 根治闪屏): NavigationLink 的推屏动画会被列表
+// 异步刷新(封面回填等)中途打断, 界面卡在旧页而栈里已压了新页,
+// 返回时"又弹详情". Button+path.append 不吃动画状态, 列表怎么抖都稳.
+@MainActor
+final class TheaterNav: ObservableObject {
+    @Published var path = NavigationPath()
+
+    func go(_ v: AnyHashable, _ tag: String = "") {
+        HGTrail.note("hg nav push " + (tag.isEmpty ? String(String(describing: v).prefix(70)) : tag))
+        path.append(v)
+    }
+
+    func back() {
+        if path.count > 0 {
+            HGTrail.note("hg nav pop to \(path.count - 1)")
+            path.removeLast()
+        }
+    }
+
+    func toRoot() {
+        HGTrail.note("hg nav toRoot")
+        path = NavigationPath()
+    }
+}
+
 // MARK: - 精装组件(v1.10.28 抄开心果/红果作业四件套, 适配盒子)
 
 // 热度写法跟红果一致: 4165万 / 1.2亿
@@ -146,6 +171,7 @@ struct GridSkeleton: View {
 
 // 横滑卡栏(首页 rails 与上新预告共用)
 struct HRail: View {
+    @EnvironmentObject private var nav: TheaterNav
     let title: String
     let sub: String?
     let items: [CardLike]
@@ -171,7 +197,7 @@ struct HRail: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .top, spacing: 10) {
                     ForEach(Array(items.enumerated()), id: \.offset) { i, c in
-                        NavigationLink(value: HgWant(sid: c.sid, title: c.title)) {
+                        Button { nav.go(HgWant(sid: c.sid, title: c.title), "rail " + c.sid) } label: {
                             VStack(alignment: .leading, spacing: 5) {
                                 Poster2(url: hgCoverUrl(sid: c.sid, c.cover))
                                     .overlay(alignment: .topLeading) {
@@ -412,6 +438,7 @@ final class DiscoverVM: ObservableObject {
 
     func doSearch(_ q: String) {
         smode = q.trimmingCharacters(in: .whitespacesAndNewlines)
+        HGTrail.note("hgsearch go '\(smode.prefix(20))'")
         guard !smode.isEmpty else { sres = []; snote = ""; return }
         fetchSearch(reset: true)
     }
@@ -440,6 +467,7 @@ final class DiscoverVM: ObservableObject {
                 }
                 if reset { self.sres = items } else { self.sres += items }
                 self.scur = pg.hasMore ? pg.cursor : nil
+                HGTrail.note("hgsearch back '\(q.prefix(12))' n=\(items.count) more=\(pg.hasMore) nocover=\(items.filter { $0.coverUrl.isEmpty }.count)")
                 if self.sres.isEmpty { self.snote = "搜不到「\(q)」，换个词试试" }
                 await self.fillCovers(Array(items.prefix(8)))
             } else { self.snote = "搜索口这次没搭手，再来一次" }
@@ -641,10 +669,11 @@ struct TheaterHomeView: View {
     @StateObject private var cat = CatVM()
     @StateObject private var cast = CastVM()
     @StateObject private var rails = RailVM()
+    @StateObject private var nav = TheaterNav()
     private let tabs = ["首页", "演员"]
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $nav.path) {
             VStack(spacing: 0) {
                 // 红果首页同款页签: 加粗+橙色下划小线, 不用系统 segmented
                 HStack(spacing: 0) {
@@ -694,6 +723,7 @@ struct TheaterHomeView: View {
                 }
             }
         }
+        .environmentObject(nav)
     }
 }
 
@@ -795,6 +825,7 @@ private struct TheaterSearchTab: View {
 
 // 红果同款双列竖卡(一屏两部的命根子; 固定比例底座铁律 v1.9.50 遗产)
 private struct Grid2Cards: View {
+    @EnvironmentObject private var nav: TheaterNav
     let rows: [SeriesSummary]
     var rank0 = 0                                   // >0 则从 rank0 起挂奖牌徽章
     var nearEnd: (Int) -> Void = { _ in }           // 滚到尾部自动续页
@@ -802,7 +833,7 @@ private struct Grid2Cards: View {
         LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)],
                   spacing: 12) {
             ForEach(Array(rows.enumerated()), id: \.offset) { i, s in
-                NavigationLink(value: HgWant(sid: s.id, title: s.title)) {
+                Button { nav.go(HgWant(sid: s.id, title: s.title), "grid " + s.id) } label: {
                     Color.clear.aspectRatio(0.7, contentMode: .fit)
                         .overlay {
                             AsyncImage(url: URL(string: hgCoverUrl(sid: s.id, s.coverUrl))) {
@@ -862,6 +893,7 @@ func hgToday() -> String {
 
 // 双列竖卡的通用版(上新/演员作品等拿不到 SeriesSummary 的场合)
 struct Grid2Lite: View {
+    @EnvironmentObject private var nav: TheaterNav
     let items: [HRail.CardLike]
     var rank0 = 0
     var nearEnd: (Int) -> Void = { _ in }
@@ -869,7 +901,7 @@ struct Grid2Lite: View {
         LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)],
                   spacing: 12) {
             ForEach(Array(items.enumerated()), id: \.offset) { i, c in
-                NavigationLink(value: HgWant(sid: c.sid, title: c.title)) {
+                Button { nav.go(HgWant(sid: c.sid, title: c.title), "lite " + c.sid) } label: {
                     Color.clear.aspectRatio(0.7, contentMode: .fit)
                         .overlay {
                             AsyncImage(url: URL(string: hgCoverUrl(sid: c.sid, c.cover))) {
@@ -937,6 +969,7 @@ private struct ChipScroller: View {
 }
 
 private struct ShowRow: View {
+    @EnvironmentObject private var nav: TheaterNav
     let sid: String
     let title: String
     let sub: String
@@ -944,7 +977,7 @@ private struct ShowRow: View {
     var badge: String? = nil
 
     var body: some View {
-        NavigationLink(value: HgWant(sid: sid, title: title)) {
+        Button { nav.go(HgWant(sid: sid, title: title), "show " + sid) } label: {
             HStack(spacing: 10) {
                 if let b = badge {
                     Text(b)
@@ -985,12 +1018,13 @@ private struct MoreButton: View {
 // MARK: - 首页段(红果式: 顶部大卡轮播 + 热剧 feed)
 
 private struct HeroCarousel: View {
+    @EnvironmentObject private var nav: TheaterNav
     let rows: [SeriesSummary]
     @State private var idx = 0
     var body: some View {
         TabView(selection: $idx) {
             ForEach(Array(rows.enumerated()), id: \.offset) { i, s in
-                NavigationLink(value: HgWant(sid: s.id, title: s.title)) {
+                Button { nav.go(HgWant(sid: s.id, title: s.title), "hero " + s.id) } label: {
                     ZStack(alignment: .bottomLeading) {
                         AsyncImage(url: URL(string: s.coverUrl)) {
                             $0.resizable().scaledToFill()
@@ -1107,6 +1141,7 @@ private struct FlowGuess: View {
 // MARK: - 榜单段
 
 private struct RankTab: View {
+    @EnvironmentObject private var nav: TheaterNav
     @ObservedObject var vm: RankVM
     var body: some View {
         VStack(spacing: 8) {
@@ -1149,7 +1184,7 @@ private struct RankTab: View {
                             .padding(.vertical, 2)
                         } else {
                             let pair = hgArrow(it.change)
-                            NavigationLink(value: HgWant(sid: it.seriesId, title: it.title)) {
+                            Button { nav.go(HgWant(sid: it.seriesId, title: it.title), "rank " + it.seriesId) } label: {
                                 HStack(spacing: 10) {
                                     Color.clear
                                         .frame(width: 52, height: 70)
@@ -1356,6 +1391,7 @@ func podRing(_ place: Int) -> Color {
 }
 
 private struct CastTab: View {
+    @EnvironmentObject private var nav: TheaterNav
     @ObservedObject var vm: CastVM
     var body: some View {
         List {
@@ -1366,7 +1402,7 @@ private struct CastTab: View {
                 Section {
                     HStack(spacing: 0) {
                         ForEach(Array(top.enumerated()), id: \.offset) { i, it in
-                            NavigationLink(value: HgActorGo(uid: it.userId, name: it.actor)) {
+                            Button { nav.go(HgActorGo(uid: it.userId, name: it.actor), "podium " + it.actor) } label: {
                                 CastPodium(it: it, place: i + 1)
                             }
                             .buttonStyle(.plain)
@@ -1385,7 +1421,7 @@ private struct CastTab: View {
                         if it.userId.isEmpty {
                             CastRowView(it: it)
                         } else {
-                            NavigationLink(value: HgActorGo(uid: it.userId, name: it.actor)) {
+                            Button { nav.go(HgActorGo(uid: it.userId, name: it.actor), "castrow " + it.actor) } label: {
                                 CastRowView(it: it)
                             }
                             .buttonStyle(.plain)
@@ -1627,6 +1663,7 @@ struct TheaterDetailView: View {
             guard let c = Hongguo.client else { return }
             // 目录口不吃风控, 直连快进快出(旧四段退避让假号页干转 8 秒)
             s = try? await c.getSeries(want.sid)
+            HGTrail.note("hgdetail sid=\(want.sid) ok=\(s != nil)")
         }
     }
 
