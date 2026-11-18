@@ -229,9 +229,7 @@ struct PlayerView: View {
             if let c = app.current { pc.load(c.url, id: c.id) }
             pc.observeEnd { if app.autoAdvance { goNext() } else { pc.seek(pc.currentTime) } }
         }
-        .onChange(of: app.selection) { sel in
-            if sel == .play { pc.player.playImmediately(atRate: pc.rate) } else { pc.pause() }
-        }
+        .onChange(of: app.selection) { _ in pc.pause() }
         .onDisappear { pc.pause(); pc.removeObs() }
         .background(TabBarAccessor(hidden: app.immersive))
         .statusBarHidden(app.immersive)

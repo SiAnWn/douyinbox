@@ -48,6 +48,34 @@ struct SettingsView: View {
                     Text("红果走专属引擎：链接粘贴即自动识别，免登录不耗 API 配额；出口 IP 被风控换节点即可。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
+                Section("工具") {
+                    NavigationLink {
+                        BoxBrowserView()
+                    } label: {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("内置浏览器")
+                                Text("书签速达 · 长按存图 · 记住登录 · ✨ 图叻聚图")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "globe").foregroundStyle(.blue)
+                        }
+                    }
+                    NavigationLink {
+                        SniffView()
+                    } label: {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("网页嗅探器")
+                                Text("抖音短剧 1080p · 任意网页 m3u8/mp4 抓取入库")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "dot.radiowaves.right").foregroundStyle(.purple)
+                        }
+                    }
+                }
                 Section("灵动岛") {
                     Toggle("切到后台时常驻待命", isOn: $app.islandOn)
                     Toggle("一键下载后自动跳回抖音", isOn: $app.autoReturn)

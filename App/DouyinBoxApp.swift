@@ -26,7 +26,7 @@ enum Orient {
     }
 }
 
-enum Tab: Hashable { case pick, play, stash, box, seal }
+enum Tab: Hashable { case pick, feed, stash, seal }
 
 @MainActor
 final class AppState: ObservableObject {
@@ -41,7 +41,7 @@ final class AppState: ObservableObject {
     @Published var aspectFill = true
     @Published var order: [String] = []
     @Published var idx = -1
-    @Published var selection: Tab = .pick
+    @Published var selection: Tab = .feed
     @Published var coverVideo: VideoItem?
     @Published var revealUI = false
     @Published var autoAdvance = true
@@ -66,7 +66,7 @@ final class AppState: ObservableObject {
     static let shared = AppState()
     let keepAlive = BGKeepAlive()
 
-    var immersive: Bool { selection == .play && !revealUI }
+    var immersive: Bool { false }   // 映tab 退役; 全屏播放由 InlinePlayer/CleanPlayer 自管沉浸
 
     // 灵动岛“开始下载”按钮 → 回 App 自动解析+下最优档
     func islandDownload(_ link: String) {
@@ -264,7 +264,6 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     private var tabOrientMask: UIInterfaceOrientationMask {
-        if app.selection == .play { return .all }
         return .portrait
     }
 
@@ -272,19 +271,15 @@ struct RootView: View {
         TabView(selection: $app.selection) {
             ParseView()
                 .tabItem { Label("拾", systemImage: "tray.and.arrow.down") }.tag(Tab.pick)
-            PlayerView()
-                .tabItem { Label("映", systemImage: "play.rectangle") }.tag(Tab.play)
+            TheaterFeedView()
+                .tabItem { Label("坊", systemImage: "play.rectangle.stack") }.tag(Tab.feed)
             StashHubView()
                 .tabItem { Label("藏", systemImage: "books.vertical") }.tag(Tab.stash)
                 .badge(app.subsBadge)
-            BoxView()
-                .tabItem { Label("匣", systemImage: "suitcase") }.tag(Tab.box)
             SettingsView()
                 .tabItem { Label("印", systemImage: "seal") }.tag(Tab.seal)
         }
-        .onChange(of: app.selection) { sel in
-            if sel != .play { Orient.forcePortrait() }
-        }
+        .onChange(of: app.selection) { _ in Orient.forcePortrait() }
         .fullScreenCover(item: $app.coverVideo) { v in
             InlinePlayer(video: v).environmentObject(app)
         }
@@ -293,6 +288,9 @@ struct RootView: View {
         }
         .onOpenURL { _ in
             // 岛/深链唤起：立刻用剪贴板链接触发一键流
+            // 坊当默认落地页后, ParseView 可能还没实例化——先把用户踢回拾页
+            // (拾页 onAppear 的 autoFillAndParse 会兜住剪贴板)
+            app.selection = .pick
             if let t = BoxIsland.clipText(), let u = DouyinAPI.extractURL(t) {
                 app.islandPending = u
             }
