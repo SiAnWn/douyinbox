@@ -97,3 +97,80 @@ enum SeriesMetaStore {
         progress("补齐完成：\(ok)/\(list.count) 部落了档案")
     }
 }
+
+// 离线弹幕仓库(v1.10.14): 短剧/<剧>/弹幕.json = {"集号":[{t毫秒,x文本}...]}
+// 领档案后由 hongguoRun / 补弹幕按钮顺手全量拉取(分页游标, 精选档, 落盘后播放零流量)。
+struct DMEntry: Codable { var t: Int; var x: String }
+
+enum DanmakuStore {
+    static func file(_ dir: URL) -> URL { dir.appendingPathComponent("弹幕.json") }
+
+    static func loadEps(_ dir: URL) -> [Int: [DMItem]]? {
+        guard let d = try? Data(contentsOf: file(dir)),
+              let j = try? JSONDecoder().decode([String: [DMEntry]].self, from: d) else { return nil }
+        var out: [Int: [DMItem]] = [:]
+        for (k, arr) in j {
+            guard let n = Int(k) else { continue }
+            out[n] = arr.map { DMItem(t: $0.t, x: $0.x) }
+        }
+        return out
+    }
+
+    @MainActor
+    static func harvest(_ c: OpenhongguoClient, sid: String,
+                        eps: [(num: Int, id: String)], dir: URL) async {
+        var all: [String: [DMEntry]] = [:]
+        for ep in eps {
+            if Task.isCancelled { break }
+            var bag: [DMEntry] = []
+            var cursor: String?
+            var hops = 0
+            repeat {
+                hops += 1
+                guard hops < 30 else { break }                       // 单集最多 30 页保险丝
+                let pg = try? await Hongguo.attempt(c, {
+                    try await c.listDanmaku(sid, episodeId: ep.id,
+                                            options: DanmakuOptions(cursor: cursor))
+                })
+                guard let pg else { break }
+                bag += pg.items.map { DMEntry(t: $0.offsetMs, x: $0.text) }
+                cursor = pg.hasMore ? pg.cursor : nil
+                try? await Task.sleep(nanoseconds: 250_000_000)      // 匿名口温和
+            } while cursor != nil
+            if !bag.isEmpty { all["\(ep.num)"] = bag.sorted { $0.t < $1.t } }
+        }
+        guard !all.isEmpty else {
+            HGTrail.note("dm empty sid=\(sid)")
+            return
+        }
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        if let j = try? JSONEncoder().encode(all) {
+            try? j.write(to: file(dir))
+            HGTrail.note("dm ok sid=\(sid) eps=\(all.count) bytes=\(j.count)")
+        }
+    }
+
+    /// 印页专用: 给已入库旧剧按剧名补弹幕(跳过已有档案的)
+    @MainActor
+    static func backfill(_ app: AppState, progress: @escaping (String) -> Void) async {
+        guard let c = Hongguo.client else { progress("红果引擎未就绪"); return }
+        let list = app.dramaSeries.filter { !FileManager.default.fileExists(atPath: file($0.url).path) }
+        guard !list.isEmpty else { progress("弹幕档案都已齐") ; return }
+        var ok = 0
+        for (i, s) in list.enumerated() {
+            progress("拉弹幕 \(i + 1)/\(list.count)：\(s.name)")
+            guard let pg = try? await Hongguo.attempt(c, { try await c.search(s.name) }),
+                  let hit = pg.items.first(where: { $0.title == s.name }) ?? pg.items.first,
+                  !hit.id.isEmpty else { continue }
+            guard let page = try? await Hongguo.attempt(c, { try await c.listEpisodes(hit.id) }) else { continue }
+            let pairs = page.items.filter { $0.playable }
+                .map { (num: $0.number > 0 ? $0.number : 0, id: $0.id) }
+                .filter { $0.num > 0 }
+            await harvest(c, sid: hit.id, eps: pairs, dir: s.url)
+            if FileManager.default.fileExists(atPath: file(s.url).path) { ok += 1 }
+            try? await Task.sleep(nanoseconds: 900_000_000)
+        }
+        progress("弹幕补齐：\(ok)/\(list.count) 部（后台继续加载坊即生效）")
+    }
+}
+

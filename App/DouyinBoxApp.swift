@@ -297,7 +297,8 @@ struct RootView: View {
         }
         .fullScreenCover(item: $app.feedFull) { pg in
             InlinePlayer(video: pg.eps[min(app.feedFullIdx, pg.eps.count - 1)],
-                         eps: pg.eps, startIdx: min(app.feedFullIdx, pg.eps.count - 1))
+                         eps: pg.eps, startIdx: min(app.feedFullIdx, pg.eps.count - 1),
+                         dmDir: pg.series.url)
                 .environmentObject(app)
         }
         .fullScreenCover(item: $app.openAlbum) { a in

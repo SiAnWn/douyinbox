@@ -76,6 +76,8 @@ struct FeedReel: View {
     @State private var metaLine = ""
     @State private var metaDesc = ""
     @State private var showDesc = false
+    @State private var dmAll: [Int: [DMItem]] = [:]
+    @State private var dmItems: [DMItem] = []
 
     private var cur: VideoItem {
         page.eps[min(epIdx, page.eps.count - 1)]
@@ -85,6 +87,9 @@ struct FeedReel: View {
         ZStack {
             Color.black
             PlayerSurface(player: pc.player, fill: fill)
+                .ignoresSafeArea()
+
+            DanmakuLayer(pc: pc, items: dmItems)   // 离线弹幕(档案落盘后零流量)
                 .ignoresSafeArea()
 
             Color.clear.contentShape(Rectangle())
@@ -197,6 +202,7 @@ struct FeedReel: View {
     private func advance() {
         if epIdx + 1 < page.eps.count {
             epIdx += 1
+            dmItems = dmAll[epIdx + 1] ?? []
             pc.load(cur.url, id: cur.id)
         } else {
             pc.pause()
@@ -265,6 +271,8 @@ struct FeedReel: View {
             let m = SeriesMetaStore.load(page.series.url)
             metaLine = SeriesMetaStore.line(m)
             metaDesc = m?.desc ?? ""
+            dmAll = DanmakuStore.loadEps(page.series.url) ?? [:]
+            dmItems = dmAll[epIdx + 1] ?? []
         }
     }
 }

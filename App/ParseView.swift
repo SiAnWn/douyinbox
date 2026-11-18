@@ -621,6 +621,13 @@ struct ParseView: View {
                     await SeriesMetaStore.harvest(c, sid: sid, title: seriesName,
                                                   dir: SavePaths.docs.appendingPathComponent("短剧/\(seriesName)", isDirectory: true))
                 }
+                // 弹幕全量落盘(后台慢拉几分钟, 之后坊里离线飘)
+                Task {
+                    let pairs = all.filter { $0.playable && $0.number > 0 }
+                        .map { (num: $0.number, id: $0.id) }
+                    await DanmakuStore.harvest(c, sid: sid, eps: pairs,
+                                               dir: SavePaths.docs.appendingPathComponent("短剧/\(seriesName)", isDirectory: true))
+                }
             } else if !status.hasPrefix("红果失败于") {
                 status = "红果下载失败：没有一集成功（可能接口风控，稍后再试）"
             }

@@ -348,15 +348,22 @@ struct InlinePlayer: View {
     let video: VideoItem
     var eps: [VideoItem]? = nil        // 传入整部剧分集=自动连播模式(坊·观看全集)
     var startIdx: Int = 0
+    var dmDir: URL? = nil              // 剧文件夹→弹幕.json 离线飘屏
     @EnvironmentObject var app: AppState
     @Environment(\.dismiss) private var dismiss
     @StateObject private var pc = PlayerController()
     @State private var fill = true
     @State private var curVid: VideoItem?
     @State private var eIdx = 0
-    @State private var chrome = true    // 红果式: 4s 无操作自动隐 UI, 单击唤回
+    @State private var chrome = true
+    @State private var dmAll: [Int: [DMItem]] = [:]
+    @State private var dmItems: [DMItem] = []
 
     private var shown: VideoItem { curVid ?? video }
+
+    private func syncDm() {
+        dmItems = eps != nil ? (dmAll[eIdx + 1] ?? []) : []
+    }
 
     private func reveal() {
         withAnimation(.easeOut(duration: 0.2)) { chrome = true }
@@ -372,6 +379,7 @@ struct InlinePlayer: View {
         guard let es = eps else { return }
         if eIdx + 1 < es.count {
             eIdx += 1
+            syncDm()
             let nx = es[eIdx]
             curVid = nx
             pc.load(nx.url, id: nx.id)
@@ -391,12 +399,17 @@ struct InlinePlayer: View {
                         eIdx = min(startIdx, es.count - 1)
                         start = es[eIdx]
                     }
+                    if let d = dmDir { dmAll = DanmakuStore.loadEps(d) ?? [:] }
+                    syncDm()
                     curVid = start
                     pc.load(start.url, id: start.id)
                     if eps != nil { pc.observeEnd { nextEp() } }
                     hideLater()
                 }
                 .onDisappear { pc.stop() }
+
+            DanmakuLayer(pc: pc, items: dmItems)
+                .ignoresSafeArea()
 
             Color.clear.contentShape(Rectangle())
                 .ignoresSafeArea()

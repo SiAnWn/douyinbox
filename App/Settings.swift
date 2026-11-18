@@ -92,6 +92,22 @@ struct SettingsView: View {
                     }
                     .disabled(metaBusy)
                     if !metaMsg.isEmpty { Text(metaMsg).font(.caption).foregroundStyle(.secondary) }
+                    Button {
+                        metaBusy = true
+                        Task {
+                            await DanmakuStore.backfill(app) { s in
+                                Task { @MainActor in
+                                    metaMsg = s
+                                    if s.hasPrefix("弹幕补齐") { metaBusy = false }
+                                }
+                            }
+                        }
+                    } label: {
+                        Label("给旧剧补弹幕（离线飘屏素材）", systemImage: "text.bubble")
+                    }
+                    .disabled(metaBusy)
+                    Text("弹幕随档案一起自动入库；这里给已经下过的旧剧补拉（每部约 2-5 分钟后台跑）。拉完后坊里/观看全集自动飘，全程离线。")
+                        .font(.caption).foregroundStyle(.secondary)
                     Text("整剧下载完成会自动领档案；这里给已经下过的旧剧按剧名补一份（一部一次查询，全程匿名不耗配额）。坊页底条会显示演员·评分。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
