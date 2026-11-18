@@ -450,20 +450,56 @@ private struct TheaterSearchTab: View {
             }
             if !vm.rows.isEmpty {
                 Section("搜索结果") {
-                    ForEach(vm.rows, id: \.id) { s in
-                        NavigationLink(value: HgWant(sid: s.id, title: s.title)) {
-                            ShowRow(sid: s.id, title: s.title,
-                                    sub: (s.category.isEmpty ? "" : s.category + " · ") +
-                                         (s.episodeCount > 0 ? "全\(s.episodeCount)集" : "短剧"),
-                                    cover: s.coverUrl)
-                        }
-                    }
+                    Grid2Cards(rows: vm.rows)
+                        .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
                 }
             }
         }
         .navigationTitle("搜索")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { if vm.guesses.isEmpty { Task { await vm.fetchHot() } } }
+    }
+}
+
+// 红果同款双列竖卡(一屏两部的命根子; 固定比例底座铁律 v1.9.50 遗产)
+private struct Grid2Cards: View {
+    let rows: [SeriesSummary]
+    var body: some View {
+        LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)],
+                  spacing: 12) {
+            ForEach(rows, id: \.id) { s in
+                NavigationLink(value: HgWant(sid: s.id, title: s.title)) {
+                    Color.clear.aspectRatio(0.7, contentMode: .fit)
+                        .overlay {
+                            AsyncImage(url: URL(string: s.coverUrl)) {
+                                $0.resizable().scaledToFill()
+                            } placeholder: {
+                                LinearGradient(colors: [Color.gray.opacity(0.35), Color.gray.opacity(0.12)],
+                                               startPoint: .top, endPoint: .bottom)
+                            }
+                        }
+                        .overlay {
+                            LinearGradient(colors: [.black.opacity(0.0), .black.opacity(0.7)],
+                                           startPoint: .center, endPoint: .bottom)
+                        }
+                        .overlay(alignment: .bottomLeading) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(s.title).font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(.white).lineLimit(2)
+                                Text((s.episodeCount > 0 ? "全\(s.episodeCount)集" : "短剧") +
+                                     (s.category.isEmpty ? "" : " · " + s.category))
+                                    .font(.system(size: 10)).foregroundStyle(.white.opacity(0.8))
+                                    .lineLimit(1)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(8)
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 2)
     }
 }
 
@@ -594,11 +630,8 @@ private struct DiscoverTab: View {
             }
             if !vm.rows.isEmpty {
                 Section {
-                    ForEach(vm.rows, id: \.id) { s in
-                        ShowRow(sid: s.id, title: s.title,
-                                sub: (s.category.isEmpty ? "" : s.category + " · ") + (s.episodeCount > 0 ? "全\(s.episodeCount)集" : "短剧"),
-                                cover: s.coverUrl)
-                    }
+                    Grid2Cards(rows: vm.rows)
+                        .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
                     MoreButton(busy: vm.busy, more: { vm.more() })
                 } header: {
                     Text("为你推荐")
@@ -788,12 +821,9 @@ private struct CatTab: View {
             List {
                 if !vm.note.isEmpty { Section { Text(vm.note).font(.caption).foregroundStyle(.secondary) } }
                 Section {
-                    ForEach(vm.rows, id: \.id) { s in
-                        ShowRow(sid: s.id, title: s.title,
-                                sub: (s.category.isEmpty ? "" : s.category + " · ") +
-                                     (s.episodeCount > 0 ? "全\(s.episodeCount)集" : "短剧") +
-                                     (s.author.isEmpty ? "" : " · " + s.author),
-                                cover: s.coverUrl)
+                    if !vm.rows.isEmpty {
+                        Grid2Cards(rows: vm.rows)
+                            .listRowInsets(EdgeInsets(top: 4, leading: 6, bottom: 4, trailing: 6))
                     }
                     MoreButton(busy: vm.busy, more: { vm.more() })
                 } header: {

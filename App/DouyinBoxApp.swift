@@ -288,7 +288,7 @@ struct RootView: View {
                 .tabItem { Label("藏", systemImage: "books.vertical") }.tag(Tab.stash)
                 .badge(app.subsBadge)
             TheaterHomeView()
-                .tabItem { Label("场", systemImage: "theater.curtains") }.tag(Tab.theater)
+                .tabItem { Label("场", systemImage: "ticket") }.tag(Tab.theater)
         }
         .onChange(of: app.selection) { sel in
             if sel != .play { Orient.forcePortrait() }
