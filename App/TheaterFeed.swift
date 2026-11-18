@@ -40,12 +40,7 @@ struct TheaterFeedView: View {
                 }
             }
             .navigationTitle("坊 · 本地剧场")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { rebuild(force: true) } label: { Image(systemName: "arrow.clockwise") }
-                }
-            }
+            .toolbar(.hidden, for: .navigationBar)   // 剧场=全幅沉浸, 刷新用下拉
             .navigationDestination(for: Series.self) { s in DramaEpisodes(series: s) }
             .onAppear { rebuild(force: false) }
             .refreshable { rebuild(force: true) }
@@ -76,6 +71,7 @@ struct FeedReel: View {
     @StateObject private var pc = PlayerController()
     @State private var epIdx = 0
     @State private var fill = true
+    @State private var loaded = false
 
     private var cur: VideoItem {
         page.eps[min(epIdx, page.eps.count - 1)]
@@ -91,7 +87,7 @@ struct FeedReel: View {
                 .ignoresSafeArea()
                 .onTapGesture(count: 2) { pc.togglePlay() }   // 播放交互定稿: 双击暂停/恢复
 
-            if !pc.playing {
+            if !pc.playing && loaded {
                 Image(systemName: "play.circle.fill")
                     .font(.system(size: 58))
                     .symbolRenderingMode(.hierarchical)
@@ -104,11 +100,21 @@ struct FeedReel: View {
                 bottomBar
             }
         }
-        .onAppear {
-            pc.load(cur.url, id: cur.id)
-            pc.observeEnd { advance() }
+        // 关键: 分页预建邻页, 只许真正看见的页开播(滑到≥60%才播, 滑走即停) — 防两部同响
+        .onScrollVisibilityChange(threshold: 0.6) { visible in
+            if visible {
+                if !loaded {
+                    loaded = true
+                    pc.load(cur.url, id: cur.id)
+                    pc.observeEnd { advance() }
+                } else if !pc.playing {
+                    pc.togglePlay()
+                }
+            } else if loaded {
+                pc.pause()
+            }
         }
-        .onDisappear { pc.stop() }
+        .onDisappear { pc.stop(); loaded = false }
     }
 
     private func advance() {

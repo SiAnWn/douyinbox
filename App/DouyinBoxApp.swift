@@ -272,7 +272,7 @@ struct RootView: View {
             ParseView()
                 .tabItem { Label("拾", systemImage: "tray.and.arrow.down") }.tag(Tab.pick)
             TheaterFeedView()
-                .tabItem { Label("坊", systemImage: "play.rectangle.stack") }.tag(Tab.feed)
+                .tabItem { Label("坊", systemImage: "play.rectangle.fill") }.tag(Tab.feed)
             StashHubView()
                 .tabItem { Label("藏", systemImage: "books.vertical") }.tag(Tab.stash)
                 .badge(app.subsBadge)
