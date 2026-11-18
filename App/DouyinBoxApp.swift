@@ -26,7 +26,7 @@ enum Orient {
     }
 }
 
-enum Tab: Hashable { case pick, feed, play, stash, seal }
+enum Tab: Hashable { case pick, feed, play, stash, theater }
 
 @MainActor
 final class AppState: ObservableObject {
@@ -287,8 +287,8 @@ struct RootView: View {
             StashHubView()
                 .tabItem { Label("藏", systemImage: "books.vertical") }.tag(Tab.stash)
                 .badge(app.subsBadge)
-            SettingsView()
-                .tabItem { Label("印", systemImage: "slider.horizontal.3") }.tag(Tab.seal)
+            TheaterHomeView()
+                .tabItem { Label("场", systemImage: "theater.curtains") }.tag(Tab.theater)
         }
         .onChange(of: app.selection) { sel in
             if sel != .play { Orient.forcePortrait() }

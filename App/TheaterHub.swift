@@ -134,6 +134,7 @@ final class DiscoverVM: ObservableObject {
     @Published var rows: [SeriesSummary] = []
     @Published var query = ""
     @Published var guesses: [String] = []
+    @Published var hotBoards: [HotBoard] = []
     @Published var busy = false
     @Published var note = ""
     private var nextCursor: String?
@@ -156,13 +157,17 @@ final class DiscoverVM: ObservableObject {
                 if rows.isEmpty { note = isSearch ? "搜不到「\(mode)」，换个词试试" : "目录暂时空手（风控抖动，下拉再来）" }
             } else { note = "目录口这次没搭手，下拉重试" }
         }
-        if guesses.isEmpty {
-            Task {
-                guard let c = Hongguo.client,
-                      let hs = try? await Hongguo.attempt(c, { try await c.hotSearch() }) else { return }
-                guesses = Array(hs.guesses.prefix(10).map(\.title))
-            }
+        if guesses.isEmpty && hotBoards.isEmpty {
+            Task { await fetchHot() }
         }
+    }
+
+    // 红果热搜: 猜词 + 头两张热榜(给全页搜索用)
+    func fetchHot() async {
+        guard let c = Hongguo.client,
+              let hs = try? await Hongguo.attempt(c, { try await c.hotSearch() }) else { return }
+        guesses = Array(hs.guesses.prefix(10).map(\.title))
+        hotBoards = Array(hs.boards.prefix(2))
     }
 
     func run(_ q: String) {
@@ -322,7 +327,7 @@ final class CatVM: ObservableObject {
     }
 }
 
-// MARK: - 主页: 四段容器
+// MARK: - 主页: 一级 tab "场"(v1.10.26 升格), 红果式顶部页签 + 首页 hero 轮播
 
 struct TheaterHomeView: View {
     @State private var seg = 0
@@ -331,41 +336,134 @@ struct TheaterHomeView: View {
     @StateObject private var news = NewVM()
     @StateObject private var cat = CatVM()
     @StateObject private var cast = CastVM()
+    private let tabs = ["首页", "榜单", "上新", "分类", "演员"]
 
     var body: some View {
-        VStack(spacing: 0) {
-            Picker("", selection: $seg) {
-                Text("发现").tag(0)
-                Text("榜单").tag(1)
-                Text("上新").tag(2)
-                Text("分类").tag(3)
-                Text("演员").tag(4)
-            }
-            .pickerStyle(.segmented)
-            .padding([.horizontal, .top], 12)
+        NavigationStack {
+            VStack(spacing: 0) {
+                // 红果首页同款页签: 加粗+橙色下划小线, 不用系统 segmented
+                HStack(spacing: 0) {
+                    ForEach(tabs.indices, id: \.self) { i in
+                        VStack(spacing: 5) {
+                            Text(tabs[i])
+                                .font(.system(size: i == seg ? 17 : 15,
+                                              weight: i == seg ? .heavy : .regular))
+                                .foregroundStyle(i == seg ? .primary : .secondary)
+                                .animation(.snappy(duration: 0.2), value: seg)
+                            Capsule()
+                                .fill(i == seg ? Color.orange : Color.clear)
+                                .frame(width: 20, height: 3)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .contentShape(Rectangle())
+                        .onTapGesture { seg = i }
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.top, 2)
 
-            Group {
+                Group {
+                    switch seg {
+                    case 1: RankTab(vm: rank)
+                    case 2: NewTab(vm: news)
+                    case 3: CatTab(vm: cat)
+                    case 4: CastTab(vm: cast)
+                    default: DiscoverTab(vm: disc)
+                    }
+                }
+            }
+            .navigationTitle("剧场")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    NavigationLink {
+                        TheaterSearchTab(vm: disc)
+                    } label: { Image(systemName: "magnifyingglass") }
+                }
+            }
+            .navigationDestination(for: HgWant.self) { w in TheaterDetailView(want: w) }
+            .navigationDestination(for: HgActorGo.self) { a in ActorPage(uid: a.uid, name: a.name) }
+            .navigationDestination(for: HgActor.self) { a in ActorResolveView(name: a.name) }
+            .task(id: seg) {
                 switch seg {
-                case 1: RankTab(vm: rank)
-                case 2: NewTab(vm: news)
-                case 3: CatTab(vm: cat)
-                case 4: CastTab(vm: cast)
-                default: DiscoverTab(vm: disc)
+                case 1: if rank.contents.isEmpty { rank.load() }
+                case 2: if news.items.isEmpty { news.load() }
+                case 3: cat.loadPanel()
+                case 4: if cast.items.isEmpty { cast.load() }
+                default: if disc.rows.isEmpty { disc.load() }
                 }
             }
         }
-        .navigationDestination(for: HgWant.self) { w in TheaterDetailView(want: w) }
-        .navigationDestination(for: HgActorGo.self) { a in ActorPage(uid: a.uid, name: a.name) }
-        .navigationDestination(for: HgActor.self) { a in ActorResolveView(name: a.name) }
-        .task(id: seg) {
-            switch seg {
-            case 1: if rank.contents.isEmpty { rank.load() }
-            case 2: if news.items.isEmpty { news.load() }
-            case 3: cat.loadPanel()
-            case 4: if cast.items.isEmpty { cast.load() }
-            default: if disc.rows.isEmpty { disc.load() }
+    }
+}
+
+// 右上放大镜: 红果同款全页搜索(猜词+热搜榜)
+private struct TheaterSearchTab: View {
+    @ObservedObject var vm: DiscoverVM
+    @State private var q = ""
+    var body: some View {
+        List {
+            Section {
+                HStack {
+                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                    TextField("搜红果剧名 / 演员", text: $q)
+                        .textFieldStyle(.plain)
+                        .autocorrectionDisabled()
+                        .onSubmit { vm.run(q) }
+                }
+                .padding(10)
+                .background(RoundedRectangle(cornerRadius: 12).fill(Color.gray.opacity(0.12)))
+                .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8))
+                if vm.guesses.isEmpty && vm.hotBoards.isEmpty {
+                    Button("拉一下红果热搜 🔥") { Task { await vm.fetchHot() } }
+                        .font(.footnote)
+                }
+                if !vm.guesses.isEmpty {
+                    FlowGuess(words: vm.guesses) { q = $0; vm.run($0) }
+                        .listRowInsets(EdgeInsets(top: 2, leading: 8, bottom: 2, trailing: 8))
+                }
+                ForEach(Array(vm.hotBoards.enumerated()), id: \.offset) { _, b in
+                    Section(b.name) {
+                        ForEach(Array(b.items.enumerated()), id: \.offset) { _, it in
+                            Button {
+                                q = it.title
+                                vm.run(it.title)
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Text("\(it.position)")
+                                        .font(.system(size: 12, weight: .heavy, design: .rounded))
+                                        .foregroundStyle(it.position <= 3 ? Color.orange : .secondary)
+                                        .frame(width: 20)
+                                    Text(it.title).font(.subheadline).lineLimit(1)
+                                    Spacer(minLength: 4)
+                                    if !it.searchScore.isEmpty {
+                                        Text(it.searchScore).font(.caption2).foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+            if !vm.note.isEmpty {
+                Section { Text(vm.note).font(.caption).foregroundStyle(.secondary) }
+            }
+            if !vm.rows.isEmpty {
+                Section("搜索结果") {
+                    ForEach(vm.rows, id: \.id) { s in
+                        NavigationLink(value: HgWant(sid: s.id, title: s.title)) {
+                            ShowRow(sid: s.id, title: s.title,
+                                    sub: (s.category.isEmpty ? "" : s.category + " · ") +
+                                         (s.episodeCount > 0 ? "全\(s.episodeCount)集" : "短剧"),
+                                    cover: s.coverUrl)
+                        }
+                    }
+                }
             }
         }
+        .navigationTitle("搜索")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear { if vm.guesses.isEmpty { Task { await vm.fetchHot() } } }
     }
 }
 
@@ -440,24 +538,55 @@ private struct MoreButton: View {
     }
 }
 
-// MARK: - 发现段
+// MARK: - 首页段(红果式: 顶部大卡轮播 + 热剧 feed)
+
+private struct HeroCarousel: View {
+    let rows: [SeriesSummary]
+    @State private var idx = 0
+    var body: some View {
+        TabView(selection: $idx) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { i, s in
+                NavigationLink(value: HgWant(sid: s.id, title: s.title)) {
+                    ZStack(alignment: .bottomLeading) {
+                        AsyncImage(url: URL(string: s.coverUrl)) {
+                            $0.resizable().scaledToFill()
+                        } placeholder: {
+                            LinearGradient(colors: [Color.gray.opacity(0.35), Color.gray.opacity(0.1)],
+                                           startPoint: .top, endPoint: .bottom)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        LinearGradient(colors: [.black.opacity(0.02), .black.opacity(0.72)],
+                                       startPoint: .top, endPoint: .bottom)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(s.title).font(.headline).foregroundStyle(.white).lineLimit(1)
+                            Text((s.category.isEmpty ? "" : s.category + " · ") +
+                                 (s.episodeCount > 0 ? "全\(s.episodeCount)集" : "红果热映") + " · 点进去整剧下载")
+                                .font(.caption).foregroundStyle(.white.opacity(0.85))
+                                .lineLimit(1)
+                        }
+                        .padding(12)
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                }
+                .buttonStyle(.plain)
+                .tag(i)
+            }
+        }
+        .tabViewStyle(.page(indexDisplayMode: .always))
+        .indexViewStyle(.page(backgroundDisplayMode: .never))
+        .frame(height: 215)
+    }
+}
 
 private struct DiscoverTab: View {
     @ObservedObject var vm: DiscoverVM
     var body: some View {
         List {
-            Section {
-                HStack {
-                    TextField("搜红果新剧 / 剧名", text: $vm.query)
-                        .textFieldStyle(.plain)
-                        .onSubmit { vm.run(vm.query) }
-                    Button("搜索") { vm.run(vm.query) }
-                        .buttonStyle(.borderedProminent)
-                        .buttonBorderShape(.capsule)
-                }
-                .padding(.vertical, 2)
-                if !vm.guesses.isEmpty {
-                    FlowGuess(words: vm.guesses) { vm.run($0) }
+            if vm.rows.count >= 3 {
+                Section {
+                    HeroCarousel(rows: Array(vm.rows.prefix(8)))
+                        .listRowInsets(EdgeInsets(top: 2, leading: 6, bottom: 6, trailing: 6))
+                        .listRowBackground(Color.clear)
                 }
             }
             if !vm.note.isEmpty {
@@ -472,10 +601,11 @@ private struct DiscoverTab: View {
                     }
                     MoreButton(busy: vm.busy, more: { vm.more() })
                 } header: {
-                    Text("红果剧场 · 点进去可整剧下载")
+                    Text("为你推荐")
                 }
             }
         }
+        .listStyle(.plain)
         .overlay { if vm.busy && vm.rows.isEmpty { ProgressView().controlSize(.large) } }
         .refreshable { vm.run("") }
     }

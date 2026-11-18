@@ -1,6 +1,6 @@
 import SwiftUI
 
-// MARK: - 藏（书库中枢）：影｜剧｜私｜画廊 四段，子页各自内容直接挂到中枢导航
+// MARK: - 藏（书库中枢）：影｜剧｜私｜画廊 四段(v1.10.26 场升格为一级 tab, 印并入拾右上角齿轮)
 
 struct StashHubView: View {
     @EnvironmentObject var app: AppState
@@ -14,7 +14,6 @@ struct StashHubView: View {
                     Text("剧").tag(1)
                     Text("私").tag(2)
                     Text("画廊").tag(3)
-                    Text("场").tag(4)
                 }
                 .pickerStyle(.segmented)
                 .padding([.horizontal], 14)
@@ -26,7 +25,7 @@ struct StashHubView: View {
                     case 1: DramaView()
                     case 2: PrivateView()
                     case 3: GalleryHomeView()
-                    default: TheaterHomeView()
+                    default: LibraryView()
                     }
                 }
             }
