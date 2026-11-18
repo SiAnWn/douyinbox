@@ -78,6 +78,7 @@ struct FeedReel: View {
     @State private var showDesc = false
     @State private var dmAll: [Int: [DMItem]] = [:]
     @State private var dmItems: [DMItem] = []
+    @State private var dmDbg = ""
 
     private var cur: VideoItem {
         page.eps[min(epIdx, page.eps.count - 1)]
@@ -155,6 +156,9 @@ struct FeedReel: View {
                 Text(page.series.name).font(.headline)
                 if !metaLine.isEmpty {
                     Text(metaLine).font(.caption).foregroundStyle(.secondary)
+                }
+                if !dmDbg.isEmpty {
+                    Text(dmDbg).font(.caption2).foregroundStyle(.tertiary)
                 }
                 ScrollView {
                     Text(metaDesc.isEmpty ? "暂无简介" : metaDesc)
@@ -273,6 +277,9 @@ struct FeedReel: View {
             metaDesc = m?.desc ?? ""
             dmAll = DanmakuStore.loadEps(page.series.url) ?? [:]
             dmItems = dmAll[epIdx + 1] ?? []
+            let dirOK = FileManager.default.fileExists(atPath: DanmakuStore.file(page.series.url).path)
+            dmDbg = "档案 弹幕.json:\(dirOK ? "在" : "无") 可播集:\(dmAll.count) 本集EP\(epIdx + 1):\(dmItems.count)条"
+            HGTrail.note("dmview \(page.series.name) ep\(epIdx + 1) file=\(dirOK) eps=\(dmAll.count) items=\(dmItems.count)")
         }
     }
 }
