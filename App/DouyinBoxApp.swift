@@ -280,14 +280,14 @@ struct RootView: View {
             ParseView()
                 .tabItem { Label("拾", systemImage: "tray.and.arrow.down") }.tag(Tab.pick)
             TheaterFeedView()
-                .tabItem { Label("坊", systemImage: "play.rectangle.fill") }.tag(Tab.feed)
+                .tabItem { Label("坊", systemImage: "rectangle.stack") }.tag(Tab.feed)
             PlayerView()
                 .tabItem { Label("映", systemImage: "play.rectangle") }.tag(Tab.play)
             StashHubView()
                 .tabItem { Label("藏", systemImage: "books.vertical") }.tag(Tab.stash)
                 .badge(app.subsBadge)
             SettingsView()
-                .tabItem { Label("印", systemImage: "seal") }.tag(Tab.seal)
+                .tabItem { Label("印", systemImage: "slider.horizontal.3") }.tag(Tab.seal)
         }
         .onChange(of: app.selection) { sel in
             if sel != .play { Orient.forcePortrait() }
