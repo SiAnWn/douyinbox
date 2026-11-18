@@ -5,6 +5,7 @@ import AVFoundation
 // 数据源 = 已下载"剧"库；每部一页，进来播（未看完的）第一集；
 // 播完自动连播下一集；底部剧名 + "观看全集›" 直达现成分集连播页。
 // 全部本地文件，零流量；进度记忆复用 ProgressStore。
+// iOS17 兼容: 可见度用 GeometryReader 偏好流计算(onScrollVisibilityChange 是 iOS18 货)。
 
 struct FeedPageItem: Identifiable, Equatable {
     let series: Series
@@ -12,9 +13,17 @@ struct FeedPageItem: Identifiable, Equatable {
     var id: String { series.id }
 }
 
+private struct PageFrameKey: PreferenceKey {
+    static var defaultValue: [String: Double] = [:]
+    static func reduce(value: inout [String: Double], nextValue: () -> [String: Double]) {
+        value.merge(nextValue()) { _, n in n }
+    }
+}
+
 struct TheaterFeedView: View {
     @EnvironmentObject var app: AppState
     @State private var pages: [FeedPageItem] = []
+    @State private var currentID = ""
 
     private func rebuild(force: Bool) {
         guard force || pages.isEmpty else { return }
@@ -52,15 +61,26 @@ struct TheaterFeedView: View {
             ScrollView(.vertical) {
                 LazyVStack(spacing: 0) {
                     ForEach(pages) { pg in
-                        FeedReel(page: pg)
+                        FeedReel(page: pg, isCurrent: currentID == pg.id)
                             .frame(width: geo.size.width, height: geo.size.height)
                     }
                 }
                 .scrollTargetLayout()
             }
             .scrollTargetBehavior(.paging)
+            .coordinateSpace(name: "feed")
             .ignoresSafeArea()
             .background(Color.black)
+            .onPreferenceChange(PageFrameKey.self) { vals in
+                let h = geo.size.height
+                var best = ""
+                var bestD = Double.infinity
+                for (id, minY) in vals {
+                    let d = abs(minY)
+                    if d < h * 0.5, d < bestD { bestD = d; best = id }
+                }
+                currentID = best
+            }
         }
     }
 }
@@ -68,6 +88,7 @@ struct TheaterFeedView: View {
 // 单页：一部剧的一页竖滑视频
 struct FeedReel: View {
     let page: FeedPageItem
+    let isCurrent: Bool
     @StateObject private var pc = PlayerController()
     @State private var epIdx = 0
     @State private var fill = true
@@ -100,21 +121,28 @@ struct FeedReel: View {
                 bottomBar
             }
         }
-        // 关键: 分页预建邻页, 只许真正看见的页开播(滑到≥60%才播, 滑走即停) — 防两部同响
-        .onScrollVisibilityChange(threshold: 0.6) { visible in
-            if visible {
-                if !loaded {
-                    loaded = true
-                    pc.load(cur.url, id: cur.id)
-                    pc.observeEnd { advance() }
-                } else if !pc.playing {
-                    pc.togglePlay()
-                }
-            } else if loaded {
-                pc.pause()
-            }
-        }
+        .background(GeometryReader { g in
+            Color.clear.preference(key: PageFrameKey.self,
+                                   value: [page.id: g.frame(in: .named("feed")).minY])
+        })
+        .onAppear { gate() }
+        .onChange(of: isCurrent) { _ in gate() }
         .onDisappear { pc.stop(); loaded = false }
+    }
+
+    // 只见得到半屏以上的当前页开播, 滑过即停 — 防分页预建导致的两部同响
+    private func gate() {
+        if isCurrent {
+            if !loaded {
+                loaded = true
+                pc.load(cur.url, id: cur.id)
+                pc.observeEnd { advance() }
+            } else if !pc.playing {
+                pc.togglePlay()
+            }
+        } else if loaded, pc.playing {
+            pc.pause()
+        }
     }
 
     private func advance() {
@@ -157,7 +185,7 @@ struct FeedReel: View {
             }
         }
         .padding(.horizontal, 16)
-        .padding(.bottom, 96)
+        .padding(.bottom, 100)
         .background(
             LinearGradient(colors: [.clear, .black.opacity(0.55)],
                            startPoint: .top, endPoint: .bottom)
