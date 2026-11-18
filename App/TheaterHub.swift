@@ -639,7 +639,7 @@ struct TheaterHomeView: View {
     @StateObject private var cat = CatVM()
     @StateObject private var cast = CastVM()
     @StateObject private var rails = RailVM()
-    private let tabs = ["首页", "榜单", "上新", "分类", "演员"]
+    private let tabs = ["首页", "演员"]
 
     var body: some View {
         NavigationStack {
@@ -667,10 +667,7 @@ struct TheaterHomeView: View {
 
                 Group {
                     switch seg {
-                    case 1: RankTab(vm: rank)
-                    case 2: NewTab(vm: news)
-                    case 3: CatTab(vm: cat)
-                    case 4: CastTab(vm: cast)
+                    case 1: CastTab(vm: cast)
                     default: DiscoverTab(vm: disc, rails: rails)
                     }
                 }
@@ -688,10 +685,7 @@ struct TheaterHomeView: View {
             .navigationDestination(for: HgActor.self) { a in ActorResolveView(name: a.name) }
             .task(id: seg) {
                 switch seg {
-                case 1: if rank.contents.isEmpty { rank.load() }
-                case 2: if news.items.isEmpty { news.load() }
-                case 3: cat.loadPanel()
-                case 4: if cast.items.isEmpty { cast.load() }
+                case 1: if cast.items.isEmpty { cast.load() }
                 default:
                     if disc.rows.isEmpty { disc.load() }
                     rails.load()
