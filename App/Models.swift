@@ -142,7 +142,12 @@ enum Library {
             guard FileManager.default.fileExists(atPath: d.path, isDirectory: &isDir), isDir.boolValue else { continue }
             let vids = scan(in: d)
             guard !vids.isEmpty else { continue }
-            let cover = vids.max(by: { $0.modDate < $1.modDate })?.url
+            // 官方海报优先: 剧档案领回的 封面.jpg 顶掉随手截图
+            let poster = (try? FileManager.default.contentsOfDirectory(
+                at: d, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]))?
+                .first { $0.lastPathComponent.hasPrefix("封面")
+                    && ["jpg", "jpeg", "png", "webp"].contains($0.pathExtension.lowercased()) }
+            let cover = poster ?? vids.max(by: { $0.modDate < $1.modDate })?.url
             out.append(Series(id: d.path, name: d.lastPathComponent, count: vids.count, url: d, cover: cover))
         }
         return out.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }

@@ -15,6 +15,8 @@ struct SeriesMeta: Codable {
     var heat = ""
     var plays = ""
     var total = 0
+    var desc = ""
+    var cover = false
     var fetchedAt = ""
 }
 
@@ -50,6 +52,7 @@ enum SeriesMetaStore {
         var m = SeriesMeta()
         m.title = title
         m.total = s.episodeCount
+        m.desc = s.description.trimmingCharacters(in: .whitespacesAndNewlines)
         m.heat = big(s.heat)
         m.plays = big(s.playCount)
         for r in s.rows {
@@ -63,8 +66,14 @@ enum SeriesMetaStore {
         }
         m.fetchedAt = ISO8601DateFormatter().string(from: Date())
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        // 官方海报当场落盘(签名链接会过期, 存成 封面.jpg 才永固; 卡面选取已优先它)
+        if !s.coverUrl.isEmpty, let cu = URL(string: s.coverUrl),
+           let (cd, _) = try? await URLSession.shared.data(from: cu), cd.count > 3_000 {
+            try? cd.write(to: dir.appendingPathComponent("封面.jpg"))
+            m.cover = true
+        }
         if let j = try? JSONEncoder().encode(m) { try? j.write(to: file(dir)) }
-        HGTrail.note("meta ok sid=\(sid) cast=\(m.castRow.isEmpty ? "-" : "y") score=\(m.scoreRow)")
+        HGTrail.note("meta ok sid=\(sid) cast=\(m.castRow.isEmpty ? "-" : "y") cover=\(m.cover)")
     }
 
     /// 印页补档: 已下旧剧按文件夹名 search 命中同名剧 → harvest 写档案

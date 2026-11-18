@@ -74,6 +74,8 @@ struct FeedReel: View {
     @State private var loaded = false
     @State private var frac: Double = 0
     @State private var metaLine = ""
+    @State private var metaDesc = ""
+    @State private var showDesc = false
 
     private var cur: VideoItem {
         page.eps[min(epIdx, page.eps.count - 1)]
@@ -143,6 +145,23 @@ struct FeedReel: View {
             app.reelPausers.removeValue(forKey: page.id)
             pc.stop(); loaded = false
         }
+        .sheet(isPresented: $showDesc) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(page.series.name).font(.headline)
+                if !metaLine.isEmpty {
+                    Text(metaLine).font(.caption).foregroundStyle(.secondary)
+                }
+                ScrollView {
+                    Text(metaDesc.isEmpty ? "暂无简介" : metaDesc)
+                        .font(.callout)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                Button("关闭") { showDesc = false }
+                    .frame(maxWidth: .infinity)
+            }
+            .padding(20)
+            .presentationDetents([.medium, .large])
+        }
     }
 
     // 边缘窄条横滑: 右滑唤回 tab 条/信息, 左滑隐藏(与老映方向语义一致)
@@ -204,6 +223,14 @@ struct FeedReel: View {
                     .foregroundStyle(.white.opacity(0.9))
                     .shadow(color: .black.opacity(0.7), radius: 3)
                 Spacer()
+                if !metaDesc.isEmpty {
+                    Button { showDesc = true } label: {
+                        Text("简介")
+                            .font(.footnote).foregroundStyle(.white)
+                            .padding(.horizontal, 12).padding(.vertical, 6)
+                            .background(Capsule().fill(.black.opacity(0.4)))
+                    }
+                }
                 Button { fill.toggle() } label: {
                     Text(fill ? "裁切" : "完整")
                         .font(.footnote).foregroundStyle(.white)
@@ -235,7 +262,9 @@ struct FeedReel: View {
         )
         .frame(maxWidth: .infinity, alignment: .bottom)
         .task(id: page.id) {   // 底条恒渲染宿主挂 task(lesson 47): 档案有则显
-            metaLine = SeriesMetaStore.line(SeriesMetaStore.load(page.series.url))
+            let m = SeriesMetaStore.load(page.series.url)
+            metaLine = SeriesMetaStore.line(m)
+            metaDesc = m?.desc ?? ""
         }
     }
 }
