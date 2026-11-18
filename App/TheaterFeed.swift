@@ -43,9 +43,29 @@ struct TheaterFeedView: View {
             }
             .navigationTitle("坊 · 本地剧场")
             .toolbar(.hidden, for: .navigationBar)   // 剧场=全幅沉浸, 刷新用下拉
+            .toolbar(.hidden, for: .tabBar)          // tab 条也让位, 左上角浮钮换页
+            .overlay(alignment: .topLeading) {
+                VStack(spacing: 10) {
+                    miniJump(Tab.pick, "tray.and.arrow.down")
+                    miniJump(Tab.stash, "books.vertical")
+                    miniJump(Tab.seal, "seal")
+                }
+                .padding(.leading, 14)
+                .padding(.top, 58)   // 躲开状态栏/岛
+            }
             .navigationDestination(for: Series.self) { s in DramaEpisodes(series: s) }
             .onAppear { rebuild(force: false) }
             .refreshable { rebuild(force: true) }
+        }
+    }
+
+    private func miniJump(_ t: Tab, _ sym: String) -> some View {
+        Button { app.selection = t } label: {
+            Image(systemName: sym)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 34, height: 34)
+                .background(Circle().fill(.black.opacity(0.5)))
         }
     }
 
@@ -156,7 +176,10 @@ struct FeedReel: View {
                         .padding(.horizontal, 12).padding(.vertical, 6)
                         .background(Capsule().fill(.black.opacity(0.4)))
                 }
-                NavigationLink(value: page.series) {
+                Button {
+                    app.feedFullIdx = min(epIdx, page.eps.count - 1)
+                    app.feedFull = page
+                } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "play.rectangle.fill").font(.caption)
                         Text("观看全集 ›").font(.subheadline.bold())
@@ -168,7 +191,7 @@ struct FeedReel: View {
             }
         }
         .padding(.horizontal, 16)
-        .padding(.bottom, 124)   // 悬在悬浮 tab 条之上
+        .padding(.bottom, 74)   // tab 条已藏, 只让开底部小横条
         .background(
             LinearGradient(colors: [.clear, .black.opacity(0.55)],
                            startPoint: .top, endPoint: .bottom)

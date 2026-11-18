@@ -42,6 +42,8 @@ final class AppState: ObservableObject {
     @Published var order: [String] = []
     @Published var idx = -1
     @Published var selection: Tab = .feed
+    @Published var feedFull: FeedPageItem?
+    @Published var feedFullIdx = 0
     @Published var coverVideo: VideoItem?
     @Published var revealUI = false
     @Published var autoAdvance = true
@@ -282,6 +284,11 @@ struct RootView: View {
         .onChange(of: app.selection) { _ in Orient.forcePortrait() }
         .fullScreenCover(item: $app.coverVideo) { v in
             InlinePlayer(video: v).environmentObject(app)
+        }
+        .fullScreenCover(item: $app.feedFull) { pg in
+            InlinePlayer(video: pg.eps[min(app.feedFullIdx, pg.eps.count - 1)],
+                         eps: pg.eps, startIdx: min(app.feedFullIdx, pg.eps.count - 1))
+                .environmentObject(app)
         }
         .fullScreenCover(item: $app.openAlbum) { a in
             AlbumViewer(album: a).environmentObject(app)

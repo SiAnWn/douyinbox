@@ -317,17 +317,44 @@ struct PlayerView: View {
 
 struct InlinePlayer: View {
     let video: VideoItem
+    var eps: [VideoItem]? = nil        // 传入整部剧分集=自动连播模式(坊·观看全集)
+    var startIdx: Int = 0
     @EnvironmentObject var app: AppState
     @Environment(\.dismiss) private var dismiss
     @StateObject private var pc = PlayerController()
     @State private var fill = true
+    @State private var curVid: VideoItem?
+    @State private var eIdx = 0
+
+    private var shown: VideoItem { curVid ?? video }
+
+    private func nextEp() {
+        guard let es = eps else { return }
+        if eIdx + 1 < es.count {
+            eIdx += 1
+            let nx = es[eIdx]
+            curVid = nx
+            pc.load(nx.url, id: nx.id)
+        } else {
+            pc.pause()   // 全剧播完: 停住出徽标, 下滑退出
+        }
+    }
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             PlayerSurface(player: pc.player, fill: fill)
                 .ignoresSafeArea()
-                .onAppear { pc.load(video.url, id: video.id) }
+                .onAppear {
+                    var start = video
+                    if let es = eps, !es.isEmpty {
+                        eIdx = min(startIdx, es.count - 1)
+                        start = es[eIdx]
+                    }
+                    curVid = start
+                    pc.load(start.url, id: start.id)
+                    if eps != nil { pc.observeEnd { nextEp() } }
+                }
                 .onDisappear { pc.stop() }
 
             Color.clear.contentShape(Rectangle())
@@ -343,8 +370,8 @@ struct InlinePlayer: View {
                         Image(systemName: "chevron.down").font(.title2).foregroundStyle(.white).shadow(radius: 3)
                     }
                     Spacer()
-                    Button { app.toggleFav(video.id) } label: {
-                        Image(systemName: app.favorites.contains(video.id) ? "star.fill" : "star")
+                    Button { app.toggleFav(shown.id) } label: {
+                        Image(systemName: app.favorites.contains(shown.id) ? "star.fill" : "star")
                             .font(.title2).foregroundStyle(.white).shadow(radius: 3)
                     }
                     Button { fill.toggle() } label: {
@@ -363,7 +390,7 @@ struct InlinePlayer: View {
                             .background(Capsule().fill(.black.opacity(0.45)))
                     }
                     Spacer()
-                    Text(video.title).font(.headline).foregroundStyle(.white).lineLimit(1)
+                    Text(shown.title).font(.headline).foregroundStyle(.white).lineLimit(1)
                         .frame(maxWidth: .infinity)
                     Spacer()
                     Color.clear.frame(width: 60, height: 1)
