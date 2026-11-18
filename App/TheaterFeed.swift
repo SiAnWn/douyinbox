@@ -89,6 +89,7 @@ struct TheaterFeedView: View {
 // 单页：一部剧的一页竖滑视频
 struct FeedReel: View {
     let page: FeedPageItem
+    @EnvironmentObject var app: AppState
     @StateObject private var pc = PlayerController()
     @State private var epIdx = 0
     @State private var fill = true
