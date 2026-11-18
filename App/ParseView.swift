@@ -483,9 +483,9 @@ struct ParseView: View {
     // 红果整剧批量：逐集 resolve → 下载 → CENC 解密 → 落库 短剧/<剧名>/第NN集.mp4
     // 续命符版: 全程静音循环防挂起(用户实锤退 App 下载就冻)
     private func hongguoRun(_ res: ParseResult, _ opt: QualityOption) async {
-        KeepAlive.shared.start()
+        app.keepAlive.start()    // 老 BGKeepAlive: 红果批量是进程内串行, 不吃后台会话待遇必须续命
         await hongguoRunBody(res, opt)
-        KeepAlive.shared.stop()
+        app.keepAlive.stop()
     }
 
     private func hongguoRunBody(_ res: ParseResult, _ opt: QualityOption) async {
