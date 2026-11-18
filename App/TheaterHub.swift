@@ -711,9 +711,6 @@ struct TheaterHomeView: View {
                     } label: { Image(systemName: "magnifyingglass") }
                 }
             }
-            .navigationDestination(for: HgWant.self) { w in TheaterDetailView(want: w) }
-            .navigationDestination(for: HgActorGo.self) { a in ActorPage(uid: a.uid, name: a.name) }
-            .navigationDestination(for: HgActor.self) { a in ActorResolveView(name: a.name) }
             .task(id: seg) {
                 switch seg {
                 case 1: if cast.items.isEmpty { cast.load() }
@@ -724,6 +721,11 @@ struct TheaterHomeView: View {
             }
         }
         .environmentObject(nav)
+        // v1.10.35: 目的地注册挪到 NavigationStack 本体(原先挂内层 VStack,
+        // 从搜索页程序化 push 解析不到, iOS17 甩一个大感叹号占位页=用户实拍真凶)
+        .navigationDestination(for: HgWant.self) { w in TheaterDetailView(want: w) }
+        .navigationDestination(for: HgActorGo.self) { a in ActorPage(uid: a.uid, name: a.name) }
+        .navigationDestination(for: HgActor.self) { a in ActorResolveView(name: a.name) }
     }
 }
 
