@@ -522,16 +522,9 @@ private struct RankTab: View {
                 Section {
                     ForEach(Array(vm.items.enumerated()), id: \.offset) { _, it in
                         if it.seriesId.isEmpty {
-                            // 演员榜行(v1.10.25 可点) 或平台推广行: 展示为主
+                            // 演员榜行(可点) 或平台推广行: 展示为主
                             let name = it.actor.isEmpty ? it.title : it.actor
-                            var sub = ""
-                            if it.actor.isEmpty {
-                                sub = it.score
-                            } else {
-                                if !it.intro.isEmpty { sub += it.intro + " · " }
-                                sub += it.score
-                            }
-                            if !it.details.isEmpty { sub += " · " + it.details.joined(separator: " ") }
+                            let sub = RankTab.actorSub(it)
                             let cover = it.coverUrl.isEmpty ? it.avatarUrl : it.coverUrl
                             HStack(spacing: 10) {
                                 Text("\(it.position)")
@@ -566,6 +559,19 @@ private struct RankTab: View {
             .overlay { if vm.busy && vm.items.isEmpty { ProgressView().controlSize(.large) } }
             .refreshable { vm.load() }
         }
+    }
+
+    // 演员/推广行的副标题(ViewBuilder 里不许 var 赋值, 抽函数)
+    static func actorSub(_ it: RankItem) -> String {
+        var s = ""
+        if it.actor.isEmpty {
+            s = it.score
+        } else {
+            if !it.intro.isEmpty { s += it.intro + " · " }
+            s += it.score
+        }
+        if !it.details.isEmpty { s += " · " + it.details.joined(separator: " ") }
+        return s
     }
 }
 
