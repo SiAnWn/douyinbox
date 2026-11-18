@@ -325,8 +325,19 @@ struct InlinePlayer: View {
     @State private var fill = true
     @State private var curVid: VideoItem?
     @State private var eIdx = 0
+    @State private var chrome = true    // 红果式: 4s 无操作自动隐 UI, 单击唤回
 
     private var shown: VideoItem { curVid ?? video }
+
+    private func reveal() {
+        withAnimation(.easeOut(duration: 0.2)) { chrome = true }
+        hideLater()
+    }
+    private func hideLater() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+            if chrome { withAnimation(.easeIn(duration: 0.25)) { chrome = false } }
+        }
+    }
 
     private func nextEp() {
         guard let es = eps else { return }
@@ -354,6 +365,7 @@ struct InlinePlayer: View {
                     curVid = start
                     pc.load(start.url, id: start.id)
                     if eps != nil { pc.observeEnd { nextEp() } }
+                    hideLater()
                 }
                 .onDisappear { pc.stop() }
 
@@ -363,39 +375,47 @@ struct InlinePlayer: View {
                     if g.translation.height > 80 { dismiss() }
                 })
                 .onTapGesture(count: 2) { pc.togglePlay() }
+                .onTapGesture { reveal() }
 
             VStack {
-                HStack {
-                    Button { dismiss() } label: {
-                        Image(systemName: "chevron.down").font(.title2).foregroundStyle(.white).shadow(radius: 3)
+                if chrome {
+                    HStack {
+                        Button { dismiss() } label: {
+                            Image(systemName: "chevron.down").font(.title2).foregroundStyle(.white).shadow(radius: 3)
+                        }
+                        Spacer()
+                        Button { app.toggleFav(shown.id) } label: {
+                            Image(systemName: app.favorites.contains(shown.id) ? "star.fill" : "star")
+                                .font(.title2).foregroundStyle(.white).shadow(radius: 3)
+                        }
+                        Button { fill.toggle() } label: {
+                            Text(fill ? "拉伸" : "适配").font(.subheadline).foregroundStyle(.white)
+                                .padding(.horizontal, 14).padding(.vertical, 7)
+                                .background(Capsule().fill(.black.opacity(0.45)))
+                        }
                     }
-                    Spacer()
-                    Button { app.toggleFav(shown.id) } label: {
-                        Image(systemName: app.favorites.contains(shown.id) ? "star.fill" : "star")
-                            .font(.title2).foregroundStyle(.white).shadow(radius: 3)
-                    }
-                    Button { fill.toggle() } label: {
-                        Text(fill ? "拉伸" : "适配").font(.subheadline).foregroundStyle(.white)
-                            .padding(.horizontal, 14).padding(.vertical, 7)
-                            .background(Capsule().fill(.black.opacity(0.45)))
-                    }
-                }.padding()
-                Spacer()
-                PlayerScrubber(pc: pc)
-                HStack(spacing: 8) {
-                    Button { Orient.toggle() } label: {
-                        Text(Orient.isLandscape ? "竖屏" : "横屏")
-                            .font(.subheadline).foregroundStyle(.white)
-                            .padding(.horizontal, 14).padding(.vertical, 7)
-                            .background(Capsule().fill(.black.opacity(0.45)))
-                    }
-                    Spacer()
-                    Text(shown.title).font(.headline).foregroundStyle(.white).lineLimit(1)
-                        .frame(maxWidth: .infinity)
-                    Spacer()
-                    Color.clear.frame(width: 60, height: 1)
+                    .transition(.opacity)
+                    .padding()
                 }
-                .padding(.horizontal)
+                Spacer()
+                if chrome {
+                    PlayerScrubber(pc: pc)
+                    HStack(spacing: 8) {
+                        Button { Orient.toggle() } label: {
+                            Text(Orient.isLandscape ? "竖屏" : "横屏")
+                                .font(.subheadline).foregroundStyle(.white)
+                                .padding(.horizontal, 14).padding(.vertical, 7)
+                                .background(Capsule().fill(.black.opacity(0.45)))
+                        }
+                        Spacer()
+                        Text(shown.title).font(.headline).foregroundStyle(.white).lineLimit(1)
+                            .frame(maxWidth: .infinity)
+                        Spacer()
+                        Color.clear.frame(width: 60, height: 1)
+                    }
+                    .transition(.opacity)
+                    .padding(.horizontal)
+                }
             }
 
             if !pc.playing {
@@ -406,7 +426,7 @@ struct InlinePlayer: View {
                     .shadow(radius: 6)
             }
         }
-        .statusBarHidden()
+        .statusBarHidden(!chrome)
         .onDisappear { Orient.forcePortrait() }
     }
 }

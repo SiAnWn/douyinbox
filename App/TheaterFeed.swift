@@ -55,6 +55,7 @@ struct TheaterFeedView: View {
             }
             .navigationDestination(for: Series.self) { s in DramaEpisodes(series: s) }
             .onAppear { rebuild(force: false) }
+            .onChange(of: app.dramaSeries.count) { _ in rebuild(force: true) }  // 冷启动扫描晚到自愈
             .refreshable { rebuild(force: true) }
         }
     }
