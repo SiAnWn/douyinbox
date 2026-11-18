@@ -106,7 +106,7 @@ struct TheaterDetailView: View {
     let want: HgWant
     @EnvironmentObject var app: AppState
     @Environment(\.dismiss) private var dismiss
-    @State private var s: Series?
+    @State private var s: Openhongguo.Series?
     @State private var busy = false
 
     var body: some View {
@@ -159,7 +159,7 @@ struct TheaterDetailView: View {
         }
     }
 
-    private func rowLines(_ sv: Series) -> [String] {
+    private func rowLines(_ sv: Openhongguo.Series) -> [String] {
         var out: [String] = []
         for r in sv.rows {
             if r.text.isEmpty { continue }
