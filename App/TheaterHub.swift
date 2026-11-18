@@ -749,7 +749,7 @@ private struct Grid2Cards: View {
 func hgGridSub(_ s: SeriesSummary) -> String {
     var out = s.episodeCount > 0 ? "全\(s.episodeCount)集" : "短剧"
     if !s.category.isEmpty { out += " · " + s.category }
-    if s.heat > 0 { out += " · " + hgWan(s.heat) + "热度" }
+    if !s.author.isEmpty { out += " · " + s.author }
     return out
 }
 
