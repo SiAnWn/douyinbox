@@ -42,7 +42,6 @@ struct TheaterFeedView: View {
         }
         .onAppear { app.revealUI = false; rebuild(force: false) }
         .onChange(of: app.dramaSeries.count) { _ in rebuild(force: true) }  // 冷启动扫描晚到自愈
-        .refreshable { rebuild(force: true) }
         // 与老映同款沉浸体系: 右滑唤回 tab 条, 左滑隐藏(手势在 FeedReel 里); 空态不藏 tab 条
         .background(TabBarAccessor(hidden: app.immersive && !pages.isEmpty))
         .statusBarHidden(app.immersive && !pages.isEmpty)
@@ -87,8 +86,17 @@ struct FeedReel: View {
 
             Color.clear.contentShape(Rectangle())
                 .ignoresSafeArea()
-                .simultaneousGesture(nav)   // 并行: 竖滑留给分页滚动, 横滑只管显隐(独占会饿死 ScrollView)
                 .onTapGesture(count: 2) { pc.togglePlay() }   // 播放交互定稿: 双击暂停/恢复
+
+            // 横滑显隐只挂左右边缘窄条: 全屏拖拽手势会干扰分页滚动(两版实测), 边缘条=系统级姿势
+            HStack {
+                Color.clear.frame(width: 30).contentShape(Rectangle()).gesture(edgeNav())
+                Spacer(minLength: 0)
+                Color.clear.frame(width: 30).contentShape(Rectangle()).gesture(edgeNav())
+            }
+            .frame(height: UIScreen.main.bounds.height * 0.62)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .ignoresSafeArea()
 
             if !pc.playing && loaded {
                 Image(systemName: "play.circle.fill")
@@ -127,13 +135,12 @@ struct FeedReel: View {
         .onDisappear { pc.stop(); loaded = false }
     }
 
-    // 老映同款: 横滑右=唤回 tab 条/信息, 横滑左=隐藏; 竖滑留给翻页
-    private var nav: some Gesture {
-        DragGesture().onEnded { g in
+    // 边缘窄条横滑: 右滑唤回 tab 条/信息, 左滑隐藏(与老映方向语义一致)
+    private func edgeNav() -> some Gesture {
+        DragGesture(minimumDistance: 12).onEnded { g in
             let dx = g.translation.width, dy = g.translation.height
-            if abs(dx) > abs(dy), abs(dx) > 40 {
-                withAnimation { app.revealUI = (dx > 0) }
-            }
+            guard abs(dx) > abs(dy), abs(dx) > 40 else { return }
+            withAnimation { app.revealUI = (dx > 0) }
         }
     }
 
