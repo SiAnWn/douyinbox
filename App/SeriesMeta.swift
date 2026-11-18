@@ -44,7 +44,7 @@ enum SeriesMetaStore {
 
     static func harvest(_ c: OpenhongguoClient, sid: String, title: String, dir: URL) async {
         guard let s = try? await Hongguo.attempt(c, { try await c.getSeries(sid) }) else {
-            HongguoTrail.log("meta fail sid=\(sid)")
+            HGTrail.note("meta fail sid=\(sid)")
             return
         }
         var m = SeriesMeta()
@@ -64,7 +64,7 @@ enum SeriesMetaStore {
         m.fetchedAt = ISO8601DateFormatter().string(from: Date())
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         if let j = try? JSONEncoder().encode(m) { try? j.write(to: file(dir)) }
-        HongguoTrail.log("meta ok sid=\(sid) cast=\(m.castRow.isEmpty ? "-" : "y") score=\(m.scoreRow)")
+        HGTrail.note("meta ok sid=\(sid) cast=\(m.castRow.isEmpty ? "-" : "y") score=\(m.scoreRow)")
     }
 
     /// 印页补档: 已下旧剧按文件夹名 search 命中同名剧 → harvest 写档案
