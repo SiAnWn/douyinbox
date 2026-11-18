@@ -20,6 +20,33 @@ struct HgActor: Hashable {
     let name: String
 }
 
+// 封面银行(v1.10.30): 搜索接口经常不给封面(PC 探针实锤 3/4 为空),
+// 但首页/榜单/上新见过的封面全在这里存着, 按剧号回填 = 搜索结果也有图
+enum CoverBank {
+    static var data: [String: String] = [:]
+
+    static func put(_ sid: String, _ cover: String) {
+        if !sid.isEmpty && !cover.isEmpty && data[sid] == nil { data[sid] = cover }
+    }
+    static func register(_ items: [SeriesSummary]) {
+        for s in items { put(s.id, s.coverUrl) }
+    }
+    static func registerRank(_ items: [RankItem]) {
+        for it in items { put(it.seriesId, it.coverUrl) }
+    }
+    static func registerNew(_ items: [NewRelease]) {
+        for n in items { put(n.seriesId, n.coverUrl) }
+    }
+    static func registerWorks(_ items: [Work]) {
+        for w in items { put(w.seriesId, w.coverUrl) }
+    }
+}
+
+func hgCoverUrl(sid: String, _ url: String) -> String {
+    if !url.isEmpty { return url }
+    return CoverBank.data[sid] ?? ""
+}
+
 // MARK: - 精装组件(v1.10.28 抄开心果/红果作业四件套, 适配盒子)
 
 // 热度写法跟红果一致: 4165万 / 1.2亿
@@ -146,7 +173,7 @@ struct HRail: View {
                     ForEach(Array(items.enumerated()), id: \.offset) { i, c in
                         NavigationLink(value: HgWant(sid: c.sid, title: c.title)) {
                             VStack(alignment: .leading, spacing: 5) {
-                                Poster2(url: c.cover)
+                                Poster2(url: hgCoverUrl(sid: c.sid, c.cover))
                                     .overlay(alignment: .topLeading) {
                                         if c.rank > 0 {
                                             RankBadge2(rank: c.rank).padding(5)
@@ -275,8 +302,8 @@ final class CastVM: ObservableObject {
             for it in sr.items where !it.actor.isEmpty && !it.userId.isEmpty {
                 ActorVM.uidByName[it.actor] = it.userId
             }
-            self.cursor = sr.hasMore ? sr.cursor : nil
-            if self.items.isEmpty { self.note = "榜上空空的" }
+            CoverBank.registerRank(sr.items)
+            self.cursor = sr.hasMore ? sr.cursor : nil            if self.items.isEmpty { self.note = "榜上空空的" }
         }
     }
 }
@@ -298,6 +325,7 @@ final class ActorWorksVM: ObservableObject {
             busy = true
             defer { busy = false }
             if let pg = try? await Hongguo.attempt(c, { try await c.personWorks(u) }) {
+                CoverBank.registerWorks(pg.items)
                 works = pg.items
                 cursor = pg.hasMore ? pg.cursor : nil
             }
@@ -315,6 +343,7 @@ final class ActorWorksVM: ObservableObject {
             defer { busy = false }
             guard let c = Hongguo.client,
                   let pg = try? await Hongguo.attempt(c, { try await c.personWorks(self.uid, cursor: cur) }) else { return }
+            CoverBank.registerWorks(pg.items)
             self.works += pg.items
             self.cursor = pg.hasMore ? pg.cursor : nil
         }
@@ -348,6 +377,7 @@ final class DiscoverVM: ObservableObject {
             if let pg = try? await Hongguo.attempt(c, {
                 isSearch ? try await c.search(mode) : try await c.discover(Openhongguo.DiscoverOptions(cursor: cur))
             }) {
+                CoverBank.register(pg.items)
                 if reset { rows = pg.items } else { rows += pg.items }
                 nextCursor = pg.hasMore ? pg.cursor : nil
                 if rows.isEmpty { note = isSearch ? "搜不到「\(mode)」，换个词试试" : "目录暂时空手（风控抖动，下拉再来）" }
@@ -363,7 +393,7 @@ final class DiscoverVM: ObservableObject {
         guard let c = Hongguo.client,
               let hs = try? await Hongguo.attempt(c, { try await c.hotSearch() }) else { return }
         guesses = Array(hs.guesses.prefix(10).map(\.title))
-        hotBoards = Array(hs.boards.prefix(2))
+        hotBoards = hs.boards.filter { !$0.items.isEmpty && $0.name != "热点话题榜" }.prefix(2)
     }
 
     func run(_ q: String) {
@@ -400,10 +430,32 @@ final class DiscoverVM: ObservableObject {
             defer { sbusy = false }
             guard let c = Hongguo.client else { snote = "红果引擎未就绪"; return }
             if let pg = try? await Hongguo.attempt(c, { try await c.search(q) }) {
-                if reset { self.sres = pg.items } else { self.sres += pg.items }
+                var items = pg.items
+                CoverBank.register(items)
+                for i in items.indices where items[i].coverUrl.isEmpty {
+                    if let c2 = CoverBank.data[items[i].id] { items[i].coverUrl = c2 }
+                }
+                if reset { self.sres = items } else { self.sres += items }
                 self.scur = pg.hasMore ? pg.cursor : nil
                 if self.sres.isEmpty { self.snote = "搜不到「\(q)」，换个词试试" }
+                await self.fillCovers(Array(items.prefix(8)))
             } else { self.snote = "搜索口这次没搭手，再来一次" }
+        }
+    }
+
+    // 银行也空着的封面: 去详情口一张张贴回来(限量, 温和限速)
+    private func fillCovers(_ batch: [SeriesSummary]) async {
+        guard let c = Hongguo.client else { return }
+        var done = 0
+        for s in batch where s.coverUrl.isEmpty && !s.id.isEmpty {
+            if done >= 8 { break }
+            guard let sv = try? await Hongguo.attempt(c, { try await c.getSeries(s.id) }) else { break }
+            if !sv.coverUrl.isEmpty {
+                CoverBank.put(s.id, sv.coverUrl)
+                if let i = sres.firstIndex(where: { $0.id == s.id }) { sres[i].coverUrl = sv.coverUrl }
+            }
+            done += 1
+            try? await Task.sleep(nanoseconds: 400_000_000)
         }
     }
 
@@ -464,6 +516,7 @@ final class RankVM: ObservableObject {
                 return
             }
             if !sr.contents.isEmpty { self.contents = sr.contents }
+            CoverBank.registerRank(sr.items)
             if reset { self.items = sr.items } else { self.items += sr.items }
             self.nextCursor = sr.hasMore ? sr.cursor : nil
             if self.items.isEmpty { self.note = "这张榜暂时空的" }
@@ -506,6 +559,7 @@ final class NewVM: ObservableObject {
                 return
             }
             self.dates = pg.dates
+            CoverBank.registerNew(pg.items)
             if self.date.isEmpty { self.date = pg.date }
             if reset { self.items = pg.items } else { self.items += pg.items }
             self.nextCursor = pg.hasMore ? pg.cursor : nil
@@ -565,6 +619,7 @@ final class CatVM: ObservableObject {
                 if reset { self.note = "这一挂暂时没搭手" }
                 return
             }
+            CoverBank.register(pg.items)
             if reset { self.rows = pg.items } else { self.rows += pg.items }
             self.nextCursor = pg.hasMore ? pg.cursor : nil
             if self.rows.isEmpty { self.note = "这组合下没有剧，松一两个条件试试" }
@@ -661,14 +716,15 @@ private struct TheaterSearchTab: View {
                 .padding(10)
                 .background(RoundedRectangle(cornerRadius: 12).fill(Color.gray.opacity(0.12)))
                 .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8))
-                if vm.guesses.isEmpty && vm.hotBoards.isEmpty {
-                    Button("拉一下红果热搜 🔥") { Task { await vm.fetchHot() } }
-                        .font(.footnote)
-                }
-                if !vm.guesses.isEmpty {
-                    FlowGuess(words: vm.guesses) { q = $0; vm.doSearch($0) }
-                        .listRowInsets(EdgeInsets(top: 2, leading: 8, bottom: 2, trailing: 8))
-                }
+                if vm.sres.isEmpty {
+                    if vm.guesses.isEmpty && vm.hotBoards.isEmpty {
+                        Button("拉一下红果热搜 🔥") { Task { await vm.fetchHot() } }
+                            .font(.footnote)
+                    }
+                    if !vm.guesses.isEmpty {
+                        FlowGuess(words: vm.guesses) { q = $0; vm.doSearch($0) }
+                            .listRowInsets(EdgeInsets(top: 2, leading: 8, bottom: 2, trailing: 8))
+                    }
                 ForEach(Array(vm.hotBoards.enumerated()), id: \.offset) { _, b in
                     Section(b.name) {
                         ForEach(Array(b.items.enumerated()), id: \.offset) { _, it in
@@ -691,6 +747,7 @@ private struct TheaterSearchTab: View {
                             .buttonStyle(.plain)
                         }
                     }
+                }
                 }
             }
             if !vm.snote.isEmpty {
@@ -745,7 +802,7 @@ private struct Grid2Cards: View {
                 NavigationLink(value: HgWant(sid: s.id, title: s.title)) {
                     Color.clear.aspectRatio(0.7, contentMode: .fit)
                         .overlay {
-                            AsyncImage(url: URL(string: s.coverUrl)) {
+                            AsyncImage(url: URL(string: hgCoverUrl(sid: s.id, s.coverUrl))) {
                                 $0.resizable().scaledToFill()
                             } placeholder: {
                                 LinearGradient(colors: [Color.gray.opacity(0.35), Color.gray.opacity(0.12)],
@@ -812,7 +869,7 @@ struct Grid2Lite: View {
                 NavigationLink(value: HgWant(sid: c.sid, title: c.title)) {
                     Color.clear.aspectRatio(0.7, contentMode: .fit)
                         .overlay {
-                            AsyncImage(url: URL(string: c.cover)) {
+                            AsyncImage(url: URL(string: hgCoverUrl(sid: c.sid, c.cover))) {
                                 $0.resizable().scaledToFill()
                             } placeholder: { Color.gray.opacity(0.16) }
                         }
@@ -892,7 +949,7 @@ private struct ShowRow: View {
                         .frame(width: 26, alignment: .center)
                         .foregroundStyle(b.count <= 2 ? Color.orange : Color.secondary)
                 }
-                AsyncImage(url: URL(string: cover)) { $0.resizable().scaledToFill() }
+                AsyncImage(url: URL(string: hgCoverUrl(sid: sid, cover))) { $0.resizable().scaledToFill() }
                     placeholder: { Color.gray.opacity(0.15) }
                     .frame(width: 52, height: 70)
                     .clipShape(RoundedRectangle(cornerRadius: 6))
