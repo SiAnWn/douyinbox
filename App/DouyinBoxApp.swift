@@ -44,6 +44,11 @@ final class AppState: ObservableObject {
     @Published var selection: Tab = .pick
     @Published var feedFull: FeedPageItem?
     @Published var feedFullIdx = 0
+    // 坊页互斥音响登记簿: 每页注册自己的闭嘴函数, 谁开播谁点名其他人全部闭嘴
+    var reelPausers: [String: () -> Void] = [:]
+    func muteReels(except id: String) {
+        for (k, f) in reelPausers where k != id { f() }
+    }
     @Published var coverVideo: VideoItem?
     @Published var revealUI = false
     @Published var autoAdvance = true

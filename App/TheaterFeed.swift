@@ -114,13 +114,18 @@ struct FeedReel: View {
         // 自测可见度: 屏上占比 ≥60% 才开播, 滑走即停 (每页独立, 不依赖父级状态)
         .background(GeometryReader { g in
             Color.clear
-                .onAppear { vis(g.frame(in: .global)) }
+                .onAppear {
+                    let pcm = pc
+                    app.reelPausers[page.id] = { if pcm.playing { pcm.pause() } }
+                    vis(g.frame(in: .global))
+                }
                 .onChange(of: g.frame(in: .global).minY) { _ in vis(g.frame(in: .global)) }
         })
         .onChange(of: app.selection) { s in
             if s != .feed {
                 if loaded, pc.playing { pc.pause() }
             } else if loaded, frac > 0.6, !pc.playing {
+                app.muteReels(except: page.id)
                 pc.togglePlay()
             }
         }
@@ -129,10 +134,14 @@ struct FeedReel: View {
             if v != nil {
                 if loaded, pc.playing { pc.pause() }
             } else if loaded, frac > 0.6, !pc.playing {
+                app.muteReels(except: page.id)
                 pc.togglePlay()
             }
         }
-        .onDisappear { pc.stop(); loaded = false }
+        .onDisappear {
+            app.reelPausers.removeValue(forKey: page.id)
+            pc.stop(); loaded = false
+        }
     }
 
     // 边缘窄条横滑: 右滑唤回 tab 条/信息, 左滑隐藏(与老映方向语义一致)
@@ -149,15 +158,18 @@ struct FeedReel: View {
         guard h > 0 else { return }
         let onScreen = min(f.maxY, h) - max(f.minY, 0)
         frac = max(0, onScreen) / h
+        // 互斥音响: 过 60% 即开播并点名其余全部闭嘴(阈值单独挡不住两页同时过线), 掉到 45% 才停防抖
         if frac > 0.6 {
             if !loaded {
                 loaded = true
+                app.muteReels(except: page.id)
                 pc.load(cur.url, id: cur.id)
                 pc.observeEnd { advance() }
             } else if !pc.playing {
+                app.muteReels(except: page.id)
                 pc.togglePlay()
             }
-        } else if loaded, pc.playing {
+        } else if frac < 0.45, loaded, pc.playing {
             pc.pause()
         }
     }
