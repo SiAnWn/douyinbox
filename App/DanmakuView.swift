@@ -1,64 +1,144 @@
 import SwiftUI
 import AVFoundation
+import UIKit
 
-// MARK: - 离线弹幕（v1.10.14）: 领档案时已把精选弹幕全量落盘(弹幕.json),
-// 播放时按视频时间轴飘屏, 全程不联网。车道=确定性哈希错峰, 单屏上限防刷屏。
+// MARK: - 离线弹幕引擎 v2（v1.10.21）：CoreAnimation 驱动
+// Canvas 主线程重绘(先 TimelineView 后 Timer)真机始终卡顿; 改红果/DanmakuFlame 正解:
+// 每条弹幕一个 UILabel, 入场一次, 位移交给 CA 线性动画(GPU 跑), 主线程只在出现时刻点名。
+// 暂停=layer.speed=0 与播放器 rate 帧同步原地冻住; 换集=items 变更全清重开。
 
 struct DMItem: Hashable {
     let t: Int      // 出现时间, 毫秒
     let x: String   // 文本
 }
 
+final class DanmakuEngineView: UIView {
+    weak var player: AVPlayer?
+    var items: [DMItem] = [] {
+        didSet { if items != oldValue { reload() } }
+    }
+    private var idx = 0
+    private var lastT: Double = -1
+    private var link: CADisplayLink?
+
+    private let laneN = 7
+    private let rowH: CGFloat = 27
+    private let topPad: CGFloat = 80      // 躲灵动岛
+    private let speed: CGFloat = 150      // px/s 匀速飘
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isUserInteractionEnabled = false
+        backgroundColor = .clear
+    }
+    required init?(coder: NSCoder) { fatalError("no coder") }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window != nil { startLink() } else { stopLink() }
+    }
+
+    private func startLink() {
+        guard link == nil else { return }
+        let l = CADisplayLink(target: self, selector: #selector(tick))
+        l.add(to: .common, forMode: .common)
+        link = l
+    }
+    private func stopLink() { link?.invalidate(); link = nil }
+
+    private func reload() {
+        subviews.forEach { $0.removeFromSuperview() }
+        idx = 0
+        lastT = -1
+    }
+
+    private func spawn(_ it: DMItem, slot: Int) {
+        let lb = UILabel()
+        lb.text = it.x
+        lb.font = .systemFont(ofSize: 13, weight: .medium)
+        lb.textColor = .white
+        lb.backgroundColor = UIColor.black.withAlphaComponent(0.42)
+        lb.layer.cornerRadius = 11
+        lb.layer.masksToBounds = true
+        lb.lineBreakMode = .byTruncatingTail
+        let attrs: [NSAttributedString.Key: Any] = [.font: lb.font as Any]
+        let tw = (it.x as NSString).size(withAttributes: attrs).width
+        let w = ceil(tw) + 20
+        let lane = CGFloat((slot * 5 + slot / 4) % laneN)
+        let y = topPad + lane * rowH + CGFloat((slot * 53) % 7)          // 微错峰防齐边
+        let x0 = bounds.width + CGFloat((slot % 4) * 46)                  // 同刻多条排队出右缘
+        lb.frame = CGRect(x: x0, y: y, width: w, height: 22)
+        addSubview(lb)
+        let dur = Double(bounds.width + w + 80) / Double(speed)
+        UIView.animate(withDuration: dur, delay: 0,
+                       options: [.curveLinear, .allowUserInteraction, .beginFromCurrentState]) {
+            lb.frame = CGRect(x: -w - 80, y: y, width: w, height: 22)
+        } completion: { _ in
+            lb.removeFromSuperview()
+        }
+    }
+
+    @objc private func tick() {
+        DanmakuLayer.ticks &+= 1
+        guard let pl = player, !items.isEmpty else {
+            DanmakuLayer.lastVisible = 0
+            return
+        }
+        let t0 = CMTimeGetSeconds(pl.currentTime()) * 1000.0
+        guard t0.isFinite else { return }
+        let now = max(0, t0)
+        DanmakuLayer.lastNow = now / 1000.0
+        layer.speed = pl.rate == 0 ? 0 : 1        // 暂停=所有飘动原地冻, 恢复=原地续飘
+        if now < lastT - 1200 { rewind(to: now) }                 // 回跳 seek
+        else if now > lastT + 3000 { idx = lower(now) }           // 前跳直接到位
+        lastT = now
+        while idx < items.count, Double(items[idx].t) <= now + 150 {
+            if now - Double(items[idx].t) < 2000 { spawn(items[idx], slot: idx) }  // 补档积压不补飘
+            idx += 1
+        }
+        DanmakuLayer.lastVisible = subviews.count
+    }
+
+    private func lower(_ now: Double) -> Int {
+        var lo = 0
+        var hi = items.count
+        while lo < hi {
+            let m = (lo + hi) / 2
+            if Double(items[m].t) < now - 1500 { lo = m + 1 } else { hi = m }
+        }
+        return lo
+    }
+    private func rewind(to now: Double) {
+        subviews.forEach { $0.layer.removeAllAnimations(); $0.removeFromSuperview() }
+        idx = lower(now)
+    }
+}
+
 struct DanmakuLayer: View {
     let pc: PlayerController
     let items: [DMItem]
-    // 引擎心跳探针: 简介弹层里可见
+    // 引擎探针(简介弹层读数): 帧=CADisplayLink tick; 在屏=现役 label 数
     static var ticks = 0
     static var lastVisible = 0
-    static var lastNow = -999.0     // 上次读到的视频秒(-999=还没跑, NaN 场景会显 -9)
-    // 帧源=Timer 发布器(最原始可靠): TimelineView(.animation) 实测在坊页内被 SwiftUI 判休眠
-    private let beat = Timer.publish(every: 1.0 / 15.0, on: .main, in: .common).autoconnect()
-    @State private var now = Date()
+    static var lastNow = -999.0
 
     var body: some View {
-        Canvas { g, size in
-            DanmakuLayer.ticks &+= 1
-            guard !items.isEmpty else { DanmakuLayer.lastVisible = 0; return }
-            let t0 = CMTimeGetSeconds(pc.player.currentTime()) * 1000.0
-            guard t0.isFinite else {
-                DanmakuLayer.lastVisible = -9; DanmakuLayer.lastNow = -9
-                return
-            }
-            let nowMs = max(0, t0)
-            DanmakuLayer.lastNow = nowMs / 1000.0
-            let rowH: CGFloat = 24
-            let lanes = max(4, Int((size.height * 0.30 - 40) / rowH))
-            let speed = 150.0            // px/s 匀速飘
-            let topPad: CGFloat = 76     // 躲灵动岛
-            // 性能版: 弃全局投影滤镜(整屏 offscreen 通道最贵), 改红果同款半透胶囊底=纯矩形填充
-            var drawn = 0
-            for (i, it) in items.enumerated() {
-                if Double(it.t) > nowMs + 300 { break }    // items 按时间排序, 后面都更晚
-                let age = nowMs - Double(it.t)
-                if age < 0 { continue }
-                let w = CGFloat(it.x.count) * 13 + 20
-                let x = Double(size.width) - age / 1000.0 * speed
-                if x < -w { continue }
-                var ln = (i * 7 + i / 3) % lanes
-                if ln < 0 { ln += lanes }
-                let y = topPad + CGFloat(ln) * rowH
-                let chip = CGRect(x: x, y: y, width: w, height: rowH - 5)
-                g.fill(Path(roundedRect: chip, cornerRadius: 11),
-                       with: .color(.black.opacity(0.42)))
-                g.draw(Text(it.x).font(.system(size: 13, weight: .medium))
-                            .foregroundColor(.white),
-                       at: CGPoint(x: x + 10, y: y + (rowH - 5) / 2), anchor: .leading)
-                drawn += 1
-                if drawn >= 36 { break }
-            }
-            DanmakuLayer.lastVisible = drawn
+        Host(pc: pc, items: items)
+            .allowsHitTesting(false)
+    }
+
+    private struct Host: UIViewRepresentable {
+        let pc: PlayerController
+        let items: [DMItem]
+        func makeUIView(context: Context) -> DanmakuEngineView {
+            let v = DanmakuEngineView()
+            v.player = pc.player
+            v.items = items
+            return v
         }
-        .onReceive(beat) { d in if !items.isEmpty { now = d } }   // 无弹幕不空转
-        .allowsHitTesting(false)
+        func updateUIView(_ v: DanmakuEngineView, context: Context) {
+            v.player = pc.player
+            if v.items != items { v.items = items }   // 换集全清重开
+        }
     }
 }

@@ -82,9 +82,14 @@ enum SeriesMetaStore {
         guard let c = Hongguo.client else { progress("红果引擎未就绪"); return }
         let list = app.dramaSeries
         guard !list.isEmpty else { progress("剧库是空的"); return }
-        var ok = 0
+        var ok = 0, skipped = 0
         for (i, s) in list.enumerated() {
             if Task.isCancelled { break }
+            // 增量补档: 已有简介或海报=档案有效, 直接跳过(一千部剧只补那缺的一部)
+            if let old = SeriesMetaStore.load(s.url), !old.desc.isEmpty || old.cover {
+                skipped += 1
+                continue
+            }
             progress("补齐中 \(i + 1)/\(list.count)：\(s.name)")
             guard let pg = try? await Hongguo.attempt(c, { try await c.search(s.name) }),
                   !pg.items.isEmpty else { continue }
@@ -94,7 +99,7 @@ enum SeriesMetaStore {
             if FileManager.default.fileExists(atPath: file(s.url).path) { ok += 1 }
             try? await Task.sleep(nanoseconds: 900_000_000)   // 匿名口温和
         }
-        progress("补齐完成：\(ok)/\(list.count) 部落了档案")
+        progress("补齐完成：新补 \(ok) 部 · 已有档案跳过 \(skipped) 部")
     }
 }
 
@@ -140,7 +145,10 @@ enum DanmakuStore {
             if !bag.isEmpty { all["\(ep.num)"] = bag.sorted { $0.t < $1.t } }
         }
         guard !all.isEmpty else {
-            HGTrail.note("dm empty sid=\(sid)")
+            // 冷门/新剧匿名弹幕池本就是空: 写个空档案当"查过了"记号, 补档按钮不再白跑
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try? Data("{}".utf8).write(to: file(dir))
+            HGTrail.note("dm empty sid=\(sid) 立空档")
             return
         }
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -154,8 +162,9 @@ enum DanmakuStore {
     @MainActor
     static func backfill(_ app: AppState, progress: @escaping (String) -> Void) async {
         guard let c = Hongguo.client else { progress("红果引擎未就绪"); return }
-        let list = app.dramaSeries.filter { !FileManager.default.fileExists(atPath: file($0.url).path) }
-        guard !list.isEmpty else { progress("弹幕档案都已齐") ; return }
+        let all = app.dramaSeries
+        let list = all.filter { !FileManager.default.fileExists(atPath: file($0.url).path) }
+        guard !list.isEmpty else { progress("弹幕档案都已齐（\(all.count) 部）"); return }
         var ok = 0
         for (i, s) in list.enumerated() {
             progress("拉弹幕 \(i + 1)/\(list.count)：\(s.name)")
