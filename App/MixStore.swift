@@ -223,6 +223,7 @@ final class BatchRunner: ObservableObject {
                apiEngine: Engine? = nil,
                onFinish: @escaping () -> Void) async {
         phase = .running
+        KeepAlive.shared.start()   // 静音循环防后台挂起(与红果批量同药)
         await stopFlag.clear()
         got = 0; skipped = 0; failed = 0; junk = 0; junkEps = []; total = 0
         current = ""
@@ -312,6 +313,7 @@ final class BatchRunner: ObservableObject {
         let wasStop = await stopFlag.check()
         phase = wasStop ? .failed : .done
         if wasStop { current = "已取消（已下保留，再粘同链接续传）" }
+        KeepAlive.shared.stop()
         onFinish()
     }
 

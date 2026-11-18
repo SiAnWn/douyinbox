@@ -481,7 +481,14 @@ struct ParseView: View {
     }
 
     // 红果整剧批量：逐集 resolve → 下载 → CENC 解密 → 落库 短剧/<剧名>/第NN集.mp4
+    // 续命符版: 全程静音循环防挂起(用户实锤退 App 下载就冻)
     private func hongguoRun(_ res: ParseResult, _ opt: QualityOption) async {
+        KeepAlive.shared.start()
+        await hongguoRunBody(res, opt)
+        KeepAlive.shared.stop()
+    }
+
+    private func hongguoRunBody(_ res: ParseResult, _ opt: QualityOption) async {
         guard let c = Hongguo.client else { status = "红果引擎初始化失败"; return }
         let sid = opt.url.host() ?? ""
         let def = opt.url.lastPathComponent
