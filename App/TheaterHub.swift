@@ -1627,67 +1627,9 @@ private struct RankTab: View {
             List {
                 if !vm.note.isEmpty { Section { Text(vm.note).font(.caption).foregroundStyle(.secondary) } }
                 Section {
-                    ForEach(Array(vm.items.enumerated()), id: \.offset) { i, it in
-                        if it.seriesId.isEmpty {
-                            // 演员榜行(可点) 或平台推广行: 展示为主
-                            let name = it.actor.isEmpty ? it.title : it.actor
-                            let sub = RankTab.actorSub(it)
-                            let cover = it.coverUrl.isEmpty ? it.avatarUrl : it.coverUrl
-                            HStack(spacing: 10) {
-                                Text("\(it.position)")
-                                    .font(.system(size: 13, weight: .heavy, design: .rounded))
-                                    .foregroundStyle(it.position <= 3 ? Color.orange : .secondary)
-                                    .frame(width: 26)
-                                AsyncImage(url: URL(string: hgImgURL(cover))) { $0.resizable().scaledToFill() }
-                                    placeholder: { Color.gray.opacity(0.15) }
-                                    .frame(width: 52, height: 70)
-                                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(name)
-                                        .font(.subheadline).lineLimit(1)
-                                    Text(sub)
-                                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                                }
-                                Spacer(minLength: 0)
-                            }
-                            .padding(.vertical, 2)
-                        } else {
-                            let pair = hgArrow(it.change)
-                            Button { nav.go(HgWant(sid: it.seriesId, title: it.title), "rank " + it.seriesId) } label: {
-                                HStack(spacing: 10) {
-                                    Color.clear
-                                        .frame(width: 52, height: 70)
-                                        .overlay {
-                                            AsyncImage(url: URL(string: it.coverUrl)) {
-                                                $0.resizable().scaledToFill()
-                                            } placeholder: { Color.gray.opacity(0.16) }
-                                        }
-                                        .overlay(alignment: .topLeading) {
-                                            RankBadge2(rank: it.position).padding(3)
-                                        }
-                                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        Text(it.title).font(.subheadline.weight(.semibold)).lineLimit(1)
-                                        Text((it.episodeCount > 0 ? "全\(it.episodeCount)集" : "短剧") +
-                                             (it.score.isEmpty ? "" : " · " + it.score))
-                                            .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                                    }
-                                    Spacer(minLength: 4)
-                                    VStack(alignment: .trailing, spacing: 6) {
-                                        if let pair {
-                                            Text(pair.0).font(.caption2.bold()).foregroundStyle(pair.1)
-                                        }
-                                        if it.promoted {
-                                            Text("荐").font(.caption2.bold()).foregroundStyle(.orange)
-                                        }
-                                    }
-                                }
-                                .padding(.vertical, 2)
-                            }
-                            .buttonStyle(.plain)
-                            .onAppear { if i >= vm.items.count - 6 { vm.more() } }
-                        }
-                    }
+                    // v1.10.64 一部一排太占地(用户点单): 改三列竖卡墙一屏九部,
+                    // 海报墙三列是钦定规矩; 翻页照 v59 教训走手动加载更多
+                    GridRankCards(items: vm.items.filter { !$0.seriesId.isEmpty })
                     MoreButton(busy: vm.busy, more: { vm.more() })
                 } header: {
                     Text("红果榜单 · 匿名直连")
@@ -1724,82 +1666,128 @@ private struct RankTab: View {
 
 // v1.10.63 演员榜(收编原"演员"tab): 总榜|男演员|女演员 三格,
 // 性别由 CastVM.fillGenders 扫个人页 tags 补账, 账本持久化二次秒开
+// v1.10.64 榜单剧墙: 三列竖卡通用件(海报底座+金银铜牌+底部渐黑+片名集数热度),
+// 与推荐墙同身段; 一格一剧 一屏九部
+struct GridRankCards: View {
+    @EnvironmentObject private var nav: TheaterNav
+    let items: [RankItem]
+    var body: some View {
+        LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8),
+                            GridItem(.flexible(), spacing: 8)], spacing: 12) {
+            ForEach(Array(items.enumerated()), id: \.offset) { _, it in
+                Button { nav.go(HgWant(sid: it.seriesId, title: it.title), "rankwall " + it.seriesId) } label: {
+                    Color.clear.aspectRatio(0.7, contentMode: .fit)
+                        .overlay {
+                            AsyncImage(url: URL(string: hgImgURL(it.coverUrl))) {
+                                $0.resizable().scaledToFill()
+                            } placeholder: {
+                                LinearGradient(colors: [Color.gray.opacity(0.35), Color.gray.opacity(0.12)],
+                                               startPoint: .top, endPoint: .bottom)
+                            }
+                        }
+                        .overlay(alignment: .topLeading) {
+                            RankBadge2(rank: it.position).padding(6)
+                        }
+                        .overlay {
+                            LinearGradient(colors: [.black.opacity(0.0), .black.opacity(0.7)],
+                                           startPoint: .center, endPoint: .bottom)
+                        }
+                        .overlay(alignment: .bottomLeading) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(it.title)
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(.white).lineLimit(2)
+                                Text((it.episodeCount > 0 ? "全" + String(it.episodeCount) + "集" : "") +
+                                     (it.score.isEmpty ? "" : (it.episodeCount > 0 ? " · " : "") + it.score))
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(.white.opacity(0.75)).lineLimit(1)
+                            }
+                            .padding(6)
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+}
+// v1.10.64 演员榜: 三格开关从 List 行里搬出来钉在顶部(List 行内按钮被行
+// 点区吞=用户实测"男演员点不了/切不回总榜"), 榜单条目变长时自动补性别账
 private struct ActorBoard: View {
     @EnvironmentObject private var nav: TheaterNav
     @ObservedObject var vm: CastVM
     @State private var seg = 0
     private let wants = ["", "M", "F"]
     var body: some View {
-        List {
-            Section {
-                HStack(spacing: 8) {
-                    ForEach(0..<3, id: \.self) { i in
-                        Button {
-                            seg = i
-                            Task { await vm.fillGenders() }
-                        } label: {
-                            Text(["总榜", "男演员", "女演员"][i])
-                                .font(.footnote.weight(i == seg ? .bold : .regular))
-                                .padding(.horizontal, 12).padding(.vertical, 6)
-                                .background(Capsule().fill(i == seg ? Color.orange.opacity(0.16)
-                                                                     : Color.gray.opacity(0.12)))
-                                .foregroundStyle(i == seg ? Color.orange : .primary)
-                        }
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                ForEach(0..<3, id: \.self) { i in
+                    Button {
+                        seg = i
+                        Task { await vm.fillGenders() }
+                    } label: {
+                        Text(["总榜", "男演员", "女演员"][i])
+                            .font(.footnote.weight(i == seg ? .bold : .regular))
+                            .padding(.horizontal, 12).padding(.vertical, 6)
+                            .background(Capsule().fill(i == seg ? Color.orange.opacity(0.16)
+                                                                 : Color.gray.opacity(0.12)))
+                            .foregroundStyle(i == seg ? Color.orange : .primary)
                     }
-                    if vm.genderBusy { ProgressView().controlSize(.small) }
-                    Spacer()
                 }
-                .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8))
-                .listRowBackground(Color.clear)
+                if vm.genderBusy { ProgressView().controlSize(.small) }
+                Spacer()
             }
-            Section {
-                let rows = wants[seg].isEmpty ? vm.items : vm.items.filter { vm.genders[$0.userId] == wants[seg] }
-                if rows.isEmpty {
-                    Text(vm.genderBusy ? "正在扫演员性别，稍等…" : "这一档还薄，过两天再来翻")
-                        .font(.footnote).foregroundStyle(.secondary)
-                }
-                ForEach(Array(rows.enumerated()), id: \.offset) { i, it in
-                    Button { nav.go(HgActorGo(uid: it.userId, name: it.actor), "actorboard " + it.actor) } label: {
-                        HStack(spacing: 10) {
-                            Text(String(format: "%02d", it.position))
-                                .font(.system(size: 15, weight: .heavy, design: .rounded))
-                                .foregroundStyle(it.position <= 3 ? Color.orange : Color.secondary)
-                                .frame(width: 30)
-                            AsyncImage(url: URL(string: hgImgURL(it.avatarUrl))) {
-                                $0.resizable().scaledToFill()
-                            } placeholder: { Color.gray.opacity(0.15) }
-                                .frame(width: 46, height: 46)
-                                .clipShape(Circle())
-                                .overlay(Circle().stroke(.white.opacity(0.35), lineWidth: 1))
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(it.actor).font(.subheadline.weight(.semibold)).lineLimit(1)
-                                Text(RankTab.actorSub(it))
-                                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            List {
+                Section {
+                    let rows = wants[seg].isEmpty ? vm.items : vm.items.filter { vm.genders[$0.userId] == wants[seg] }
+                    if rows.isEmpty {
+                        Text(vm.genderBusy ? "正在扫演员性别，稍等…" : "这一档还薄，下拉多拉几位演员")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                    ForEach(Array(rows.enumerated()), id: \.offset) { i, it in
+                        Button { nav.go(HgActorGo(uid: it.userId, name: it.actor), "actorboard " + it.actor) } label: {
+                            HStack(spacing: 10) {
+                                Text(String(format: "%02d", it.position))
+                                    .font(.system(size: 15, weight: .heavy, design: .rounded))
+                                    .foregroundStyle(it.position <= 3 ? Color.orange : Color.secondary)
+                                    .frame(width: 30)
+                                AsyncImage(url: URL(string: hgImgURL(it.avatarUrl))) {
+                                    $0.resizable().scaledToFill()
+                                } placeholder: { Color.gray.opacity(0.15) }
+                                    .frame(width: 46, height: 46)
+                                    .clipShape(Circle())
+                                    .overlay(Circle().stroke(.white.opacity(0.35), lineWidth: 1))
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(it.actor).font(.subheadline.weight(.semibold)).lineLimit(1)
+                                    Text(RankTab.actorSub(it))
+                                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                }
+                                Spacer(minLength: 0)
                             }
-                            Spacer(minLength: 0)
+                            .padding(.vertical, 2)
                         }
-                        .padding(.vertical, 2)
-                    }
-                    .buttonStyle(.plain)
-                    .onAppear {
-                        // 过滤后列表短, 近尾就补页+续扫 (more() 自带 5 页闸防永动机)
-                        if i >= rows.count - 3 {
-                            vm.more()
-                            Task { await vm.fillGenders() }
+                        .buttonStyle(.plain)
+                        .onAppear {
+                            if i >= rows.count - 3 {
+                                vm.more()
+                                Task { await vm.fillGenders() }
+                            }
                         }
                     }
+                } header: {
+                    Text("红果演员榜 · 匿名直连").font(.system(size: 15, weight: .heavy))
                 }
-            } header: {
-                Text("红果演员榜 · 匿名直连").font(.system(size: 15, weight: .heavy))
             }
+            .listStyle(.plain)
+            .overlay { if vm.busy && vm.items.isEmpty { ProgressView().controlSize(.large) } }
+            .refreshable { vm.load(); Task { await vm.fillGenders() } }
         }
-        .listStyle(.plain)
         .task { await vm.fillGenders() }
-        .refreshable { vm.load(); Task { await vm.fillGenders() } }
-        .overlay { if vm.busy && vm.items.isEmpty { ProgressView().controlSize(.large) } }
+        .onChange(of: vm.items.count) { _ in Task { await vm.fillGenders() } }
     }
 }
-
 // MARK: - 上新段
 
 private struct NewTab: View {
