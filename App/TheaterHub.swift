@@ -1352,7 +1352,7 @@ private struct ChipScroller: View {
                         Text(pair.0)
                             .font(.footnote)
                             .padding(.horizontal, 12).padding(.vertical, 6)
-                            .background(Capsule().fill(pair.1 ? Color.accentColor.opacity(0.9) : Color.gray.opacity(0.18)))
+                            .background(Capsule().fill(pair.1 ? Color.orange.opacity(0.9) : Color.gray.opacity(0.18)))
                             .foregroundStyle(pair.1 ? .white : .primary)
                     }
                 }
@@ -1950,13 +1950,13 @@ private struct FilterPage: View {
     }
 }
 
-// v1.10.70 筛选行: 组名钉左 + 胶囊横滑; v1.10.71 防重复定案:
-// 服务端选项里"全部XX/不限"一律隐藏, 永远只亮我们自家打头那一个(实测红果自带会撞双份)
+// v1.10.70 筛选行: 组名钉左 + 胶囊横滑
+// v1.10.72 用户终审: 自加的"全部XX"整个废除(跟服务端的中性项撞名出双份/改名),
+// 原样只显红果自己的选项; 行尚无选择时其打头"全部"项自动亮橙顶位
 private struct FilterRowLine: View {
     @ObservedObject var vm: CatVM
     let row: FilterRow
     var body: some View {
-        let opts = row.options.filter { !$0.name.hasPrefix("全部") && !$0.name.hasPrefix("不限") }
         HStack(spacing: 6) {
             Text(row.name)
                 .font(.system(size: 13, weight: .bold))
@@ -1964,12 +1964,12 @@ private struct FilterRowLine: View {
                 .lineLimit(1).minimumScaleFactor(0.7)
                 .frame(width: 56, alignment: .leading)
                 .padding(.leading, 12)
-            ChipScroller(labels: [("全部" + row.name, vm.picks[row.key] == nil)]
-                              + opts.map { ($0.name, vm.picks[row.key] == $0.value) },
-                         onPick: { i in
-                             if i == 0 { vm.clearKey(row.key) }
-                             else { vm.pick(key: row.key, value: opts[i - 1].value) }
-                         })
+            ChipScroller(labels: Array(row.options.enumerated()).map { i, o in
+                let on = vm.picks[row.key] == o.value
+                    || (vm.picks[row.key] == nil && i == 0
+                        && (o.name.hasPrefix("全部") || o.name.hasPrefix("不限")))
+                return (o.name, on)
+            }, onPick: { vm.pick(key: row.key, value: row.options[$0].value) })
         }
     }
 }
