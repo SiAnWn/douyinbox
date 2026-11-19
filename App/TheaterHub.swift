@@ -277,17 +277,25 @@ final class RailVM: ObservableObject {
                 ("ranklist_must_watch", { $0.must = $1 }),
             ]
             for (board, set) in boards {
-                if let sr = try? await Hongguo.attempt(c, {
-                    try await c.shortRank(ShortRankQuery(board: board))
-                }) {
-                    var out: [HRail.CardLike] = []
-                    for it in sr.items.prefix(20) where !it.seriesId.isEmpty {   // v53 提量供 TOP4-20 小卡
+                // v1.10.57 顺游标凑 20 条: 单页 shortRank 只回 ~10, 搜索页 TOP 区
+                // 要 4-20 的续料(首页滑轨用不满不打紧)
+                var out: [HRail.CardLike] = []
+                var cursor: String?
+                for _ in 0..<3 {
+                    let sr = try? await Hongguo.attempt(c, {
+                        try await c.shortRank(ShortRankQuery(board: board, cursor: cursor))
+                    })
+                    guard let sr else { break }
+                    CoverBank.registerRank(sr.items)   // 每页都入银行供缺图兜底
+                    for it in sr.items where !it.seriesId.isEmpty {
                         out.append(HRail.CardLike(sid: it.seriesId, title: it.title,
-                                                 sub: it.score, cover: it.coverUrl, rank: it.position))
+                                                  sub: it.score, cover: it.coverUrl, rank: it.position))
                     }
-                    CoverBank.registerRank(sr.items)   // v54 入银行供缺图兜底
-                    set(self, out)
+                    cursor = (sr.hasMore && out.count < 20) ? sr.cursor : nil
+                    if cursor == nil { break }
+                    try? await Task.sleep(nanoseconds: 300_000_000)
                 }
+                set(self, Array(out.prefix(20)))
                 try? await Task.sleep(nanoseconds: 350_000_000)
             }
         }
@@ -968,17 +976,17 @@ private struct TopRankCardBig: View {
                 IdjRankStyle.gradient(rank)
                     .mask(LinearGradient(colors: [.clear, .black, .black],
                                          startPoint: .init(x: 0.5, y: 0.35), endPoint: .bottom))
-                VStack(spacing: 2) {
+                VStack(spacing: 3) {
                     Text("TOP" + String(rank))
-                        .font(.system(size: 24, weight: .black, design: .rounded))
+                        .font(.system(size: 30, weight: .black, design: .rounded))
                     Text(card.title)
-                        .font(.subheadline.weight(.semibold)).lineLimit(1)
+                        .font(.system(size: 13, weight: .bold)).lineLimit(1)
                     if !card.sub.isEmpty {
-                        Text(card.sub).font(.caption2).opacity(0.8).lineLimit(1)
+                        Text(card.sub).font(.system(size: 11)).opacity(0.8).lineLimit(1)
                     }
                 }
                 .foregroundStyle(.white)
-                .padding(.horizontal, 6).padding(.bottom, 10)
+                .padding(.horizontal, 4).padding(.bottom, 12)
             }
             .aspectRatio(0.6, contentMode: .fit)
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -1069,7 +1077,8 @@ private struct TheaterSearchTab: View {
                 // 三张 TOP 大卡(v1.10.52 用户钦点): 没出结果时就是它仨当家, 出的结果秒让位
                 if vm.sres.isEmpty {
                     TopBoards(rails: rails)
-                        .padding(.vertical, 2)
+                        .listRowInsets(EdgeInsets(top: 2, leading: 2, bottom: 8, trailing: 2))
+                        .listRowBackground(Color.clear)
                 }
                 if vm.sres.isEmpty {
                     if vm.guesses.isEmpty && vm.hotBoards.isEmpty && vm.shist.isEmpty {
@@ -1110,29 +1119,7 @@ private struct TheaterSearchTab: View {
                                 .listRowInsets(EdgeInsets(top: 2, leading: 8, bottom: 2, trailing: 8))
                         }
                     }
-                ForEach(Array(vm.hotBoards.enumerated()), id: \.offset) { _, b in
-                    Section(b.name) {
-                        ForEach(Array(b.items.enumerated()), id: \.offset) { _, it in
-                            Button {
-                                q = it.title
-                                vm.doSearch(it.title)
-                            } label: {
-                                HStack(spacing: 8) {
-                                    Text("\(it.position)")
-                                        .font(.system(size: 12, weight: .heavy, design: .rounded))
-                                        .foregroundStyle(it.position <= 3 ? Color.orange : .secondary)
-                                        .frame(width: 20)
-                                    Text(it.title).font(.subheadline).lineLimit(1)
-                                    Spacer(minLength: 4)
-                                    if !it.searchScore.isEmpty {
-                                        Text(it.searchScore).font(.caption2).foregroundStyle(.secondary)
-                                    }
-                                }
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                }
+                // v1.10.57 热搜榜/预约榜整段拆除(用户点单: 搜索页只留 TOP 区+历史+猜词)
                 }
             }
             if !vm.snote.isEmpty {
