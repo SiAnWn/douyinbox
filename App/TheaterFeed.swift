@@ -79,6 +79,33 @@ struct FeedReel: View {
     @State private var dmAll: [Int: [DMItem]] = [:]
     @State private var dmItems: [DMItem] = []
     @State private var dmDbg = ""
+    // v1.10.84 坊底栏工具条(用户点单): 选集|倍速|弹幕开关|跳过
+    @State private var showEps = false
+    @State private var rateIdx = 0
+    @State private var dmOn = UserDefaults.standard.object(forKey: "feedDmOn") as? Bool ?? true
+
+    private static let rates: [Double] = [1.0, 1.25, 1.5, 2.0, 0.75]
+
+    private var rateLabel: String {
+        let r = Self.rates[rateIdx]
+        return r == 1.0 ? "倍速" : String(format: "%.2gx", r) + "倍"
+    }
+
+    private func cycleRate() {
+        rateIdx = (rateIdx + 1) % Self.rates.count
+        pc.setRate(Float(Self.rates[rateIdx]))
+    }
+
+    private func flipDm() {
+        dmOn.toggle()
+        UserDefaults.standard.set(dmOn, forKey: "feedDmOn")
+    }
+
+    private func skipJump() {
+        // 片头段(40s 前)一键跨到正片, 平时当下 +15s
+        let t = pc.currentTime
+        pc.seek(t < 40 ? 40 : t + 15)
+    }
 
     private var cur: VideoItem {
         page.eps[min(epIdx, page.eps.count - 1)]
@@ -90,8 +117,10 @@ struct FeedReel: View {
             PlayerSurface(player: pc.player, fill: fill)
                 .ignoresSafeArea()
 
-            DanmakuLayer(pc: pc, items: dmItems)   // 离线弹幕(档案落盘后零流量)
-                .ignoresSafeArea()
+            if dmOn {   // v1.10.84 弹幕开关进工具条, 偏好存 UserDefaults
+                DanmakuLayer(pc: pc, items: dmItems)   // 离线弹幕(档案落盘后零流量)
+                    .ignoresSafeArea()
+            }
 
             Color.clear.contentShape(Rectangle())
                 .ignoresSafeArea()
@@ -173,6 +202,43 @@ struct FeedReel: View {
             .padding(20)
             .presentationDetents([.medium, .large])
         }
+        // v1.10.84 选集格: 当前集橙底 一戳即换
+        .sheet(isPresented: $showEps) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(page.series.name + " · 选集").font(.headline)
+                ScrollView {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 6),
+                              spacing: 8) {
+                        ForEach(Array(page.eps.enumerated()), id: \.offset) { i, v in
+                            Button {
+                                epIdx = i
+                                dmItems = dmAll[i + 1] ?? []
+                                pc.load(cur.url, id: cur.id)
+                                showEps = false
+                            } label: {
+                                Text(feedEpNo(v.title, i))
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .monospacedDigit()
+                                    .frame(maxWidth: .infinity, minHeight: 42)
+                                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .fill(i == epIdx ? Color.orange : Color(uiColor: .secondarySystemBackground)))
+                                    .foregroundStyle(i == epIdx ? .white : .primary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+            .padding(20)
+            .presentationDetents([.medium, .large])
+        }
+    }
+
+    private func feedEpNo(_ t: String, _ i: Int) -> String {
+        if let r = t.range(of: "第(\\d{1,3})集", options: .regularExpression) {
+            return String(t[r].filter { $0.isNumber })
+        }
+        return String(i + 1)
     }
 
     // 边缘窄条横滑: 右滑唤回 tab 条/信息, 左滑隐藏(与老映方向语义一致)
@@ -215,8 +281,28 @@ struct FeedReel: View {
         }
     }
 
+    private func feedTool(_ icon: String, _ label: String, _ act: @escaping () -> Void) -> some View {
+        Button(action: act) {
+            HStack(spacing: 4) {
+                Image(systemName: icon).font(.system(size: 11))
+                Text(label).font(.footnote.weight(.medium))
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 11).padding(.vertical, 7)
+            .background(Capsule().fill(.black.opacity(0.45)))
+        }
+    }
+
     private var bottomBar: some View {
         VStack(alignment: .leading, spacing: 10) {
+            // v1.10.84 工具条四格(选集|倍速|弹幕|跳过) 钉剧名正上方 黑透胶囊一个语言
+            HStack(spacing: 8) {
+                feedTool("list.number", "选集") { showEps = true }
+                feedTool("speedometer", rateLabel) { cycleRate() }
+                feedTool(dmOn ? "text.bubble.fill" : "text.bubble", "弹幕") { flipDm() }
+                feedTool("forward.end.fill", pc.currentTime < 40 ? "跳片头" : "+15s") { skipJump() }
+                Spacer(minLength: 0)
+            }
             Text(page.series.name)
                 .font(.title3).bold()
                 .foregroundStyle(.white)
