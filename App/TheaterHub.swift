@@ -525,20 +525,76 @@ final class DiscoverVM: ObservableObject {
                 let raw0 = items.count
                 items = items.filter { $0.episodeCount > 0 }
                 let dropped = raw0 - items.count
+                // 防重铁闸: 服务端游标偶尔犯浑给重复行, 已见过的直接丢
                 items = items.filter { sseen.insert($0.id).inserted }
                 CoverBank.register(items)
                 for i in items.indices where items[i].coverUrl.isEmpty {
                     if let c2 = CoverBank.data[items[i].id] { items[i].coverUrl = c2 }
                 }
                 if reset { self.sres = items } else { self.sres += items }
-                self.scur = (pg.hasMore && raw0 > 0) ? pg.cursor : nil
-                HGTrail.note("hgsearch back '\(q.prefix(12))' n=\(items.count) drop=\(dropped) more=\(pg.hasMore) total=\(self.sres.count) nocover=\(items.filter { $0.coverUrl.isEmpty }.count)")
+                // v1.10.43 演员加餐(用户"还是不够全"案): 红果搜索对演员名只给十九部
+                // 精选(PC 40页实锤后面全是轮回)。搜演员名时后台走已验证的
+                // 人气榜uid桥→personWorks, 把 TA 的全部作品并进结果, 一次补全
+                if reset, pg.items.contains(where: { $0.title == q && $0.episodeCount == 0 }) {
+                    actorBonus(q)
+                }
+                // v1.10.43 断头绳(PC -sdeep 40页实锤: 演员类查询服务端只有约20部,
+                // hasMore 却永远 true、从第3页起全量轮回旧剧—不给断头绳能翻到地老天荒
+                // "看着多其实不全"。规则: 游标自我复制或整页零新剧, 当场收线)
+                let nc = pg.cursor ?? ""
+                let stale = pg.hasMore && (items.isEmpty || nc == (cur ?? ""))
+                self.scur = (pg.hasMore && raw0 > 0 && !stale) ? pg.cursor : nil
+                HGTrail.note("hgsearch back '\(q.prefix(12))' n=\(items.count) drop=\(dropped) more=\(pg.hasMore) total=\(self.sres.count) nocover=\(items.filter { $0.coverUrl.isEmpty }.count)\(stale ? " STALL-CUT" : "")")
                 if self.sres.isEmpty { self.snote = "搜不到「\(q)」，换个词试试" }
                 await self.fillCovers(Array(items.prefix(8)))
             } else { self.snote = "搜索口这次没搭手，再来一次" }
         }
     }
     private var sseen: Set<String> = []
+
+    // v1.10.43 演员加餐: 查询词命中演员(搜索行 title==词 且 eps=0)时, 后台走
+    // 人气榜uid桥(ActorVM.lookup, 演员tab同款已验证)→personWorks 全量翻页,
+    // 把 TA 的所有作品(去重后)拼进搜索结果 = 红果只给19部精选的补全方案
+    private var actorBonusDone = ""
+    private func actorBonus(_ name: String) {
+        guard actorBonusDone != name else { return }
+        actorBonusDone = name
+        Task { @MainActor in
+            guard let c = Hongguo.client else { return }
+            let uid = await ActorVM.lookup(name)
+            guard !uid.isEmpty else {
+                HGTrail.note("hgsearch actor noUid '\(name)'")
+                return
+            }
+            var all: [Work] = []
+            var cur = ""
+            for _ in 0..<4 {
+                let pg = try? await (cur.isEmpty
+                    ? c.personWorks(uid)
+                    : c.personWorks(uid, cursor: cur))
+                guard let pg = pg, !pg.items.isEmpty else { break }
+                all += pg.items
+                guard pg.hasMore else { break }
+                let n = pg.cursor
+                if n.isEmpty || n == cur { break }
+                cur = n
+                try? await Task.sleep(nanoseconds: 150_000_000)
+            }
+            guard name == self.smode else { return }   // 用户已换词, 别去搅新战场
+            let extra = all.filter { $0.episodeCount > 0 }
+                .map { SeriesSummary(id: $0.seriesId, title: $0.title, description: $0.description,
+                                     coverUrl: $0.coverUrl, coverExpiresAt: $0.coverExpiresAt,
+                                     episodeCount: $0.episodeCount) }
+                .filter { sseen.insert($0.id).inserted }
+            guard !extra.isEmpty else {
+                HGTrail.note("hgsearch actor works0 uid=\(uid)")
+                return
+            }
+            CoverBank.register(extra)
+            self.sres += extra
+            HGTrail.note("hgsearch actor+\(extra.count) uid=\(uid) total=\(self.sres.count)")
+        }
+    }
 
     // 银行也空着的封面: 去详情口一张张贴回来(限量, 温和限速)
     private func fillCovers(_ batch: [SeriesSummary]) async {
