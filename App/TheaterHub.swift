@@ -828,6 +828,13 @@ final class CatVM: ObservableObject {
         board()
     }
 
+    // v1.10.70 "全部XX"胶囊 = 清掉这一行的条件
+    func clearKey(_ key: String) {
+        guard picks[key] != nil else { return }
+        picks[key] = nil
+        board()
+    }
+
     func more() {
         guard nextCursor != nil, !busy else { return }
         board(reset: false)
@@ -1916,17 +1923,13 @@ private struct FilterPage: View {
         let parts = split()
         ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: 8) {
-                // 第一道: 类别横滑(真人剧/漫剧/AI剧…全随服务端自取)
+                // v1.10.70 每行钉组名 + 打头"全部XX"兜底胶囊(照用户甩的竞品图)
                 if let cat = parts.0, !cat.options.isEmpty {
-                    ChipScroller(labels: cat.options.map { ($0.name, vm.picks[cat.key] == $0.value) },
-                                 onPick: { vm.pick(key: cat.key, value: cat.options[$0].value) })
-                        .padding(.horizontal, 8)
+                    FilterRowLine(vm: vm, row: cat)
                         .padding(.top, 6)
                 }
-                // 其余条件组逐行横滑
                 ForEach(parts.1.filter { !$0.options.isEmpty }, id: \.key) { row in
-                    ChipScroller(labels: row.options.map { ($0.name, vm.picks[row.key] == $0.value) },
-                                 onPick: { vm.pick(key: row.key, value: row.options[$0].value) })
+                    FilterRowLine(vm: vm, row: row)
                 }
                 if !vm.note.isEmpty {
                     Text(vm.note).font(.caption).foregroundStyle(.secondary)
@@ -1944,6 +1947,34 @@ private struct FilterPage: View {
             .padding(.vertical, 6)
         }
         .task { vm.loadPanel() }
+    }
+}
+
+// v1.10.70 筛选行: 组名钉左 + 胶囊横滑, 打头自加"全部XX"=清该行(服务端已带"全部"项则不重复加)
+private struct FilterRowLine: View {
+    @ObservedObject var vm: CatVM
+    let row: FilterRow
+    var body: some View {
+        let hasAll = row.options.contains { $0.name.contains("全部") || $0.name == "不限" }
+        let prepend = !hasAll
+        HStack(spacing: 6) {
+            Text(row.name)
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(.primary)
+                .lineLimit(1).minimumScaleFactor(0.7)
+                .frame(width: 56, alignment: .leading)
+                .padding(.leading, 12)
+            ChipScroller(labels: (prepend ? [("\"全部" + row.name, vm.picks[row.key] == nil)] : [])
+                              + row.options.map { ($0.name, vm.picks[row.key] == $0.value) },
+                         onPick: { i in
+                             if prepend {
+                                 if i == 0 { vm.clearKey(row.key) }
+                                 else { vm.pick(key: row.key, value: row.options[i - 1].value) }
+                             } else {
+                                 vm.pick(key: row.key, value: row.options[i].value)
+                             }
+                         })
+        }
     }
 }
 
