@@ -881,9 +881,30 @@ extension View {
     }
 }
 
-// v1.10.54 搜索页单榜TOP区(用户终审定形 53 版三榜切换会错页: 他家搜索页=
-// 一条热榜顺排, 三张大竖卡TOP1-3 + 四列小竖卡TOP4-20, 全部"图+图下标题"
-// 两段式, 热度黑胶囊贴封面左下; 热播/新剧/必看那是他家首页, 搜索页没有)
+// v1.10.55 iDuanJu 1:1 抄码(GPL 私用不分发 用户钦定"直接抄"):
+// TopRankCard = ZStack(bottom){封面 + 名次专属渐变(红1蓝2橙3) mask(0.35起渐黑) +
+// 白字 TOP N 24黑圆体/标题/热度} aspect0.6 圆12; 小卡抄 NumberedPosterCell:
+// 3:4 竖图 + 左上 %02d 26黑斜体圆体描影 + 底部渐黑 + 图下标题
+enum IdjRankStyle {
+    static func gradient(_ r: Int) -> LinearGradient {
+        let c: [Color]
+        switch r {
+        case 1: c = [Color(red: 0.95, green: 0.25, blue: 0.3), Color(red: 0.75, green: 0.1, blue: 0.2)]
+        case 2: c = [Color(red: 0.25, green: 0.35, blue: 0.95), Color(red: 0.15, green: 0.2, blue: 0.7)]
+        default: c = [Color(red: 0.98, green: 0.45, blue: 0.25), Color(red: 0.85, green: 0.25, blue: 0.15)]
+        }
+        return LinearGradient(colors: c, startPoint: .top, endPoint: .bottom)
+    }
+    static func numeralColor(_ r: Int) -> Color {
+        switch r {
+        case 1: return Color(red: 1, green: 0.27, blue: 0.2)
+        case 2: return Color(red: 1, green: 0.55, blue: 0.15)
+        case 3: return Color(red: 1, green: 0.78, blue: 0.2)
+        default: return .white.opacity(0.85)
+        }
+    }
+}
+
 struct TopBoards: View {
     @ObservedObject var rails: RailVM
     var body: some View {
@@ -894,7 +915,7 @@ struct TopBoards: View {
                     ForEach(0..<3, id: \.self) { _ in
                         Color.clear
                             .frame(maxWidth: .infinity)
-                            .aspectRatio(0.68, contentMode: .fit)
+                            .aspectRatio(0.6, contentMode: .fit)
                             .overlay(RoundedRectangle(cornerRadius: 12)
                                 .fill(Color.gray.opacity(0.12)))
                     }
@@ -902,15 +923,15 @@ struct TopBoards: View {
             } else {
                 HStack(alignment: .top, spacing: 8) {
                     ForEach(Array(cards.prefix(3).enumerated()), id: \.offset) { i, c in
-                        RankCardBig(rank: i + 1, card: c)
+                        TopRankCardBig(rank: i + 1, card: c)
                             .frame(maxWidth: .infinity)
                     }
                 }
                 if cards.count > 3 {
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4),
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 5),
                               spacing: 12) {
                         ForEach(Array(cards.dropFirst(3).enumerated()), id: \.offset) { i, c in
-                            RankCardMini(rank: i + 4, card: c)
+                            TopRankMini(rank: i + 4, card: c)
                         }
                     }
                 }
@@ -920,7 +941,7 @@ struct TopBoards: View {
     }
 }
 
-// 热度黑胶囊(iDuanJu 小卡同款: 白字9号黑55%透底 贴封面左下)
+// 热度黑胶囊(官方红果同款 白字黑55% 贴封面左下)
 private struct HeatTag: View {
     let text: String
     var body: some View {
@@ -932,62 +953,71 @@ private struct HeatTag: View {
     }
 }
 
-private struct RankCardBig: View {
+private struct TopRankCardBig: View {
+    @EnvironmentObject private var nav: TheaterNav
+    let rank: Int
+    let card: HRail.CardLike
+    var body: some View {
+        Button { nav.go(HgWant(sid: card.sid, title: card.title), "top " + card.sid) } label: {
+            ZStack(alignment: .bottom) {
+                AsyncImage(url: URL(string: hgCoverUrl(sid: card.sid, card.cover))) {
+                    $0.resizable().scaledToFill()
+                } placeholder: { Color.gray.opacity(0.2) }
+                IdjRankStyle.gradient(rank)
+                    .mask(LinearGradient(colors: [.clear, .black, .black],
+                                         startPoint: .init(x: 0.5, y: 0.35), endPoint: .bottom))
+                VStack(spacing: 2) {
+                    Text("TOP " + String(rank))
+                        .font(.system(size: 24, weight: .black, design: .rounded))
+                    Text(card.title)
+                        .font(.subheadline.weight(.semibold)).lineLimit(1)
+                    if !card.sub.isEmpty {
+                        Text(card.sub).font(.caption2).opacity(0.8).lineLimit(1)
+                    }
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 6).padding(.bottom, 10)
+            }
+            .aspectRatio(0.6, contentMode: .fit)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct TopRankMini: View {
     @EnvironmentObject private var nav: TheaterNav
     let rank: Int
     let card: HRail.CardLike
     var body: some View {
         Button { nav.go(HgWant(sid: card.sid, title: card.title), "top " + card.sid) } label: {
             VStack(alignment: .leading, spacing: 4) {
-                Color.clear.aspectRatio(0.68, contentMode: .fit)
+                Color.clear.aspectRatio(0.75, contentMode: .fit)
                     .overlay {
                         AsyncImage(url: URL(string: hgCoverUrl(sid: card.sid, card.cover))) {
                             $0.resizable().scaledToFill()
                         } placeholder: { Color.gray.opacity(0.2) }
                     }
                     .overlay(alignment: .topLeading) {
-                        RankBadge2(rank: rank).padding(6)
+                        Text(String(format: "%02d", rank))
+                            .font(.system(size: 18, weight: .black, design: .rounded)).italic()
+                            .foregroundStyle(.white)
+                            .shadow(color: rank <= 3 ? IdjRankStyle.numeralColor(rank) : .black,
+                                    radius: 0, x: 2, y: 2)
+                            .padding(.leading, 2).offset(y: -2)
+                    }
+                    .overlay(alignment: .bottom) {
+                        LinearGradient(colors: [.clear, .black.opacity(0.55)],
+                                       startPoint: .center, endPoint: .bottom)
                     }
                     .overlay(alignment: .bottomLeading) {
                         if !card.sub.isEmpty {
-                            HeatTag(text: card.sub).padding(6)
+                            HeatTag(text: card.sub).scaleEffect(0.85).padding(3)
                         }
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 Text(card.title)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-            }
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-private struct RankCardMini: View {
-    @EnvironmentObject private var nav: TheaterNav
-    let rank: Int
-    let card: HRail.CardLike
-    var body: some View {
-        Button { nav.go(HgWant(sid: card.sid, title: card.title), "top " + card.sid) } label: {
-            VStack(alignment: .leading, spacing: 3) {
-                Color.clear.aspectRatio(0.66, contentMode: .fit)
-                    .overlay {
-                        AsyncImage(url: URL(string: hgCoverUrl(sid: card.sid, card.cover))) {
-                            $0.resizable().scaledToFill()
-                        } placeholder: { Color.gray.opacity(0.2) }
-                    }
-                    .overlay(alignment: .topLeading) {
-                        RankBadge2(rank: rank).scaleEffect(0.8).padding(4)
-                    }
-                    .overlay(alignment: .bottomLeading) {
-                        if !card.sub.isEmpty {
-                            HeatTag(text: card.sub).scaleEffect(0.9).padding(3)
-                        }
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                Text(card.title)
-                    .font(.system(size: 11))
+                    .font(.system(size: 10))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
             }
