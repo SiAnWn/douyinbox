@@ -1210,40 +1210,72 @@ private struct HeroCarousel: View {
     let rows: [SeriesSummary]
     @State private var idx = 0
     var body: some View {
+        // v1.10.45 轮播大改(用户"光一张裁切的图什么信息都没有看着膈应"):
+        // 改红果官网信息卡姿势=氛围虚化背景 + 左侧完整海报(不裁) + 右侧
+        // 标题/分类集数/简介两行/立即观看橙钮, 一眼看懂推的是什么
         TabView(selection: $idx) {
             ForEach(Array(rows.enumerated()), id: \.offset) { i, s in
                 Button { nav.go(HgWant(sid: s.id, title: s.title), "hero " + s.id) } label: {
-                    ZStack(alignment: .bottomLeading) {
+                    ZStack {
                         AsyncImage(url: URL(string: s.coverUrl)) {
                             $0.resizable().scaledToFill()
+                                .blur(radius: 40)
+                                .saturation(0.9)
+                                .overlay(Color.black.opacity(0.38))
                         } placeholder: {
                             LinearGradient(colors: [Color.gray.opacity(0.35), Color.gray.opacity(0.1)],
                                            startPoint: .top, endPoint: .bottom)
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        LinearGradient(colors: [.black.opacity(0.02), .black.opacity(0.72)],
-                                       startPoint: .top, endPoint: .bottom)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(s.title).font(.headline).foregroundStyle(.white).lineLimit(1)
-                            Text((s.category.isEmpty ? "" : s.category + " · ") +
-                                 (s.episodeCount > 0 ? "全\(s.episodeCount)集" : "红果热映") + " · 点进去整剧下载")
-                                .font(.caption).foregroundStyle(.white.opacity(0.85))
-                                .lineLimit(1)
+                        HStack(alignment: .top, spacing: 12) {
+                            AsyncImage(url: URL(string: s.coverUrl)) {
+                                $0.resizable().scaledToFill()
+                            } placeholder: { Color.gray.opacity(0.25) }
+                            .frame(width: 112, height: 160)
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                            .overlay(RoundedRectangle(cornerRadius: 10)
+                                .stroke(.white.opacity(0.25), lineWidth: 1))
+                            .shadow(color: .black.opacity(0.35), radius: 6, y: 3)
+                            let meta = (s.category.isEmpty ? "" : s.category + " · ") +
+                                       (s.episodeCount > 0 ? "全" + String(s.episodeCount) + "集" : "红果热映")
+                            VStack(alignment: .leading, spacing: 7) {
+                                Text("红果短剧")
+                                    .font(.system(size: 9, weight: .semibold))
+                                    .foregroundStyle(.orange)
+                                    .padding(.horizontal, 6).padding(.vertical, 2)
+                                    .background(Capsule().fill(.orange.opacity(0.16)))
+                                Text(s.title)
+                                    .font(.system(size: 19, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .lineLimit(2)
+                                Text(meta)
+                                    .font(.caption).foregroundStyle(.white.opacity(0.8))
+                                if !s.description.isEmpty {
+                                    Text(s.description)
+                                        .font(.caption).foregroundStyle(.white.opacity(0.7))
+                                        .lineLimit(2).lineSpacing(2)
+                                }
+                                Spacer(minLength: 4)
+                                Text("▶  立即观看")
+                                    .font(.footnote.weight(.semibold))
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 14).padding(.vertical, 6)
+                                    .background(Capsule().fill(Color.orange))
+                            }
+                            .frame(maxWidth: .infinity, maxHeight: 160, alignment: .topLeading)
                         }
-                        .padding(12)
+                        .padding(14)
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
                 }
                 .buttonStyle(.plain)
                 .tag(i)
             }
         }
         .tabViewStyle(.page(indexDisplayMode: .always))
-        .indexViewStyle(.page(backgroundDisplayMode: .never))
-        .frame(height: 215)
+        .indexViewStyle(.page(backgroundDisplayMode: .interactive))
+        .frame(height: 206)
     }
 }
-
 private struct DiscoverTab: View {
     @ObservedObject var vm: DiscoverVM
     @ObservedObject var rails: RailVM
