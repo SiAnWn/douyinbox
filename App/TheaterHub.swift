@@ -189,15 +189,22 @@ struct Poster2: View {
 // 首屏骨架: 加载不再干转圈(灰海报格子等人)
 struct GridSkeleton: View {
     var body: some View {
-        LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)],
-                  spacing: 12) {
-            ForEach(0..<6, id: \.self) { _ in
-                Color.gray.opacity(0.14)
-                    .aspectRatio(0.7, contentMode: .fit)
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        // v1.10.79 对齐新墙: 9 块三列(三排满), 间距同 GridRankCards, 切榜时不再空屏干等
+        LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10),
+                            GridItem(.flexible(), spacing: 10)], spacing: 14) {
+            ForEach(0..<9, id: \.self) { _ in
+                VStack(alignment: .leading, spacing: 5) {
+                    Color.gray.opacity(0.14)
+                        .aspectRatio(0.7, contentMode: .fit)
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    Color.gray.opacity(0.12).frame(height: 11)
+                        .clipShape(Capsule())
+                    Color.gray.opacity(0.09).frame(width: 52, height: 9)
+                        .clipShape(Capsule())
+                }
             }
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 2)
         .padding(.top, 8)
     }
 }
@@ -732,20 +739,41 @@ final class RankVM: ObservableObject {
     private func fetch(reset: Bool) {
         guard !busy else { return }
         busy = true; if reset { note = "" }
-        let q = ShortRankQuery(content: content.isEmpty ? nil : content,
-                               board: board.isEmpty ? nil : board,
-                               cursor: reset ? nil : nextCursor)
         Task {
             defer { busy = false }
-            guard let c = Hongguo.client,
-                  let sr = try? await Hongguo.attempt(c, { try await c.shortRank(q) }) else {
+            guard let c = Hongguo.client else {
                 if reset { self.note = "榜单没搭手，稍后再拉" }
                 return
             }
-            if !sr.contents.isEmpty { self.contents = sr.contents }
-            CoverBank.registerRank(sr.items)
-            if reset { self.items = sr.items } else { self.items += sr.items }
-            self.nextCursor = sr.hasMore ? sr.cursor : nil
+            // v1.10.79 强迫症补齐(用户点单): 红果榜一页只发十条 三列墙尾排吊孤儿;
+            // 首页连抓至 30 部, "加载更多"连抓至总数 3 的倍数, 封顶 3 页防永动机
+            var acc: [RankItem] = []
+            var cur: String? = reset ? nil : nextCursor
+            var pages = 0
+            while pages < 3 {
+                let q = ShortRankQuery(content: content.isEmpty ? nil : content,
+                                       board: board.isEmpty ? nil : board,
+                                       cursor: cur)
+                guard let sr = try? await Hongguo.attempt(c, { try await c.shortRank(q) }) else { break }
+                if !sr.contents.isEmpty { self.contents = sr.contents }
+                CoverBank.registerRank(sr.items)
+                acc += sr.items
+                cur = sr.hasMore ? sr.cursor : nil
+                pages += 1
+                if cur == nil { break }
+                if reset {
+                    if acc.count >= 30 { break }
+                } else if acc.count % 3 == 0 {
+                    break
+                }
+                try? await Task.sleep(nanoseconds: 250_000_000)
+            }
+            if acc.isEmpty && !reset {
+                self.note = "这张榜到底了"
+                return
+            }
+            if reset { self.items = acc } else { self.items += acc }
+            self.nextCursor = cur
             if self.items.isEmpty { self.note = "这张榜暂时空的" }
         }
     }
@@ -1638,13 +1666,17 @@ private struct RankTab: View {
                 Section {
                     // v1.10.64 一部一排太占地(用户点单): 改三列竖卡墙一屏九部,
                     // 海报墙三列是钦定规矩; 翻页照 v59 教训走手动加载更多
-                    GridRankCards(items: vm.items.filter { !$0.seriesId.isEmpty })
-                    MoreButton(busy: vm.busy, more: { vm.more() })
+                    // v1.10.79 切榜空窗改九块骨架屏(转圈干等太傻)
+                    if vm.busy && vm.items.isEmpty {
+                        GridSkeleton()
+                    } else {
+                        GridRankCards(items: vm.items.filter { !$0.seriesId.isEmpty })
+                        MoreButton(busy: vm.busy, more: { vm.more() })
+                    }
                 } header: {
                     Text("红果榜单 · 匿名直连")
                 }
             }
-            .overlay { if vm.busy && vm.items.isEmpty { ProgressView().controlSize(.large) } }
             .refreshable { vm.load() }
             }
         }
