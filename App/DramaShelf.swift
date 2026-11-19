@@ -117,7 +117,10 @@ struct ShelfGrid<Destination: View>: View {
                             HStack(spacing: 10) {
                                 Color.clear.frame(width: 44, height: 62)
                                     .overlay {
-                                        if let c = s.cover { Thumb(url: c).resizable().scaledToFill() }
+                                        Group {
+                                            if let c = s.cover { Thumb(url: c) }
+                                        }
+                                        .clipped()
                                     }
                                     .clipShape(RoundedRectangle(cornerRadius: 5))
                                 VStack(alignment: .leading, spacing: 3) {
