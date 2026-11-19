@@ -1227,6 +1227,7 @@ private struct HeroCarousel: View {
                                            startPoint: .top, endPoint: .bottom)
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .clipped()
                         HStack(alignment: .top, spacing: 12) {
                             AsyncImage(url: URL(string: s.coverUrl)) {
                                 $0.resizable().scaledToFill()
@@ -1236,6 +1237,17 @@ private struct HeroCarousel: View {
                             .overlay(RoundedRectangle(cornerRadius: 10)
                                 .stroke(.white.opacity(0.25), lineWidth: 1))
                             .shadow(color: .black.opacity(0.35), radius: 6, y: 3)
+                            .overlay(alignment: .bottom) {
+                                // iDuanJu 同款: 海报底部"全N集"黑透胶囊
+                                if s.episodeCount > 0 {
+                                    Text("全" + String(s.episodeCount) + "集")
+                                        .font(.system(size: 10, weight: .medium))
+                                        .foregroundStyle(.white)
+                                        .padding(.horizontal, 8).padding(.vertical, 3)
+                                        .background(Capsule().fill(.black.opacity(0.55)))
+                                        .padding(.bottom, 6)
+                                }
+                            }
                             let meta = (s.category.isEmpty ? "" : s.category + " · ") +
                                        (s.episodeCount > 0 ? "全" + String(s.episodeCount) + "集" : "红果热映")
                             VStack(alignment: .leading, spacing: 7) {
@@ -1255,7 +1267,7 @@ private struct HeroCarousel: View {
                                         .font(.caption).foregroundStyle(.white.opacity(0.7))
                                         .lineLimit(2).lineSpacing(2)
                                 }
-                                Spacer(minLength: 4)
+                                Spacer(minLength: 16)
                                 Text("▶  立即观看")
                                     .font(.footnote.weight(.semibold))
                                     .foregroundStyle(.white)
@@ -1265,14 +1277,25 @@ private struct HeroCarousel: View {
                             .frame(maxWidth: .infinity, maxHeight: 160, alignment: .topLeading)
                         }
                         .padding(14)
+                        // iDuanJu 同款页码: 右下角小横条, 当前页拉长成胶囊, 不压内容
+                        HStack(spacing: 5) {
+                            ForEach(0..<rows.count, id: \.self) { k in
+                                Capsule()
+                                    .fill(Color.white.opacity(idx == k ? 0.95 : 0.35))
+                                    .frame(width: idx == k ? 16 : 6, height: 6)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                        .padding(.trailing, 12)
+                        .padding(.bottom, 10)
                     }
+                    .clipShape(RoundedRectangle(cornerRadius: 18))
                 }
                 .buttonStyle(.plain)
                 .tag(i)
             }
         }
-        .tabViewStyle(.page(indexDisplayMode: .always))
-        .indexViewStyle(.page(backgroundDisplayMode: .interactive))
+        .tabViewStyle(.page(indexDisplayMode: .never))
         .frame(height: 206)
     }
 }
