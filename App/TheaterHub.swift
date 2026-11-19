@@ -398,18 +398,22 @@ final class CastVM: ObservableObject {
         for (i, it) in todo.enumerated() { lanes[i % 3].append(it) }
         await withTaskGroup(of: Void.self) { tg in
             for lane in lanes {
-                tg.addTask {
-                    for it in lane {
-                        let p = try? await Hongguo.attempt(c, { try await c.person(it.userId) })
-                        let tag = p?.tags.first(where: { $0.contains("男") || $0.contains("女") }) ?? ""
-                        self.genders[it.userId] = tag.contains("男") ? "M" : (tag.contains("女") ? "F" : "?")
-                        try? await Task.sleep(nanoseconds: 250_000_000)
-                    }
-                }
+                tg.addTask { await self.scanLane(lane) }
             }
         }
         UserDefaults.standard.set(genders, forKey: "hgActorGenders")
         HGTrail.note("hgcast 性别账=\(genders.count)")
+    }
+
+    // addTask 的 @Sendable 闭包碰不了 MainActor 属性(CI 铁证), 真活挪进本 actor 方法
+    private func scanLane(_ lane: [RankItem]) async {
+        guard let c = Hongguo.client else { return }
+        for it in lane {
+            let p = try? await Hongguo.attempt(c, { try await c.person(it.userId) })
+            let tag = p?.tags.first(where: { $0.contains("男") || $0.contains("女") }) ?? ""
+            genders[it.userId] = tag.contains("男") ? "M" : (tag.contains("女") ? "F" : "?")
+            try? await Task.sleep(nanoseconds: 250_000_000)
+        }
     }
 }
 
