@@ -720,17 +720,25 @@ struct TheaterHomeView: View {
                     rails.load()
                 }
             }
+            .theaterDestinations()
         }
         .environmentObject(nav)
-        // v1.10.35: 目的地注册挪到 NavigationStack 本体(原先挂内层 VStack,
-        // 从搜索页程序化 push 解析不到, iOS17 甩一个大感叹号占位页=用户实拍真凶)
-        .navigationDestination(for: HgWant.self) { w in TheaterDetailView(want: w) }
-        .navigationDestination(for: HgActorGo.self) { a in ActorPage(uid: a.uid, name: a.name) }
-        .navigationDestination(for: HgActor.self) { a in ActorResolveView(name: a.name) }
+        .theaterDestinations()
     }
 }
 
 // 右上放大镜: 红果同款全页搜索(猜词+热搜榜)
+// 目的地注册三连: 每个"会发起跳转的页面"都必须自带一份
+// (iOS17 黄感叹号案 v1.10.37: 程序化 push 只认出发点上能摸到的注册,
+//  只在栈根注册会让从搜索页/详情页等二层页发起的跳转变成找不到页面)
+extension View {
+    func theaterDestinations() -> some View {
+        navigationDestination(for: HgWant.self) { w in TheaterDetailView(want: w) }
+            .navigationDestination(for: HgActorGo.self) { a in ActorPage(uid: a.uid, name: a.name) }
+            .navigationDestination(for: HgActor.self) { a in ActorResolveView(name: a.name) }
+    }
+}
+
 private struct TheaterSearchTab: View {
     @ObservedObject var vm: DiscoverVM
     @State private var q = ""
@@ -813,6 +821,7 @@ private struct TheaterSearchTab: View {
         }
         .navigationTitle("搜索")
         .navigationBarTitleDisplayMode(.inline)
+        .theaterDestinations()
         .onAppear { if vm.guesses.isEmpty { Task { await vm.fetchHot() } } }
         .task(id: q) {
             try? await Task.sleep(nanoseconds: 300_000_000)
@@ -1524,6 +1533,7 @@ struct ActorPage: View {
         }
         .navigationTitle(name)
         .navigationBarTitleDisplayMode(.inline)
+        .theaterDestinations()
         .task { vm.load(uid) }
     }
 
@@ -1569,6 +1579,7 @@ struct ActorResolveView: View {
         }
         .navigationTitle(name)
         .navigationBarTitleDisplayMode(.inline)
+        .theaterDestinations()
     }
 }
 
@@ -1613,6 +1624,7 @@ struct TheaterDetailView: View {
         }
         .navigationTitle("剧场详情")
         .navigationBarTitleDisplayMode(.inline)
+        .theaterDestinations()
         .task {
             busy = true
             defer { busy = false }
