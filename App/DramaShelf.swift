@@ -101,17 +101,19 @@ struct ShelfGrid<Destination: View>: View {
         }
         .sheet(item: $openPack) { g in
             NavigationStack {
-                List(g.vols) { s in
-                    NavigationLink(value: s) {
-                        HStack(spacing: 10) {
-                            Color.clear.frame(width: 44, height: 62)
-                                .overlay {
-                                    if let c = s.cover { Thumb(url: c).resizable().scaledToFill() }
+                List {
+                    ForEach(g.vols) { s in
+                        NavigationLink(value: s) {
+                            HStack(spacing: 10) {
+                                Color.clear.frame(width: 44, height: 62)
+                                    .overlay {
+                                        if let c = s.cover { Thumb(url: c).resizable().scaledToFill() }
+                                    }
+                                    .clipShape(RoundedRectangle(cornerRadius: 5))
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(s.name).font(.body.weight(.medium))
+                                    Text("\(s.count) 集").font(.caption).foregroundStyle(.secondary)
                                 }
-                                .clipShape(RoundedRectangle(cornerRadius: 5))
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(s.name).font(.body.weight(.medium))
-                                Text("\(s.count) 集").font(.caption).foregroundStyle(.secondary)
                             }
                         }
                     }
