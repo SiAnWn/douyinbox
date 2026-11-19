@@ -1208,105 +1208,102 @@ private struct MoreButton: View {
 private struct HeroCarousel: View {
     @EnvironmentObject private var nav: TheaterNav
     let rows: [SeriesSummary]
-    @State private var idx = 0
+    @State private var idx: Int? = 0
     var body: some View {
-        // v1.10.45 轮播大改(用户"光一张裁切的图什么信息都没有看着膈应"):
-        // 改红果官网信息卡姿势=氛围虚化背景 + 左侧完整海报(不裁) + 右侧
-        // 标题/分类集数/简介两行/立即观看橙钮, 一眼看懂推的是什么
-        TabView(selection: $idx) {
-            ForEach(Array(rows.enumerated()), id: \.offset) { i, s in
-                Button { nav.go(HgWant(sid: s.id, title: s.title), "hero " + s.id) } label: {
-                    ZStack {
-                        // 圆角底垫(v1.10.49 升级到 20 continuous 苹果标准圆)
-                        RoundedRectangle(cornerRadius: 20, style: .continuous)
-                            .fill(LinearGradient(colors: [Color(white: 0.20), Color(white: 0.08)],
-                                                 startPoint: .topLeading, endPoint: .bottomTrailing))
-                        AsyncImage(url: URL(string: s.coverUrl)) {
-                            $0.resizable().scaledToFill()
-                                .blur(radius: 40)
-                                .overlay(Color.black.opacity(0.38))
-                                .overlay(
-                                    LinearGradient(colors: [.black.opacity(0.05), .black.opacity(0.35)],
+        // v1.10.50 轮播引擎大换血(圆角悬案终审): page 式 TabView 会把每页包进内部
+        // 分页容器, 页内 clipShape/mask 连瘪三版(45/46/48) 容器级 clip 也存疑;
+        // 改用坊里验证过的横向 ScrollView + .paging 行为, 卡片=普通视图,
+        // clipShape 必然生效; 页码点搬到卡片下方居中(iDuanJu 同款位置)
+        VStack(spacing: 8) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 0) {
+                    ForEach(Array(rows.enumerated()), id: \.offset) { i, s in
+                        Button { nav.go(HgWant(sid: s.id, title: s.title), "hero " + s.id) } label: {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                    .fill(LinearGradient(colors: [Color(white: 0.20), Color(white: 0.08)],
+                                                         startPoint: .topLeading, endPoint: .bottomTrailing))
+                                AsyncImage(url: URL(string: s.coverUrl)) {
+                                    $0.resizable().scaledToFill()
+                                        .blur(radius: 40)
+                                        .overlay(Color.black.opacity(0.38))
+                                        .overlay(
+                                            LinearGradient(colors: [.black.opacity(0.05), .black.opacity(0.35)],
+                                                           startPoint: .top, endPoint: .bottom)
+                                        )
+                                } placeholder: {
+                                    LinearGradient(colors: [Color.gray.opacity(0.35), Color.gray.opacity(0.1)],
                                                    startPoint: .top, endPoint: .bottom)
-                                )
-                        } placeholder: {
-                            LinearGradient(colors: [Color.gray.opacity(0.35), Color.gray.opacity(0.1)],
-                                           startPoint: .top, endPoint: .bottom)
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .mask(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                        HStack(alignment: .top, spacing: 12) {
-                            AsyncImage(url: URL(string: s.coverUrl)) {
-                                $0.resizable().scaledToFill()
-                            } placeholder: { Color.gray.opacity(0.25) }
-                            .frame(width: 112, height: 160)
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
-                            .overlay(RoundedRectangle(cornerRadius: 10)
-                                .stroke(.white.opacity(0.25), lineWidth: 1))
-                            .shadow(color: .black.opacity(0.35), radius: 6, y: 3)
-                            .overlay(alignment: .bottom) {
-                                // iDuanJu 同款: 海报底部"全N集"黑透胶囊
-                                if s.episodeCount > 0 {
-                                    Text("全" + String(s.episodeCount) + "集")
-                                        .font(.system(size: 10, weight: .medium))
-                                        .foregroundStyle(.white)
-                                        .padding(.horizontal, 8).padding(.vertical, 3)
-                                        .background(Capsule().fill(.black.opacity(0.55)))
-                                        .padding(.bottom, 6)
                                 }
-                            }
-                            let meta = (s.category.isEmpty ? "" : s.category + " · ") +
-                                       (s.episodeCount > 0 ? "全" + String(s.episodeCount) + "集" : "红果热映")
-                            VStack(alignment: .leading, spacing: 7) {
-                                Text("红果短剧")
-                                    .font(.system(size: 9, weight: .semibold))
-                                    .foregroundStyle(.orange)
-                                    .padding(.horizontal, 6).padding(.vertical, 2)
-                                    .background(Capsule().fill(.orange.opacity(0.16)))
-                                Text(s.title)
-                                    .font(.system(size: 17, weight: .bold))
-                                    .foregroundStyle(.white)
-                                    .lineLimit(2)
-                                Text(meta)
-                                    .font(.caption).foregroundStyle(.white.opacity(0.8))
-                                if !s.description.isEmpty {
-                                    Text(s.description)
-                                        .font(.caption).foregroundStyle(.white.opacity(0.7))
-                                        .lineLimit(2).lineSpacing(2)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                HStack(alignment: .top, spacing: 12) {
+                                    AsyncImage(url: URL(string: s.coverUrl)) {
+                                        $0.resizable().scaledToFill()
+                                    } placeholder: { Color.gray.opacity(0.25) }
+                                    .frame(width: 112, height: 168)
+                                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                                    .overlay(RoundedRectangle(cornerRadius: 10)
+                                        .stroke(.white.opacity(0.25), lineWidth: 1))
+                                    .shadow(color: .black.opacity(0.35), radius: 6, y: 3)
+                                    .overlay(alignment: .bottom) {
+                                        if s.episodeCount > 0 {
+                                            Text("全" + String(s.episodeCount) + "集")
+                                                .font(.system(size: 10, weight: .medium))
+                                                .foregroundStyle(.white)
+                                                .padding(.horizontal, 8).padding(.vertical, 3)
+                                                .background(Capsule().fill(.black.opacity(0.55)))
+                                                .padding(.bottom, 6)
+                                        }
+                                    }
+                                    let meta = (s.category.isEmpty ? "" : s.category + " · ") +
+                                               (s.episodeCount > 0 ? "全" + String(s.episodeCount) + "集" : "红果热映")
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        Text("红果短剧")
+                                            .font(.system(size: 9, weight: .semibold))
+                                            .foregroundStyle(.orange)
+                                            .padding(.horizontal, 6).padding(.vertical, 2)
+                                            .background(Capsule().fill(.orange.opacity(0.16)))
+                                        Text(s.title)
+                                            .font(.system(size: 17, weight: .bold))
+                                            .foregroundStyle(.white)
+                                            .lineLimit(2)
+                                        Text(meta)
+                                            .font(.caption).foregroundStyle(.white.opacity(0.8))
+                                        if !s.description.isEmpty {
+                                            Text(s.description)
+                                                .font(.caption).foregroundStyle(.white.opacity(0.7))
+                                                .lineLimit(2).lineSpacing(2)
+                                        }
+                                        Spacer(minLength: 8)
+                                        Text("▶  立即观看")
+                                            .font(.footnote.weight(.semibold))
+                                            .foregroundStyle(.white)
+                                            .padding(.horizontal, 14).padding(.vertical, 6)
+                                            .background(Capsule().fill(Color.orange))
+                                    }
+                                    .frame(maxWidth: .infinity, maxHeight: 168, alignment: .topLeading)
                                 }
-                                Spacer(minLength: 16)
-                                Text("▶  立即观看")
-                                    .font(.footnote.weight(.semibold))
-                                    .foregroundStyle(.white)
-                                    .padding(.horizontal, 14).padding(.vertical, 6)
-                                    .background(Capsule().fill(Color.orange))
+                                .padding(14)
                             }
-                            .frame(maxWidth: .infinity, maxHeight: 172, alignment: .topLeading)
+                            .frame(height: 218)
+                            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                         }
-                        .padding(14)
-                        // iDuanJu 同款页码: 右下角小横条, 当前页拉长成胶囊, 不压内容
-                        HStack(spacing: 5) {
-                            ForEach(0..<rows.count, id: \.self) { k in
-                                Capsule()
-                                    .fill(Color.white.opacity(idx == k ? 0.95 : 0.35))
-                                    .frame(width: idx == k ? 16 : 6, height: 6)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                        .padding(.trailing, 12)
-                        .padding(.bottom, 10)
+                        .buttonStyle(.plain)
+                        .id(i)
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                 }
-                .buttonStyle(.plain)
-                .tag(i)
+                .scrollTargetLayout()
+            }
+            .scrollTargetBehavior(.paging)
+            .scrollPosition($idx)
+            HStack(spacing: 6) {
+                ForEach(0..<rows.count, id: \.self) { k in
+                    Capsule()
+                        .fill(idx == k ? Color.orange : Color.gray.opacity(0.35))
+                        .frame(width: idx == k ? 16 : 6, height: 6)
+                }
             }
         }
-        .tabViewStyle(.page(indexDisplayMode: .never))
-        .frame(height: 218)
-        // v1.10.49 铁证修法: 页内 clipShape 连吃三版瘪(45/46/48), 改剪 TabView 容器本体
-        // ——轮播整体一个圆角模具, 页面在模具里滑动, 想不圆都难
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 }
 private struct DiscoverTab: View {
