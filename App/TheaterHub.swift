@@ -9,6 +9,7 @@ import Openhongguo
 struct HgWant: Hashable {
     let sid: String
     let title: String
+    var eps: [Int] = []        // v1.10.36 选集直发: 只下这些集(空=整剧)
 }
 
 // 演员导航两式: 榜上已有 uid 直落 / 简介页只有名字先查人气榜补 uid
@@ -1571,89 +1572,42 @@ struct ActorResolveView: View {
     }
 }
 
-// MARK: - 详情(原有, B 菜将加演员行可点)
+// MARK: - 详情(v1.10.36 P0 大改版: 学 iDuanJu 排版, 下载器定位)
+// 模糊海报 hero + 数据卡(官网第二腿) + 标签胶囊 + 折叠简介 + 下载主行
+// + 选集分卷六列网格(点选=直发下载选中集) + 演员圆头像 rail(官网带头像)
 
 struct TheaterDetailView: View {
     let want: HgWant
     @EnvironmentObject var app: AppState
+    @EnvironmentObject var nav: TheaterNav
     @Environment(\.dismiss) private var dismiss
     @State private var s: Openhongguo.Series?
     @State private var busy = false
+    @State private var web: HgWebDetail?
+    @State private var eps: [Episode] = []
+    @State private var sel: Set<Int> = []
+    @State private var vol = 0
+    @State private var introOpen = false
 
     var body: some View {
-        List {
+        Group {
             if let sv = s {
-                Section {
-                    HStack(alignment: .top, spacing: 12) {
-                        AsyncImage(url: URL(string: sv.coverUrl)) { $0.resizable().scaledToFill() }
-                            placeholder: { Color.gray.opacity(0.15) }
-                            .frame(width: 96, height: 128)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(sv.title).font(.headline)
-                            ForEach(rowLines(sv), id: \.self) { line in
-                                Text(line).font(.caption).foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                    .padding(.vertical, 4)
-                    castChips(sv)
-                }
-                if !sv.description.isEmpty {
-                    Section("简介") { Text(sv.description).font(.callout) }
-                }
-                Section {
-                    Button {
-                        app.hgWant = want
-                        app.selection = .pick
-                        dismiss()
-                    } label: {
-                        Label("整剧下载（红果 1080P）", systemImage: "arrow.down.circle")
-                            .font(.body.weight(.bold))
-                    }
-                    Text("送回拾页自动发车；档案+弹幕一并领回。约 \(max(1, sv.episodeCount)) 集，一部大致 1GB 上下，建议 Wi-Fi。")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
+                detailBody(sv)
             } else if busy {
-                Section {
-                    HStack(spacing: 10) {
-                        ProgressView().controlSize(.large)
-                        Text("取详情中… 稍等一两秒")
-                            .font(.subheadline).foregroundStyle(.secondary)
-                        Spacer()
-                    }
-                    .padding(.vertical, 22)
+                VStack(spacing: 14) {
+                    ProgressView().controlSize(.large)
+                    Text("取详情中… 稍等一两秒")
+                        .font(.subheadline).foregroundStyle(.secondary)
                 }
+                .frame(maxWidth: .infinity, minHeight: 420)
             } else {
-                // 红果搜索会把演员包装成假剧目(sid 在详情口 content_gone), 给条明路别让玩家干瞪眼
-                Section {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("红果没有《\(want.title)》")
-                            .font(.subheadline.weight(.semibold))
-                        Text("可能是演员名字、或这部剧已下架。")
-                            .font(.caption).foregroundStyle(.secondary)
-                        HStack(spacing: 10) {
-                            NavigationLink(value: HgActor(name: want.title)) {
-                                Text("看看演员「\(want.title)」")
-                                    .font(.subheadline.weight(.semibold))
-                                    .padding(.horizontal, 12).padding(.vertical, 7)
-                                    .background(Capsule().fill(Color.orange))
-                                    .foregroundStyle(.white)
-                            }
-                            .buttonStyle(.plain)
-                            Button("再试一次") {
-                                busy = true
-                                Task {
-                                    guard let c = Hongguo.client else { busy = false; return }
-                                    s = try? await c.getSeries(want.sid)
-                                    busy = false
-                                }
-                            }
-                            .font(.subheadline)
-                        }
-                        .padding(.top, 2)
+                GonePage(want: want) {
+                    busy = true
+                    Task {
+                        guard let c = Hongguo.client else { busy = false; return }
+                        s = try? await c.getSeries(want.sid)
+                        busy = false
                     }
-                    .padding(.vertical, 8)
                 }
             }
         }
@@ -1666,6 +1620,330 @@ struct TheaterDetailView: View {
             // 目录口不吃风控, 直连快进快出(旧四段退避让假号页干转 8 秒)
             s = try? await c.getSeries(want.sid)
             HGTrail.note("hgdetail sid=\(want.sid) ok=\(s != nil)")
+            guard s != nil else { return }
+            Task {
+                // 集表: 选集网格用(目录口, 免闸)
+                eps = (try? await Hongguo.episodes(want.sid)) ?? []
+                HGTrail.note("hgdetail eps=\(eps.count)")
+            }
+            Task {
+                // 官网第二腿: 收藏数/评分/热度/标签/演员头像, 挂了就无感
+                web = await HgWeb.detail(want.sid)
+            }
+        }
+    }
+
+    private func detailBody(_ sv: Openhongguo.Series) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                hero(sv)
+                statsRow
+                tagChips(sv)
+                introBlock(sv.description)
+                actionRow(sv)
+                episodesBlock
+                castBlock(sv)
+            }
+            .padding(.bottom, 26)
+        }
+    }
+
+    // 300pt 模糊海报 hero: 一张图两用, 零成本高级感
+    private func hero(_ sv: Openhongguo.Series) -> some View {
+        ZStack(alignment: .bottomLeading) {
+            AsyncImage(url: URL(string: sv.coverUrl)) { $0.resizable().scaledToFill() }
+                placeholder: { Color.gray.opacity(0.25) }
+                .frame(maxWidth: .infinity)
+                .frame(height: 300)
+                .clipped()
+                .blur(radius: 30).saturation(1.15)
+            LinearGradient(colors: [Color.black.opacity(0.15), Color.black.opacity(0.05),
+                                    Color.black.opacity(0.55), Color.black.opacity(0.85)],
+                           startPoint: .top, endPoint: .bottom)
+            HStack(alignment: .bottom, spacing: 14) {
+                AsyncImage(url: URL(string: sv.coverUrl)) { $0.resizable().scaledToFill() }
+                    placeholder: { Color.gray.opacity(0.3) }
+                    .frame(width: 116, height: 155)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(alignment: .bottomTrailing) {
+                        if sv.episodeCount > 0 {
+                            Text("全\(sv.episodeCount)集")
+                                .font(.system(size: 10, weight: .semibold))
+                                .monospacedDigit()
+                                .foregroundStyle(.white)
+                                .shadow(color: .black.opacity(0.7), radius: 2)
+                                .padding(7)
+                        }
+                    }
+                    .shadow(color: .black.opacity(0.4), radius: 15, y: 14)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("红果短剧")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(Capsule().fill(Color.orange))
+                    Text(sv.title)
+                        .font(.system(size: 23, weight: .heavy))
+                        .foregroundStyle(.white)
+                        .lineLimit(2)
+                        .shadow(color: .black.opacity(0.6), radius: 3, y: 1)
+                    Text(heroMeta(sv))
+                        .font(.system(size: 13))
+                        .foregroundStyle(.white.opacity(0.8))
+                        .lineLimit(2)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 16)
+        }
+        .frame(height: 300)
+    }
+
+    static func heroMeta(_ sv: Openhongguo.Series) -> String {
+        var out = sv.episodeCount > 0 ? "全 \(sv.episodeCount) 集" : "短剧"
+        if !sv.author.isEmpty { out += " · " + sv.author }
+        if !sv.category.isEmpty { out += " · " + sv.category }
+        return out
+    }
+
+    // 数据卡: 收藏/评分/热度, 缺项就少一格, 绝不硬凑(iDuanJu 收缩原则)
+    @ViewBuilder private var statsRow: some View {
+        let cells = statsCells()
+        if !cells.isEmpty {
+            HStack(spacing: 0) {
+                ForEach(Array(cells.enumerated()), id: \.offset) { i, cell in
+                    if i > 0 {
+                        Rectangle().fill(Color.primary.opacity(0.08)).frame(width: 1, height: 34)
+                    }
+                    VStack(spacing: 4) {
+                        Text(cell.0).font(.system(size: 17, weight: .bold)).monospacedDigit()
+                        Text(cell.1).font(.system(size: 11)).foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                }
+            }
+            .background(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(uiColor: .secondarySystemBackground)))
+            .padding(.horizontal, 16)
+        }
+    }
+
+    static func fmtCnt(_ n: Int) -> String {
+        if n >= 100_000_000 { return String(format: "%.1f亿", Double(n) / 1e8) }
+        if n >= 10_000 { return String(format: "%.1f万", Double(n) / 1e4) }
+        return "\(n)"
+    }
+
+    private func statsCells() -> [(String, String)] {
+        var out: [(String, String)] = []
+        if let w = web {
+            if w.favorite > 0 { out.append((TheaterDetailView.fmtCnt(w.favorite), "收藏")) }
+            if !w.rating.isEmpty { out.append((w.rating, w.ratingCount > 0 ? "评分·\(TheaterDetailView.fmtCnt(w.ratingCount))人" : "评分")) }
+            if !w.hotText.isEmpty { out.append((w.hotText, "全网热度")) }
+        }
+        if out.isEmpty, let sv = s, sv.heat > 0 {
+            out.append((hgWan(sv.heat), "热度"))
+        }
+        return Array(out.prefix(3))
+    }
+
+    @ViewBuilder private func tagChips(_ sv: Openhongguo.Series) -> some View {
+        let tags = (web?.tags ?? []).isEmpty
+            ? sv.category.split(separator: " ").map(String.init)
+            : (web?.tags ?? [])
+        if !tags.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(tags.prefix(10), id: \.self) { t in
+                        Text(t).font(.system(size: 12))
+                            .padding(.horizontal, 10).padding(.vertical, 5)
+                            .background(Capsule().fill(Color.primary.opacity(0.07)))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
+        }
+    }
+
+    @ViewBuilder private func introBlock(_ text: String) -> some View {
+        if !text.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(text)
+                    .font(.callout)
+                    .lineSpacing(4)
+                    .lineLimit(introOpen ? nil : 2)
+                    .textSelection(.enabled)
+                if text.count > 55 {
+                    Button(introOpen ? "收起" : "展开") {
+                        withAnimation(.easeOut(duration: 0.2)) { introOpen.toggle() }
+                    }
+                    .font(.subheadline.weight(.medium))
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+    }
+
+    private func actionRow(_ sv: Openhongguo.Series) -> some View {
+        VStack(spacing: 8) {
+            Button {
+                app.hgWant = want
+                app.selection = .pick
+                dismiss()
+            } label: {
+                Label("整剧下载 \(sv.episodeCount > 0 ? "· 全\(sv.episodeCount)集" : "") · 1080P",
+                      systemImage: "arrow.down.circle")
+                    .font(.body.weight(.bold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 13)
+                    .background(Capsule().fill(Color.orange))
+                    .foregroundStyle(.white)
+            }
+            .buttonStyle(.plain)
+            if !sel.isEmpty {
+                Button {
+                    app.hgWant = HgWant(sid: want.sid, title: want.title, eps: sel.sorted())
+                    app.selection = .pick
+                    dismiss()
+                } label: {
+                    Text("下载选中 \(sel.count) 集 · 1080P")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 11)
+                        .background(Capsule().fill(Color.orange.opacity(0.15)))
+                        .foregroundStyle(Color.orange)
+                }
+                .buttonStyle(.plain)
+            }
+            Text("送回拾页自动发车；档案+弹幕一并领回。一部大致 1GB 上下，建议 Wi-Fi。")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 16)
+    }
+
+    // 选集: 分卷 chips + 六列数字格, 点=勾选, 勾了就出"下载选中"
+    @ViewBuilder private var episodesBlock: some View {
+        if !eps.isEmpty {
+            let groups = TheaterDetailView.groupVolumes(eps.map(\.number))
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 6) {
+                    Text("选集").font(.system(size: 17, weight: .bold))
+                    Text("共 \(eps.count) 集 · 点数字挑着下").font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    if !sel.isEmpty {
+                        Button("清空") { sel.removeAll() }.font(.footnote)
+                    }
+                }
+                if groups.count > 1 {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(Array(groups.enumerated()), id: \.offset) { i, g in
+                                Button { vol = i } label: {
+                                    Text("\(g.first ?? 1)-\(g.last ?? 0)")
+                                        .font(.footnote.weight(vol == i ? .bold : .regular))
+                                        .monospacedDigit()
+                                        .padding(.horizontal, 13).padding(.vertical, 7)
+                                        .background(Capsule().fill(vol == i ? Color.orange : Color.primary.opacity(0.07)))
+                                        .foregroundStyle(vol == i ? .white : .primary)
+                                }
+                            }
+                        }
+                    }
+                }
+                let shown = groups[min(vol, max(0, groups.count - 1))]
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 6),
+                          spacing: 8) {
+                    ForEach(shown, id: \.self) { n in
+                        Button {
+                            if sel.contains(n) { sel.remove(n) } else { sel.insert(n) }
+                        } label: {
+                            Text("\(n)")
+                                .font(.system(size: 15, weight: .semibold))
+                                .monospacedDigit()
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                                .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(sel.contains(n) ? Color.orange.opacity(0.18)
+                                                          : Color(uiColor: .secondarySystemBackground)))
+                                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .strokeBorder(sel.contains(n) ? Color.orange : Color.clear,
+                                                  lineWidth: 1.3))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                // 全选本页 + 一键选整卷的快捷
+                HStack(spacing: 14) {
+                    Button("全选本页") { sel.formUnion(shown) }.font(.footnote)
+                    Button("反选本页") {
+                        for n in shown { if sel.contains(n) { sel.remove(n) } else { sel.insert(n) } }
+                    }.font(.footnote)
+                    Spacer()
+                }
+                .padding(.top, 2)
+            }
+            .padding(.horizontal, 16)
+        }
+    }
+
+    static func groupVolumes(_ nums: [Int]) -> [[Int]] {
+        let sorted = nums.sorted()
+        guard sorted.count > 30 else { return sorted.isEmpty ? [] : [sorted] }
+        let size = sorted.count > 600 ? 60 : (sorted.count > 300 ? 50 : 30)
+        var out: [[Int]] = []
+        var i = 0
+        while i < sorted.count {
+            out.append(Array(sorted[i..<min(i + size, sorted.count)]))
+            i += size
+        }
+        return out
+    }
+
+    @ViewBuilder private func castBlock(_ sv: Openhongguo.Series) -> some View {
+        if let c = web?.celebrities, !c.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("演员").font(.system(size: 17, weight: .bold))
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 14) {
+                        ForEach(c, id: \.name) { ce in
+                            Button { nav.go(HgActor(name: ce.name), "cast " + ce.name) } label: {
+                                VStack(spacing: 5) {
+                                    Color.clear
+                                        .frame(width: 56, height: 56)
+                                        .overlay {
+                                            if ce.avatar.isEmpty {
+                                                LinearGradient(colors: [Color.orange.opacity(0.7), Color.pink.opacity(0.7)],
+                                                               startPoint: .top, endPoint: .bottom)
+                                                Text(String(ce.name.prefix(1)))
+                                                    .font(.system(size: 20, weight: .bold))
+                                                    .foregroundStyle(.white)
+                                            } else {
+                                                AsyncImage(url: URL(string: ce.avatar)) {
+                                                    $0.resizable().scaledToFill()
+                                                } placeholder: { Color.gray.opacity(0.2) }
+                                            }
+                                        }
+                                        .clipShape(Circle())
+                                        .overlay { Circle().strokeBorder(Color.primary.opacity(0.06), lineWidth: 0.5) }
+                                    Text(ce.name).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                                    if !ce.role.isEmpty {
+                                        Text(ce.role).font(.system(size: 10))
+                                            .foregroundStyle(.secondary).lineLimit(1)
+                                    }
+                                }
+                                .frame(width: 64)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+        } else {
+            castChips(sv)
+                .padding(.horizontal, 16)
         }
     }
 
@@ -1679,14 +1957,16 @@ struct TheaterDetailView: View {
                     HStack(spacing: 8) {
                         Text("演员").font(.caption).foregroundStyle(.secondary)
                         ForEach(names, id: \.self) { n in
-                            NavigationLink(value: HgActor(name: n)) {
+                            Button { nav.go(HgActor(name: n), "chip " + n) } label: {
                                 Text(n).font(.footnote)
                                     .padding(.horizontal, 10).padding(.vertical, 5)
                                     .background(Capsule().fill(Color.accentColor.opacity(0.12)))
                                     .foregroundStyle(Color.accentColor)
                             }
+                            .buttonStyle(.plain)
                         }
                     }
+                    .padding(.horizontal, 16)
                 }
                 .padding(.top, 2)
             }
@@ -1699,20 +1979,44 @@ struct TheaterDetailView: View {
         return s.split(whereSeparator: { $0 == " " || $0 == "\u{3000}" || $0 == "、" || $0 == "," })
             .map(String.init)
     }
+}
 
-    private func rowLines(_ sv: Openhongguo.Series) -> [String] {
-        var out: [String] = []
-        for r in sv.rows {
-            if r.text.isEmpty { continue }
-            if r.kind == InfoKind.score || r.kind == InfoKind.category {
-                out.append(r.text)
+// 红果没有该剧(多为搜索把演员包成的假剧目) 的明路页
+private struct GonePage: View {
+    let want: HgWant
+    let retry: () -> Void
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Image(systemName: "questionmark.folder")
+                .font(.system(size: 44))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.top, 40)
+            Text("红果没有《\(want.title)》")
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity, alignment: .center)
+            Text("可能是演员名字、或这部剧已下架。")
+                .font(.caption).foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .center)
+            HStack(spacing: 10) {
+                Button {
+                    nav.go(HgActor(name: want.title), "gone→actor")
+                } label: {
+                    Text("看看演员「\(want.title)」")
+                        .font(.subheadline.weight(.semibold))
+                        .padding(.horizontal, 14).padding(.vertical, 8)
+                        .background(Capsule().fill(Color.orange))
+                        .foregroundStyle(.white)
+                }
+                .buttonStyle(.plain)
+                Button("再试一次", action: retry)
+                    .font(.subheadline)
             }
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.top, 4)
+            Spacer()
         }
-        if sv.episodeCount > 0 { out.append("全\(sv.episodeCount)集") }
-        if sv.heat > 0 {
-            out.append(sv.heat >= 10_000 ? "热度 \((sv.heat + 5_000) / 10_000)万" : "热度 \(sv.heat)")
-        }
-        if !sv.rightText.isEmpty { out.append(sv.rightText) }
-        return out
+        .padding(.horizontal, 20)
     }
+    @EnvironmentObject private var nav: TheaterNav
 }

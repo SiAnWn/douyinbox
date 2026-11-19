@@ -474,8 +474,17 @@ struct ParseView: View {
         guard let w = app.hgWant else { return }
         app.hgWant = nil
         let res = ParseResult(videoID: "hg:" + w.sid, title: w.title, author: "", options: [])
-        let opt = QualityOption(label: "红果 1080P", url: Hongguo.hgURL(w.sid, "1080"),
+        var opt = QualityOption(label: "红果 1080P", url: Hongguo.hgURL(w.sid, "1080"),
                                 width: 1080, height: 1920, sizeBytes: 0, isOriginal: false)
+        // 详情页选集直发(v1.10.36): 带 range 就只下选中集
+        if !w.eps.isEmpty {
+            let rs = w.eps.sorted().map(String.init).joined(separator: ",")
+            if let enc = rs.addingPercentEncoding(withAllowedCharacters: .alphanumerics),
+               let u = URL(string: opt.url.absoluteString + "?range=" + enc) {
+                opt = QualityOption(label: "红果 1080P · 自选\(w.eps.count)集", url: u,
+                                    width: 1080, height: 1920, sizeBytes: 0, isOriginal: false)
+            }
+        }
         status = "剧场发车：\(w.title)"
         Task { await hongguoRun(res, opt) }
     }
