@@ -863,6 +863,13 @@ final class CatVM: ObservableObject {
         board()
     }
 
+    // v1.10.81 一键重置(已选条件条用): 全清只查一次, 不逐行放枪
+    func clearAll() {
+        guard !picks.isEmpty else { return }
+        picks = [:]
+        board()
+    }
+
     func more() {
         guard nextCursor != nil, !busy else { return }
         board(reset: false)
@@ -1950,6 +1957,10 @@ private struct FilterPage: View {
                     FilterRowLine(vm: vm, row: cat)
                         .padding(.top, 6)
                 }
+                // v1.10.81 已选条件条: 每个条件单点即摘, 一键重置全清
+                if !vm.picks.isEmpty {
+                    SelectedBar(vm: vm)
+                }
                 ForEach(parts.1.filter { !$0.options.isEmpty }, id: \.key) { row in
                     FilterRowLine(vm: vm, row: row)
                 }
@@ -1992,6 +2003,44 @@ private struct FilterRowLine: View {
                         && (o.name.hasPrefix("全部") || o.name.hasPrefix("不限")))
                 return (o.name, on)
             }, onPick: { vm.pick(key: row.key, value: row.options[$0].value) })
+        }
+    }
+}
+
+// v1.10.81 已选条件条: 橙胶囊组(名字✕单摘) + 灰"重置"全清, 钉在类柱行正下方
+private struct SelectedBar: View {
+    @ObservedObject var vm: CatVM
+    var body: some View {
+        let items = vm.picks.sorted { $0.key < $1.key }.compactMap { k, v -> (String, String, String)? in
+            guard let row = vm.panel.first(where: { $0.key == k }),
+                  let o = row.options.first(where: { $0.value == v }) else { return nil }
+            return (k, o.name, v)
+        }
+        if !items.isEmpty {
+            HStack(spacing: 8) {
+                Text("已选")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 12)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(items, id: \.0) { it in
+                            Button { vm.pick(key: it.0, value: it.2) } label: {
+                                Text(it.1 + " ✕")
+                                    .font(.footnote)
+                                    .padding(.horizontal, 10).padding(.vertical, 5)
+                                    .background(Capsule().fill(Color.orange.opacity(0.15)))
+                                    .foregroundStyle(.orange)
+                            }
+                        }
+                    }
+                }
+                Button("重置") { vm.clearAll() }
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.trailing, 12)
+            }
+            .frame(height: 32)
         }
     }
 }
