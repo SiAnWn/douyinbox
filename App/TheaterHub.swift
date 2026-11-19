@@ -51,25 +51,46 @@ func hgCoverUrl(sid: String, _ url: String) -> String {
 // 程序化导航(v1.10.34 根治闪屏): NavigationLink 的推屏动画会被列表
 // 异步刷新(封面回填等)中途打断, 界面卡在旧页而栈里已压了新页,
 // 返回时"又弹详情". Button+path.append 不吃动画状态, 列表怎么抖都稳.
+//
+// v1.10.38 感叹号顽案照抄 iDuanJu 实战答案(用户钦定抄码, GPL 私人侧载无碍):
+// ①单一 Route 枚举走全栈跳转 + 一份注册钉在根内容(他们的 routes() 真机天天验证)
+// ②path 归视图自己 @State 持有(他们 RootTabView 同款), TheaterNav 只拿 bind,
+//   不再让 NavigationPath 住 @Published —— 少一层间接, 解析更实在
 @MainActor
 final class TheaterNav: ObservableObject {
-    @Published var path = NavigationPath()
+    static let shared = TheaterNav()
+    private init() {}
 
-    func go(_ v: AnyHashable, _ tag: String = "") {
-        HGTrail.note("hg nav push " + (tag.isEmpty ? String(String(describing: v).prefix(70)) : tag))
-        path.append(v)
+    enum Route: Hashable {
+        case want(HgWant)
+        case actorGo(HgActorGo)
+        case actor(HgActor)
     }
 
-    func back() {
-        if path.count > 0 {
-            HGTrail.note("hg nav pop to \(path.count - 1)")
-            path.removeLast()
+    var bind: Binding<NavigationPath>?
+
+    private func push(_ r: Route, _ tag: String) {
+        HGTrail.note("hg nav push " + (tag.isEmpty ? "?" : tag) + " depth=" + String(bind?.wrappedValue.count ?? -1))
+        guard let b = bind else {
+            HGTrail.note("hg nav UNBOUND")
+            return
         }
+        b.wrappedValue.append(r)
+    }
+
+    func go(_ w: HgWant, _ tag: String = "") { push(.want(w), tag) }
+    func go(_ a: HgActorGo, _ tag: String = "") { push(.actorGo(a), tag) }
+    func go(_ a: HgActor, _ tag: String = "") { push(.actor(a), tag) }
+
+    func back() {
+        guard let b = bind, b.wrappedValue.count > 0 else { return }
+        HGTrail.note("hg nav pop to \(b.wrappedValue.count - 1)")
+        b.wrappedValue.removeLast()
     }
 
     func toRoot() {
         HGTrail.note("hg nav toRoot")
-        path = NavigationPath()
+        bind?.wrappedValue = NavigationPath()
     }
 }
 
@@ -670,11 +691,12 @@ struct TheaterHomeView: View {
     @StateObject private var cat = CatVM()
     @StateObject private var cast = CastVM()
     @StateObject private var rails = RailVM()
-    @StateObject private var nav = TheaterNav()
+    @StateObject private var nav = TheaterNav.shared
+    @State private var path = NavigationPath()
     private let tabs = ["首页", "演员"]
 
     var body: some View {
-        NavigationStack(path: $nav.path) {
+        NavigationStack(path: $path) {
             VStack(spacing: 0) {
                 // 红果首页同款页签: 加粗+橙色下划小线, 不用系统 segmented
                 HStack(spacing: 0) {
@@ -723,19 +745,22 @@ struct TheaterHomeView: View {
             .theaterDestinations()
         }
         .environmentObject(nav)
+        .onAppear { nav.bind = $path }
         .theaterDestinations()
     }
 }
 
 // 右上放大镜: 红果同款全页搜索(猜词+热搜榜)
-// 目的地注册三连: 每个"会发起跳转的页面"都必须自带一份
-// (iOS17 黄感叹号案 v1.10.37: 程序化 push 只认出发点上能摸到的注册,
-//  只在栈根注册会让从搜索页/详情页等二层页发起的跳转变成找不到页面)
+// 目的地注册(iDuanJu routes() 同款): 单一 Route 枚举一份注册, 钉在栈根内容上
 extension View {
     func theaterDestinations() -> some View {
-        navigationDestination(for: HgWant.self) { w in TheaterDetailView(want: w) }
-            .navigationDestination(for: HgActorGo.self) { a in ActorPage(uid: a.uid, name: a.name) }
-            .navigationDestination(for: HgActor.self) { a in ActorResolveView(name: a.name) }
+        navigationDestination(for: TheaterNav.Route.self) { r in
+            switch r {
+            case .want(let w): TheaterDetailView(want: w)
+            case .actorGo(let a): ActorPage(uid: a.uid, name: a.name)
+            case .actor(let a): ActorResolveView(name: a.name)
+            }
+        }
     }
 }
 
@@ -821,7 +846,6 @@ private struct TheaterSearchTab: View {
         }
         .navigationTitle("搜索")
         .navigationBarTitleDisplayMode(.inline)
-        .theaterDestinations()
         .onAppear { if vm.guesses.isEmpty { Task { await vm.fetchHot() } } }
         .task(id: q) {
             try? await Task.sleep(nanoseconds: 300_000_000)
@@ -1533,7 +1557,6 @@ struct ActorPage: View {
         }
         .navigationTitle(name)
         .navigationBarTitleDisplayMode(.inline)
-        .theaterDestinations()
         .task { vm.load(uid) }
     }
 
@@ -1579,7 +1602,6 @@ struct ActorResolveView: View {
         }
         .navigationTitle(name)
         .navigationBarTitleDisplayMode(.inline)
-        .theaterDestinations()
     }
 }
 
@@ -1624,7 +1646,6 @@ struct TheaterDetailView: View {
         }
         .navigationTitle("剧场详情")
         .navigationBarTitleDisplayMode(.inline)
-        .theaterDestinations()
         .task {
             busy = true
             defer { busy = false }
