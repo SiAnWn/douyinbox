@@ -43,9 +43,17 @@ enum CoverBank {
     }
 }
 
+// 红果演员头像发的是 http:// 明文链(App 内不挑, 咱 iOS ATS 一律枪毙明文 HTTPS 请求),
+// 头像全灰的真凶=v.60; PC 实测同款 https 200 可达(heic 小图 UIImage 原生能解).
+// 所有异步图 URL 出门前先过这道拆弹.
+func hgImgURL(_ s: String) -> String {
+    if s.hasPrefix("http://") { return "https://" + s.dropFirst(7) }
+    return s
+}
+
 func hgCoverUrl(sid: String, _ url: String) -> String {
-    if !url.isEmpty { return url }
-    return CoverBank.data[sid] ?? ""
+    if !url.isEmpty { return hgImgURL(url) }
+    return hgImgURL(CoverBank.data[sid] ?? "")
 }
 
 // 程序化导航(v1.10.34 根治闪屏): NavigationLink 的推屏动画会被列表
@@ -1603,7 +1611,7 @@ private struct RankTab: View {
                                     .font(.system(size: 13, weight: .heavy, design: .rounded))
                                     .foregroundStyle(it.position <= 3 ? Color.orange : .secondary)
                                     .frame(width: 26)
-                                AsyncImage(url: URL(string: cover)) { $0.resizable().scaledToFill() }
+                                AsyncImage(url: URL(string: hgImgURL(cover))) { $0.resizable().scaledToFill() }
                                     placeholder: { Color.gray.opacity(0.15) }
                                     .frame(width: 52, height: 70)
                                     .clipShape(RoundedRectangle(cornerRadius: 6))
@@ -1800,7 +1808,7 @@ private struct CastRowView: View {
                 .font(.system(size: 13, weight: .heavy, design: .rounded))
                 .foregroundStyle(it.position <= 3 ? Color.orange : .secondary)
                 .frame(width: 26)
-            AsyncImage(url: URL(string: it.avatarUrl.isEmpty ? it.coverUrl : it.avatarUrl)) {
+                    AsyncImage(url: URL(string: hgImgURL(it.avatarUrl.isEmpty ? it.coverUrl : it.avatarUrl))) {
                 $0.resizable().scaledToFill()
             } placeholder: { Color.gray.opacity(0.15) }
                 .frame(width: 56, height: 56)
@@ -1884,7 +1892,7 @@ private struct CastPodium: View {
                 Color.clear
                     .frame(width: 84, height: 84)
                     .overlay {
-                        AsyncImage(url: URL(string: it.avatarUrl.isEmpty ? it.coverUrl : it.avatarUrl)) {
+                                AsyncImage(url: URL(string: hgImgURL(it.avatarUrl.isEmpty ? it.coverUrl : it.avatarUrl))) {
                             $0.resizable().scaledToFill()
                         } placeholder: { Color.gray.opacity(0.16) }
                     }
@@ -1915,7 +1923,7 @@ struct ActorPage: View {
         List {
             Section {
                 HStack(spacing: 12) {
-                    AsyncImage(url: URL(string: vm.p?.avatarUrl ?? "")) { $0.resizable().scaledToFill() }
+                    AsyncImage(url: URL(string: hgImgURL(vm.p?.avatarUrl ?? ""))) { $0.resizable().scaledToFill() }
                         placeholder: { Color.gray.opacity(0.15) }
                         .frame(width: 60, height: 60)
                         .clipShape(Circle())
@@ -2351,7 +2359,7 @@ struct TheaterDetailView: View {
                                                     .font(.system(size: 20, weight: .bold))
                                                     .foregroundStyle(.white)
                                             } else {
-                                                AsyncImage(url: URL(string: ce.avatar)) {
+                                                AsyncImage(url: URL(string: hgImgURL(ce.avatar))) {
                                                     $0.resizable().scaledToFill()
                                                 } placeholder: { Color.gray.opacity(0.2) }
                                             }
