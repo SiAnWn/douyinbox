@@ -1950,13 +1950,13 @@ private struct FilterPage: View {
     }
 }
 
-// v1.10.70 筛选行: 组名钉左 + 胶囊横滑, 打头自加"全部XX"=清该行(服务端已带"全部"项则不重复加)
+// v1.10.70 筛选行: 组名钉左 + 胶囊横滑; v1.10.71 防重复定案:
+// 服务端选项里"全部XX/不限"一律隐藏, 永远只亮我们自家打头那一个(实测红果自带会撞双份)
 private struct FilterRowLine: View {
     @ObservedObject var vm: CatVM
     let row: FilterRow
     var body: some View {
-        let hasAll = row.options.contains { $0.name.contains("全部") || $0.name == "不限" }
-        let prepend = !hasAll
+        let opts = row.options.filter { !$0.name.hasPrefix("全部") && !$0.name.hasPrefix("不限") }
         HStack(spacing: 6) {
             Text(row.name)
                 .font(.system(size: 13, weight: .bold))
@@ -1964,15 +1964,11 @@ private struct FilterRowLine: View {
                 .lineLimit(1).minimumScaleFactor(0.7)
                 .frame(width: 56, alignment: .leading)
                 .padding(.leading, 12)
-            ChipScroller(labels: (prepend ? [("\"全部" + row.name, vm.picks[row.key] == nil)] : [])
-                              + row.options.map { ($0.name, vm.picks[row.key] == $0.value) },
+            ChipScroller(labels: [("全部" + row.name, vm.picks[row.key] == nil)]
+                              + opts.map { ($0.name, vm.picks[row.key] == $0.value) },
                          onPick: { i in
-                             if prepend {
-                                 if i == 0 { vm.clearKey(row.key) }
-                                 else { vm.pick(key: row.key, value: row.options[i - 1].value) }
-                             } else {
-                                 vm.pick(key: row.key, value: row.options[i].value)
-                             }
+                             if i == 0 { vm.clearKey(row.key) }
+                             else { vm.pick(key: row.key, value: opts[i - 1].value) }
                          })
         }
     }
