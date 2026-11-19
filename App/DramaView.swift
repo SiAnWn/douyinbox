@@ -26,7 +26,7 @@ struct DramaView: View {
                 } else if shown.isEmpty {
                     ContentUnavailableView("没有匹配", systemImage: "magnifyingglass", description: Text("换个关键词"))
                 } else {
-                    SeriesGrid(list: shown)
+                    ShelfGrid(groups: DramaShelf.group(shown)) { s in DramaEpisodes(series: s) }
                 }
             }
             .navigationTitle("短剧 · \(app.dramaSeries.count)")
