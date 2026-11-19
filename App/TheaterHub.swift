@@ -1746,13 +1746,21 @@ private struct ActorBoard: View {
                         Text(vm.genderBusy ? "正在扫演员性别，稍等…" : "这一档还薄，下拉多拉几位演员")
                             .font(.footnote).foregroundStyle(.secondary)
                     }
-                    ForEach(Array(rows.enumerated()), id: \.offset) { i, it in
+                    // v1.10.66 冠军领奖台(方案图装车): 前三名站金银铜台, 04 起紧凑列表
+                    let head = rows.count >= 3 ? Array(rows.prefix(3)) : []
+                    let tail = rows.count >= 3 ? Array(rows.dropFirst(3)) : rows
+                    if !head.isEmpty {
+                        PodiumCard(items: head)
+                            .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 10, trailing: 12))
+                            .listRowBackground(Color.clear)
+                    }
+                    ForEach(Array(tail.enumerated()), id: \.offset) { i, it in
                         Button { nav.go(HgActorGo(uid: it.userId, name: it.actor), "actorboard " + it.actor) } label: {
                             HStack(spacing: 10) {
-                            // v1.10.65 男/女榜行号=过滤后重新排号(i+1), 不顶总榜旧名次
-                                Text(String(format: "%02d", i + 1))
+                            // v1.10.66 前三已上台, 列表行号续 04 起(凑不满三台时仍从 01)
+                                Text(String(format: "%02d", i + (rows.count >= 3 ? 4 : 1)))
                                     .font(.system(size: 15, weight: .heavy, design: .rounded))
-                                    .foregroundStyle(i < 3 ? Color.orange : Color.secondary)
+                                    .foregroundStyle(Color.secondary)
                                     .frame(width: 30)
                                 AsyncImage(url: URL(string: hgImgURL(it.avatarUrl))) {
                                     $0.resizable().scaledToFill()
@@ -1789,6 +1797,104 @@ private struct ActorBoard: View {
         .onChange(of: vm.items.count) { _ in Task { await vm.fillGenders() } }
     }
 }
+// v1.10.66 冠军领奖台(用户拍板方案图): 金银铜三阶+冠军居中戴皇冠, 台面烧名字人气
+// 头像双保险=底色圈+姓氏字永远打底, 真头像(http→https v60铁律)盖上来, 拉不到也不空白
+struct PodiumCard: View {
+    @EnvironmentObject private var nav: TheaterNav
+    let items: [RankItem]          // 最多前 3 (调用方切好)
+
+    private var cols: [Int] { [1, 0, 2] }        // 列位: 亚 冠 季
+
+    static func podiumColors(_ rank: Int) -> (Color, Color) {
+        switch rank {
+        case 1: return (Color(red: 0.96, green: 0.77, blue: 0.36), Color(red: 0.84, green: 0.61, blue: 0.16))
+        case 2: return (Color(red: 0.78, green: 0.80, blue: 0.84), Color(red: 0.59, green: 0.62, blue: 0.67))
+        default: return (Color(red: 0.89, green: 0.62, blue: 0.42), Color(red: 0.73, green: 0.45, blue: 0.26))
+        }
+    }
+    static func popLine(_ it: RankItem?) -> String {
+        guard let it else { return "虚位以待" }
+        return it.score.isEmpty ? "人气扫描中" : it.score
+    }
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 10) {
+            ForEach(0..<3, id: \.self) { slot in
+                podiumCol(cols[slot])
+            }
+        }
+        .padding(.top, 8)
+        .padding(.bottom, 2)
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(LinearGradient(colors: [Color.orange.opacity(0.12), Color.white.opacity(0.92)],
+                                     startPoint: .top, endPoint: .center))
+        )
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
+            .stroke(.white.opacity(0.5), lineWidth: 1))
+    }
+
+    private func podiumCol(_ idx: Int) -> some View {
+        let it: RankItem? = idx < items.count ? items[idx] : nil
+        let rank = idx + 1
+        let c = Self.podiumColors(rank)
+        let big = rank == 1
+        return VStack(spacing: 6) {
+            if big {
+                Image(systemName: "crown.fill")
+                    .font(.system(size: 18))
+                    .foregroundStyle(Color(red: 0.85, green: 0.62, blue: 0.15))
+            }
+            podiumAvatar(it, r: big ? 44 : 30)
+            ZStack(alignment: .top) {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(LinearGradient(colors: [c.0, c.1], startPoint: .top, endPoint: .bottom))
+                    .frame(height: big ? 150 : (rank == 2 ? 118 : 104))
+                VStack(spacing: 4) {
+                    Text("TOP" + String(rank))
+                        .font(.system(size: big ? 22 : 18, weight: .heavy, design: .rounded))
+                        .foregroundStyle(.white)
+                    Text(it?.actor ?? "—")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(.white).lineLimit(1)
+                    Text(Self.popLine(it))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.white.opacity(0.9))
+                }
+                .padding(.top, 14)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if let it, !it.userId.isEmpty {
+                nav.go(HgActorGo(uid: it.userId, name: it.actor), "podiumnew " + it.actor)
+            }
+        }
+    }
+
+    private func podiumAvatar(_ it: RankItem?, r: CGFloat) -> some View {
+        let actorName = it?.actor ?? "?"
+        let initial = String(actorName.prefix(1))
+        let base = Circle()
+            .fill(LinearGradient(colors: [Color(white: 0.93), Color(white: 0.80)],
+                                 startPoint: .top, endPoint: .bottom))
+            .frame(width: r * 2, height: r * 2)
+            .overlay(Text(initial)
+                .font(.system(size: r * 1.1, weight: .heavy))
+                .foregroundStyle(Color(white: 0.45)))
+        return AnyView(base.overlay {
+            if let u = it?.avatarUrl, !u.isEmpty, let url = URL(string: hgImgURL(u)) {
+                AsyncImage(url: url) { ph in
+                    ph.image?.resizable().scaledToFill()
+                }
+            }
+        }
+        .clipShape(Circle())
+        .overlay(Circle().stroke(.white, lineWidth: 3)))
+    }
+}
+
 // MARK: - 上新段
 
 private struct NewTab: View {
