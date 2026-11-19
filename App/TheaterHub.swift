@@ -2329,8 +2329,11 @@ struct TheaterDetailView: View {
                 }
             }
         }
-        .navigationTitle("剧场详情")
+        // v1.10.75 导航栏透明让位氛围图(返回箭头染白), "剧场详情"四字撤掉占位
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.hidden, for: .navigationBar)
+        .toolbarColorScheme(.dark, for: .navigationBar)
         .task {
             busy = true
             defer { busy = false }
@@ -2353,69 +2356,93 @@ struct TheaterDetailView: View {
 
     private func detailBody(_ sv: Openhongguo.Series) -> some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            // v1.10.75 一体化手术: 氛围图通顶出血 → 长渐变慢慢化进白底 →
+            // 海报+标题上压氛围下坐白底(嵌进去不是贴上去), 信息块连贯成一张纸
+            VStack(alignment: .leading, spacing: 0) {
                 hero(sv)
-                statsRow
-                tagChips(sv)
-                introBlock(sv.description)
-                actionRow(sv)
-                episodesBlock
-                castBlock(sv)
+                heroInfo(sv)
+                VStack(alignment: .leading, spacing: 18) {
+                    statsRow
+                    tagChips(sv)
+                    introBlock(sv.description)
+                    actionRow(sv)
+                    episodesBlock
+                    castBlock(sv)
+                }
+                .padding(.top, 16)
             }
             .padding(.bottom, 26)
         }
     }
 
-    // 300pt 模糊海报 hero: 一张图两用, 零成本高级感
+    // 状态栏+导航栏净高: 氛围图要出血到屏幕最顶
+    private var topInset: CGFloat {
+        let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene
+        return scene?.windows?.first?.safeAreaInsets.top ?? 0
+    }
+
+    // 氛围图: 通顶 + 顶部压暗(白返回箭头吃得开) + 尾部整段化进页面白
     private func hero(_ sv: Openhongguo.Series) -> some View {
-        ZStack(alignment: .bottomLeading) {
+        let inset = topInset
+        return ZStack {
             AsyncImage(url: URL(string: sv.coverUrl)) { $0.resizable().scaledToFill() }
                 placeholder: { Color.gray.opacity(0.25) }
                 .frame(maxWidth: .infinity)
-                .frame(height: 300)
+                .frame(height: 300 + inset)
                 .clipped()
                 .blur(radius: 30).saturation(1.15)
-            LinearGradient(colors: [Color.black.opacity(0.15), Color.black.opacity(0.05),
-                                    Color.black.opacity(0.55), Color.black.opacity(0.85)],
+            LinearGradient(colors: [Color.black.opacity(0.45), Color.clear],
+                           startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 0.28))
+            LinearGradient(colors: [Color.clear, Color.black.opacity(0.42), Color.black.opacity(0.12),
+                                    Color(UIColor.systemBackground)],
+                           stops: [0.18, 0.52, 0.68, 1.0],
                            startPoint: .top, endPoint: .bottom)
-            HStack(alignment: .bottom, spacing: 14) {
-                AsyncImage(url: URL(string: sv.coverUrl)) { $0.resizable().scaledToFill() }
-                    placeholder: { Color.gray.opacity(0.3) }
-                    .frame(width: 116, height: 155)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .overlay(alignment: .bottomTrailing) {
-                        if sv.episodeCount > 0 {
-                            Text("全\(sv.episodeCount)集")
-                                .font(.system(size: 10, weight: .semibold))
-                                .monospacedDigit()
-                                .foregroundStyle(.white)
-                                .shadow(color: .black.opacity(0.7), radius: 2)
-                                .padding(7)
-                        }
-                    }
-                    .shadow(color: .black.opacity(0.4), radius: 15, y: 14)
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("红果短剧")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 8).padding(.vertical, 3)
-                        .background(Capsule().fill(Color.orange))
-                    Text(sv.title)
-                        .font(.system(size: 23, weight: .heavy))
-                        .foregroundStyle(.white)
-                        .lineLimit(2)
-                        .shadow(color: .black.opacity(0.6), radius: 3, y: 1)
-                    Text(Self.heroMeta(sv))
-                        .font(.system(size: 13))
-                        .foregroundStyle(.white.opacity(0.8))
-                        .lineLimit(2)
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 16)
         }
-        .frame(height: 300)
+        .frame(height: 300 + inset)
+        .clipped()
+        .padding(.top, -inset)
+    }
+
+    // 海报+标题组上提 80pt 横跨渐变带: 上半坐灰雾下半坐白, 黑字不再悬空
+    private func heroInfo(_ sv: Openhongguo.Series) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            AsyncImage(url: URL(string: sv.coverUrl)) { $0.resizable().scaledToFill() }
+                placeholder: { Color.gray.opacity(0.3) }
+                .frame(width: 116, height: 155)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(alignment: .bottomTrailing) {
+                    if sv.episodeCount > 0 {
+                        Text("全\(sv.episodeCount)集")
+                            .font(.system(size: 10, weight: .semibold))
+                            .monospacedDigit()
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 6).padding(.vertical, 3)
+                            .background(Capsule().fill(Color.black.opacity(0.55)))
+                            .padding(6)
+                    }
+                }
+                .shadow(color: .black.opacity(0.35), radius: 16, y: 10)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("红果短剧")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(Capsule().fill(Color.orange))
+                Text(sv.title)
+                    .font(.system(size: 22, weight: .heavy))
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                Text(Self.heroMeta(sv))
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+            .padding(.top, 26)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .frame(height: 155, alignment: .top)
+        .padding(.top, -80)
     }
 
     static func heroMeta(_ sv: Openhongguo.Series) -> String {
