@@ -1217,9 +1217,10 @@ private struct HeroCarousel: View {
             ForEach(Array(rows.enumerated()), id: \.offset) { i, s in
                 Button { nav.go(HgWant(sid: s.id, title: s.title), "hero " + s.id) } label: {
                     ZStack {
-                        // 圆角底垫(v1.10.48): 图再黑也是圆卡, 不再和直角背景糊成一团
-                        RoundedRectangle(cornerRadius: 18)
-                            .fill(Color(white: 0.07))
+                        // 圆角底垫(v1.10.49 升级到 20 continuous 苹果标准圆)
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .fill(LinearGradient(colors: [Color(white: 0.20), Color(white: 0.08)],
+                                                 startPoint: .topLeading, endPoint: .bottomTrailing))
                         AsyncImage(url: URL(string: s.coverUrl)) {
                             $0.resizable().scaledToFill()
                                 .blur(radius: 40)
@@ -1233,7 +1234,7 @@ private struct HeroCarousel: View {
                                            startPoint: .top, endPoint: .bottom)
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .clipShape(RoundedRectangle(cornerRadius: 18))
+                        .mask(RoundedRectangle(cornerRadius: 20, style: .continuous))
                         HStack(alignment: .top, spacing: 12) {
                             AsyncImage(url: URL(string: s.coverUrl)) {
                                 $0.resizable().scaledToFill()
@@ -1263,7 +1264,7 @@ private struct HeroCarousel: View {
                                     .padding(.horizontal, 6).padding(.vertical, 2)
                                     .background(Capsule().fill(.orange.opacity(0.16)))
                                 Text(s.title)
-                                    .font(.system(size: 19, weight: .bold))
+                                    .font(.system(size: 17, weight: .bold))
                                     .foregroundStyle(.white)
                                     .lineLimit(2)
                                 Text(meta)
@@ -1280,7 +1281,7 @@ private struct HeroCarousel: View {
                                     .padding(.horizontal, 14).padding(.vertical, 6)
                                     .background(Capsule().fill(Color.orange))
                             }
-                            .frame(maxWidth: .infinity, maxHeight: 160, alignment: .topLeading)
+                            .frame(maxWidth: .infinity, maxHeight: 172, alignment: .topLeading)
                         }
                         .padding(14)
                         // iDuanJu 同款页码: 右下角小横条, 当前页拉长成胶囊, 不压内容
@@ -1295,14 +1296,17 @@ private struct HeroCarousel: View {
                         .padding(.trailing, 12)
                         .padding(.bottom, 10)
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: 18))
+                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .tag(i)
             }
         }
         .tabViewStyle(.page(indexDisplayMode: .never))
-        .frame(height: 206)
+        .frame(height: 218)
+        // v1.10.49 铁证修法: 页内 clipShape 连吃三版瘪(45/46/48), 改剪 TabView 容器本体
+        // ——轮播整体一个圆角模具, 页面在模具里滑动, 想不圆都难
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 }
 private struct DiscoverTab: View {
