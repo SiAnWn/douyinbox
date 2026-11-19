@@ -281,7 +281,7 @@ final class RailVM: ObservableObject {
                     try await c.shortRank(ShortRankQuery(board: board))
                 }) {
                     var out: [HRail.CardLike] = []
-                    for it in sr.items.prefix(10) where !it.seriesId.isEmpty {
+                    for it in sr.items.prefix(20) where !it.seriesId.isEmpty {   // v53 提量供 TOP4-20 小卡
                         out.append(HRail.CardLike(sid: it.seriesId, title: it.title,
                                                  sub: it.score, cover: it.coverUrl, rank: it.position))
                     }
@@ -880,71 +880,137 @@ extension View {
     }
 }
 
-// v1.10.52 搜索空状态三张大卡(照 iDuanJu 搜索页): 金银铜牌+榜名·TOP N+热度小字+白"查看详情"
-private struct Top3Cards: View {
-    @EnvironmentObject private var nav: TheaterNav
-    let boards: [(String, HRail.CardLike?)]
+// v1.10.53 榜单区改竖卡(用户纠正: 他家是三张竖版大卡 TOP1-3, 下面竖版小卡 TOP4-20):
+// 榜切换小胶囊 + 3张大竖卡 + 4列小竖卡网格; RailVM 每榜提到 20 条
+struct TopBoards: View {
+    @ObservedObject var rails: RailVM
+    @State private var b = 0
     var body: some View {
-        VStack(spacing: 10) {
-            ForEach(Array(boards.enumerated()), id: \.offset) { i, b in
-                if let c = b.1, !c.sid.isEmpty {
-                    Button { nav.go(HgWant(sid: c.sid, title: c.title), "top3 " + c.sid) } label: {
-                        Top3CardBody(rank: i + 1, label: b.0, card: c)
+        VStack(alignment: .leading, spacing: 10) {
+            bar
+            grid
+        }
+        .task { rails.load() }
+    }
+    private var bar: some View {
+        let names = ["热播榜", "新剧榜", "必看榜"]
+        return HStack(spacing: 8) {
+            ForEach(0..<3, id: \.self) { i in
+                let on = b == i
+                Button { b = i } label: {
+                    Text(names[i])
+                        .font(.system(size: 12, weight: on ? .semibold : .regular))
+                        .foregroundStyle(on ? Color.orange : Color.primary)
+                        .padding(.horizontal, 12).padding(.vertical, 5)
+                        .background(Capsule().fill(on ? Color.orange.opacity(0.13)
+                                                    : Color.gray.opacity(0.10)))
+                        .overlay(Capsule().strokeBorder(on ? Color.orange.opacity(0.55)
+                                                         : Color.clear, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer()
+        }
+    }
+    private var grid: some View {
+        let cards = [rails.hot, rails.fresh, rails.must][max(0, min(b, 2))]
+        return Group {
+            if cards.isEmpty {
+                HStack(spacing: 8) {
+                    ForEach(0..<3, id: \.self) { _ in
+                        Color.clear
+                            .frame(maxWidth: .infinity)
+                            .aspectRatio(0.68, contentMode: .fit)
+                            .overlay(RoundedRectangle(cornerRadius: 12)
+                                .fill(Color.gray.opacity(0.12)))
                     }
-                    .buttonStyle(.plain)
+                }
+            } else {
+                HStack(spacing: 8) {
+                    ForEach(Array(cards.prefix(3).enumerated()), id: \.offset) { i, c in
+                        BigRankCard(rank: i + 1, card: c)
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+                if cards.count > 3 {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4),
+                              spacing: 10) {
+                        ForEach(Array(cards.dropFirst(3)).enumerated()), id: \.offset) { i, c in
+                            MiniRankCard(rank: i + 4, card: c)
+                        }
+                    }
                 }
             }
         }
     }
 }
 
-private struct Top3CardBody: View {      // body 拆小护类型检查器(v24 铁律)
+private struct BigRankCard: View {
+    @EnvironmentObject private var nav: TheaterNav
     let rank: Int
-    let label: String
     let card: HRail.CardLike
     var body: some View {
-        HStack(spacing: 12) {
-            ZStack(alignment: .topLeading) {
-                AsyncImage(url: URL(string: card.cover)) {
-                    $0.resizable().scaledToFill()
-                } placeholder: { Color.gray.opacity(0.25) }
-                .frame(width: 104, height: 148)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                RankBadge2(rank: rank)
-                    .padding(6)
-            }
-            VStack(alignment: .leading, spacing: 6) {
-                Text(label + " · TOP " + String(rank))
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.orange)
-                Text(card.title)
-                    .font(.system(size: 17, weight: .bold))
-                    .foregroundStyle(.white)
-                    .lineLimit(2)
-                if !card.sub.isEmpty {
-                    Text(card.sub)
-                        .font(.caption).foregroundStyle(.white.opacity(0.75))
-                        .lineLimit(1)
+        Button { nav.go(HgWant(sid: card.sid, title: card.title), "top " + card.sid) } label: {
+            Color.clear.aspectRatio(0.68, contentMode: .fit)
+                .overlay {
+                    AsyncImage(url: URL(string: card.cover)) {
+                        $0.resizable().scaledToFill()
+                    } placeholder: { Color.gray.opacity(0.2) }
                 }
-                Spacer(minLength: 6)
-                HStack(spacing: 4) {
-                    Image(systemName: "play.fill").font(.system(size: 9))
-                    Text("查看详情").font(.footnote.weight(.semibold))
+                .overlay(alignment: .topLeading) {
+                    RankBadge2(rank: rank).padding(6)
                 }
-                .foregroundStyle(.black)
-                .padding(.horizontal, 12).padding(.vertical, 6)
-                .background(Capsule().fill(Color.white.opacity(0.92)))
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+                .overlay(alignment: .bottom) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(card.title)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.white).lineLimit(1)
+                        if !card.sub.isEmpty {
+                            Text(card.sub)
+                                .font(.system(size: 10))
+                                .foregroundStyle(.white.opacity(0.8)).lineLimit(1)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(8)
+                    .background(LinearGradient(colors: [.clear, .black.opacity(0.65)],
+                                               startPoint: .top, endPoint: .bottom))
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
-        .padding(12)
-        .frame(height: 172)
-        .background(LinearGradient(colors: [Color(white: 0.20), Color(white: 0.08)],
-                                   startPoint: .topLeading, endPoint: .bottomTrailing))
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .buttonStyle(.plain)
     }
 }
 
+private struct MiniRankCard: View {
+    @EnvironmentObject private var nav: TheaterNav
+    let rank: Int
+    let card: HRail.CardLike
+    var body: some View {
+        Button { nav.go(HgWant(sid: card.sid, title: card.title), "top " + card.sid) } label: {
+            Color.clear.aspectRatio(0.66, contentMode: .fit)
+                .overlay {
+                    AsyncImage(url: URL(string: card.cover)) {
+                        $0.resizable().scaledToFill()
+                    } placeholder: { Color.gray.opacity(0.2) }
+                }
+                .overlay(alignment: .topLeading) {
+                    RankBadge2(rank: rank).scaleEffect(0.8).padding(4)
+                }
+                .overlay(alignment: .bottom) {
+                    Text(card.title)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.white).lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(5)
+                        .background(LinearGradient(colors: [.clear, .black.opacity(0.6)],
+                                                   startPoint: .top, endPoint: .bottom))
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+}
 private struct TheaterSearchTab: View {
     @ObservedObject var vm: DiscoverVM
     @ObservedObject var rails: RailVM
@@ -986,10 +1052,7 @@ private struct TheaterSearchTab: View {
                 .listRowInsets(EdgeInsets(top: 0, leading: 8, bottom: 6, trailing: 8))
                 // 三张 TOP 大卡(v1.10.52 用户钦点): 没出结果时就是它仨当家, 出的结果秒让位
                 if vm.sres.isEmpty {
-                    Top3Cards(boards: [("热播榜", rails.hot.first),
-                                       ("新剧榜", rails.fresh.first),
-                                       ("必看榜", rails.must.first)])
-                        .task { rails.load() }
+                    TopBoards(rails: rails)
                         .padding(.vertical, 2)
                 }
                 if vm.sres.isEmpty {
