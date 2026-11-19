@@ -1224,43 +1224,36 @@ private struct Grid2Cards: View {
     var rank0 = 0                                   // >0 则从 rank0 起挂奖牌徽章
     var nearEnd: (Int) -> Void = { _ in }           // 滚到尾部自动续页
     var body: some View {
-        LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)],
-                  spacing: 12) {
+        LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)],
+                  spacing: 14) {
             ForEach(Array(rows.enumerated()), id: \.offset) { i, s in
                 Button { nav.go(HgWant(sid: s.id, title: s.title), "grid " + s.id) } label: {
-                    Color.clear.aspectRatio(0.7, contentMode: .fit)
-                        .overlay {
-                            AsyncImage(url: URL(string: hgCoverUrl(sid: s.id, s.coverUrl))) {
-                                $0.resizable().scaledToFill()
-                            } placeholder: {
-                                LinearGradient(colors: [Color.gray.opacity(0.35), Color.gray.opacity(0.12)],
-                                               startPoint: .top, endPoint: .bottom)
+                    // v1.10.73 用户钦定: 剧名搬出封面, 图是图字是字; 黑渐隐卸装, 列距 8→10
+                    VStack(alignment: .leading, spacing: 5) {
+                        Color.clear.aspectRatio(0.7, contentMode: .fit)
+                            .overlay {
+                                AsyncImage(url: URL(string: hgCoverUrl(sid: s.id, s.coverUrl))) {
+                                    $0.resizable().scaledToFill()
+                                } placeholder: {
+                                    LinearGradient(colors: [Color.gray.opacity(0.35), Color.gray.opacity(0.12)],
+                                                   startPoint: .top, endPoint: .bottom)
+                                }
                             }
-                        }
-                        .overlay(alignment: .topLeading) {
-                            if rank0 > 0 {
-                                RankBadge2(rank: rank0 + i).padding(6)
+                            .overlay(alignment: .topLeading) {
+                                if rank0 > 0 {
+                                    RankBadge2(rank: rank0 + i).padding(6)
+                                }
                             }
-                        }
-                        .overlay {
-                            LinearGradient(colors: [.black.opacity(0.0), .black.opacity(0.7)],
-                                           startPoint: .center, endPoint: .bottom)
-                        }
-                        .overlay(alignment: .bottomLeading) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(s.title).font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(.white).lineLimit(2)
-                                Text(hgGridSub(s)).font(.system(size: 10))
-                                    .foregroundStyle(.white.opacity(0.8)).lineLimit(1)
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .strokeBorder(Color.primary.opacity(0.06), lineWidth: 0.5)
                             }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(8)
-                        }
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 0.5)
-                        }
+                        Text(s.title).font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.primary).lineLimit(2)
+                        Text(hgGridSub(s)).font(.system(size: 10))
+                            .foregroundStyle(.secondary).lineLimit(1)
+                    }
                 }
                 .buttonStyle(.plain)
                 .onAppear { nearEnd(i) }
@@ -1292,42 +1285,35 @@ struct Grid2Lite: View {
     var rank0 = 0
     var nearEnd: (Int) -> Void = { _ in }
     var body: some View {
-        LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)],
-                  spacing: 12) {
+        LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)],
+                  spacing: 14) {
             ForEach(Array(items.enumerated()), id: \.offset) { i, c in
                 Button { nav.go(HgWant(sid: c.sid, title: c.title), "lite " + c.sid) } label: {
-                    Color.clear.aspectRatio(0.7, contentMode: .fit)
-                        .overlay {
-                            AsyncImage(url: URL(string: hgCoverUrl(sid: c.sid, c.cover))) {
-                                $0.resizable().scaledToFill()
-                            } placeholder: { Color.gray.opacity(0.16) }
-                        }
-                        .overlay(alignment: .topLeading) {
-                            if rank0 > 0 {
-                                RankBadge2(rank: rank0 + i).padding(6)
-                            } else if c.rank > 0 {
-                                RankBadge2(rank: c.rank).padding(6)
+                    // v1.10.73 剧名搬家同款式(与 Grid2Cards 一个语言)
+                    VStack(alignment: .leading, spacing: 5) {
+                        Color.clear.aspectRatio(0.7, contentMode: .fit)
+                            .overlay {
+                                AsyncImage(url: URL(string: hgCoverUrl(sid: c.sid, c.cover))) {
+                                    $0.resizable().scaledToFill()
+                                } placeholder: { Color.gray.opacity(0.16) }
                             }
-                        }
-                        .overlay {
-                            LinearGradient(colors: [.black.opacity(0.0), .black.opacity(0.7)],
-                                           startPoint: .center, endPoint: .bottom)
-                        }
-                        .overlay(alignment: .bottomLeading) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(c.title).font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(.white).lineLimit(2)
-                                Text(c.sub).font(.system(size: 10))
-                                    .foregroundStyle(.white.opacity(0.8)).lineLimit(1)
+                            .overlay(alignment: .topLeading) {
+                                if rank0 > 0 {
+                                    RankBadge2(rank: rank0 + i).padding(6)
+                                } else if c.rank > 0 {
+                                    RankBadge2(rank: c.rank).padding(6)
+                                }
                             }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(8)
-                        }
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 0.5)
-                        }
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .strokeBorder(Color.primary.opacity(0.06), lineWidth: 0.5)
+                            }
+                        Text(c.title).font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.primary).lineLimit(2)
+                        Text(c.sub).font(.system(size: 10))
+                            .foregroundStyle(.secondary).lineLimit(1)
+                    }
                 }
                 .buttonStyle(.plain)
                 .onAppear { nearEnd(i) }
@@ -1686,39 +1672,39 @@ struct GridRankCards: View {
     @EnvironmentObject private var nav: TheaterNav
     let items: [RankItem]
     var body: some View {
-        LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8),
-                            GridItem(.flexible(), spacing: 8)], spacing: 12) {
+        LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10),
+                            GridItem(.flexible(), spacing: 10)], spacing: 14) {
             ForEach(Array(items.enumerated()), id: \.offset) { _, it in
                 Button { nav.go(HgWant(sid: it.seriesId, title: it.title), "rankwall " + it.seriesId) } label: {
-                    Color.clear.aspectRatio(0.7, contentMode: .fit)
-                        .overlay {
-                            AsyncImage(url: URL(string: hgImgURL(it.coverUrl))) {
-                                $0.resizable().scaledToFill()
-                            } placeholder: {
-                                LinearGradient(colors: [Color.gray.opacity(0.35), Color.gray.opacity(0.12)],
-                                               startPoint: .top, endPoint: .bottom)
+                    // v1.10.73 剧名搬家 + B项间距 8→10(三列挤)
+                    VStack(alignment: .leading, spacing: 5) {
+                        Color.clear.aspectRatio(0.7, contentMode: .fit)
+                            .overlay {
+                                AsyncImage(url: URL(string: hgImgURL(it.coverUrl))) {
+                                    $0.resizable().scaledToFill()
+                                } placeholder: {
+                                    LinearGradient(colors: [Color.gray.opacity(0.35), Color.gray.opacity(0.12)],
+                                                   startPoint: .top, endPoint: .bottom)
+                                }
                             }
-                        }
-                        .overlay(alignment: .topLeading) {
-                            RankBadge2(rank: it.position).padding(6)
-                        }
-                        .overlay {
-                            LinearGradient(colors: [.black.opacity(0.0), .black.opacity(0.7)],
-                                           startPoint: .center, endPoint: .bottom)
-                        }
-                        .overlay(alignment: .bottomLeading) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(it.title)
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .foregroundStyle(.white).lineLimit(2)
-                                Text((it.episodeCount > 0 ? "全" + String(it.episodeCount) + "集" : "") +
-                                     (it.score.isEmpty ? "" : (it.episodeCount > 0 ? " · " : "") + it.score))
-                                    .font(.system(size: 9))
-                                    .foregroundStyle(.white.opacity(0.75)).lineLimit(1)
+                            .overlay(alignment: .topLeading) {
+                                RankBadge2(rank: it.position).padding(6)
                             }
-                            .padding(6)
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .strokeBorder(Color.primary.opacity(0.06), lineWidth: 0.5)
+                            }
+                        Text(it.title)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.primary).lineLimit(2)
+                        let sub = (it.episodeCount > 0 ? "全" + String(it.episodeCount) + "集" : "") +
+                                 (it.score.isEmpty ? "" : (it.episodeCount > 0 ? " · " : "") + it.score)
+                        if !sub.isEmpty {
+                            Text(sub).font(.system(size: 9))
+                                .foregroundStyle(.secondary).lineLimit(1)
                         }
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    }
                 }
                 .buttonStyle(.plain)
             }
