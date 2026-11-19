@@ -4,7 +4,7 @@ import UIKit
 // MARK: - v1.10.85 多季归册(用户点单): "云渺 / 云渺2 / 云渺·第二季" 这类同名多册
 // 在剧墙归成一张册卡, 点开分季挑。纯本地名字分组, 不联网不碰库结构。
 
-struct ShelfGroup: Identifiable {
+struct ShelfGroup: Identifiable, Hashable {
     let id: String              // 册基名
     let vols: [Series]          // 已按季号升序
     var isPack: Bool { vols.count > 1 }
