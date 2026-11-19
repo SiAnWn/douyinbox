@@ -873,7 +873,7 @@ struct TheaterHomeView: View {
                 // v1.10.63 首页=榜单页(用户钦点照 iDuanJu 榜单屏): 分类胶囊(演员榜+服务端
                 // 自述五类) + 榜切片 + 列表; 演员榜并入第一类(总/男/女). 旧首页 DiscoverTab
                 // (轮播+推荐)与原演员 tab 退役, struct 留档随时复活
-                RankTab(vm: rank, cast: cast)
+                RankTab(vm: rank, cast: cast, cat: cat)
             }
             .navigationTitle("剧场")
             .toolbar {
@@ -1599,29 +1599,36 @@ private struct RankTab: View {
     @EnvironmentObject private var nav: TheaterNav
     @ObservedObject var vm: RankVM
     @ObservedObject var cast: CastVM
+    @ObservedObject var cat: CatVM
     @State private var actorSeg = false                // v1.10.63 演员榜收编为榜单第一类
+    @State private var filterSeg = false               // v1.10.67 筛选找片(用户甩红果截图点单)
     var body: some View {
         VStack(spacing: 8) {
             // v63 用户钦点首页=榜单页: 分类胶囊行头插"演员榜", 其余跟着服务端自述
             // (全部/系列剧/漫剧/真人剧/AI剧 全是服务端起的名字)
-            ChipScroller(labels: Self.chipLabels(vm: vm, actorSeg: actorSeg),
+            // v67 再头插"筛选找片": 左竖类柱+右条件墙(照红果官方那屏)
+            ChipScroller(labels: Self.chipLabels(vm: vm, actorSeg: actorSeg, filterSeg: filterSeg),
                          onPick: { i in
+                             filterSeg = (i == 0)
+                             actorSeg = (i == 1)
                              if i == 0 {
-                                 actorSeg = true
+                                 cat.loadPanel()
+                             } else if i == 1 {
                                  if cast.items.isEmpty { cast.load() }
                              } else {
-                                 actorSeg = false
-                                 vm.load(content: vm.contents[i - 1].id, board: "")
+                                 vm.load(content: vm.contents[i - 2].id, board: "")
                              }
                          })
                 .padding(.top, 6)
-            if !actorSeg,
+            if !actorSeg && !filterSeg,
                let cur = vm.contents.first(where: { $0.id == vm.content || $0.selected }),
                !cur.boards.isEmpty {
                 ChipScroller(labels: cur.boards.map { ($0.name, $0.id == vm.board || ($0.selected && vm.board.isEmpty)) },
                              onPick: { vm.load(board: cur.boards[$0].id) })
             }
-            if actorSeg {
+            if filterSeg {
+                FilterPage(vm: cat)
+            } else if actorSeg {
                 ActorBoard(vm: cast)
             } else {
             List {
@@ -1641,11 +1648,11 @@ private struct RankTab: View {
         }
     }
 
-    // 分类胶囊(含演员榜): ViewBuilder 里不许 var, 照 actorSub 老规矩抽函数
-    static func chipLabels(vm: RankVM, actorSeg: Bool) -> [(String, Bool)] {
-        var out: [(String, Bool)] = [("演员榜", actorSeg)]
+    // 分类胶囊(含筛选找片+演员榜): ViewBuilder 里不许 var, 照 actorSub 老规矩抽函数
+    static func chipLabels(vm: RankVM, actorSeg: Bool, filterSeg: Bool) -> [(String, Bool)] {
+        var out: [(String, Bool)] = [("筛选找片", filterSeg), ("演员榜", actorSeg)]
         for c in vm.contents {
-            out.append((c.name, !actorSeg && (c.id == vm.content || (c.selected && vm.content.isEmpty))))
+            out.append((c.name, !actorSeg && !filterSeg && (c.id == vm.content || (c.selected && vm.content.isEmpty))))
         }
         return out
     }
@@ -1892,6 +1899,66 @@ struct PodiumCard: View {
         }
         .clipShape(Circle())
         .overlay(Circle().stroke(.white, lineWidth: 3)))
+    }
+}
+
+// v1.10.67 筛选找片(用户甩红果官方截图点单): 左竖类柱 + 右条件胶囊墙 + 双列海报瀑布
+// 数据=当年 v24 的 CatVM(shortFilterPanel/shortFilter) 原班, 布局照图重排
+private struct FilterPage: View {
+    @ObservedObject var vm: CatVM
+
+    // 类柱=名字带"类别/频道"的那行, 认不出就拿首行顶上
+    private func split() -> (FilterRow?, [FilterRow]) {
+        let cat = vm.panel.first(where: { $0.name.contains("类别") || $0.name.contains("频道") }) ?? vm.panel.first
+        return (cat, vm.panel.filter { $0.key != cat?.key })
+    }
+
+    var body: some View {
+        let parts = split()
+        HStack(alignment: .top, spacing: 0) {
+            if let cat = parts.0, !cat.options.isEmpty {
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(spacing: 0) {
+                        ForEach(cat.options, id: \.value) { o in
+                            let on = vm.picks[cat.key] == o.value
+                            Button { vm.pick(key: cat.key, value: o.value) } label: {
+                                Text(o.name)
+                                    .font(.system(size: 13, weight: on ? .bold : .regular))
+                                    .foregroundStyle(on ? .orange : .primary)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 13)
+                                    .background(on ? Color.white : Color.clear)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .frame(width: 96)
+                .background(Color(white: 0.95))
+            }
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 8) {
+                    ForEach(parts.1.filter { !$0.options.isEmpty }, id: \.key) { row in
+                        ChipScroller(labels: row.options.map { ($0.name, vm.picks[row.key] == $0.value) },
+                                     onPick: { vm.pick(key: row.key, value: row.options[$0].value) })
+                    }
+                    if !vm.note.isEmpty {
+                        Text(vm.note).font(.caption).foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    if vm.rows.isEmpty && vm.busy {
+                        GridSkeleton().padding(.horizontal, 8)
+                    }
+                    Grid2Cards(rows: vm.rows)
+                        .padding(.horizontal, 8)
+                    // 翻页走手动(v59 铁律), 左柱短列表不设自动哨兵
+                    MoreButton(busy: vm.busy, more: { vm.more() })
+                        .padding(.bottom, 12)
+                }
+                .padding(.vertical, 8)
+            }
+        }
+        .task { vm.loadPanel() }
     }
 }
 
