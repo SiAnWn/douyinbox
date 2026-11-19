@@ -1220,8 +1220,12 @@ private struct HeroCarousel: View {
                         AsyncImage(url: URL(string: s.coverUrl)) {
                             $0.resizable().scaledToFill()
                                 .blur(radius: 40)
-                                .saturation(0.9)
-                                .overlay(Color.black.opacity(0.38))
+                                .saturation(0.85)
+                                .overlay(Color.black.opacity(0.62))
+                                .overlay(
+                                    LinearGradient(colors: [.black.opacity(0.25), .black.opacity(0.62)],
+                                                   startPoint: .top, endPoint: .bottom)
+                                )
                         } placeholder: {
                             LinearGradient(colors: [Color.gray.opacity(0.35), Color.gray.opacity(0.1)],
                                            startPoint: .top, endPoint: .bottom)
