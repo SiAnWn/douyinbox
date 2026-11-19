@@ -2355,8 +2355,8 @@ struct TheaterDetailView: View {
     }
 
     private func detailBody(_ sv: Openhongguo.Series) -> some View {
-        // v1.10.77 出血真药: contentMargins 把顶部安全区垫清零, 氛围图顶到屏幕最上沿
-        // (上版负 padding 没顶上去=安全区还垫着那条白条)
+        // v1.10.78 出血双保险: ignoresSafeArea(.container, edges:.top) 是滚动页通顶正招,
+        // contentMargins 在某些导航组合下仍留垫 — 两药都上最稳
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 hero(sv)
@@ -2373,9 +2373,11 @@ struct TheaterDetailView: View {
             .padding(.bottom, 26)
         }
         .contentMargins(.top, 0, for: .automatic)
+        .ignoresSafeArea(.container, edges: .top)
     }
 
-    // 氛围图: 通顶(contentMargins 清垫) + 顶部压暗喂白箭头 + 尾部化进页面白
+    // 氛围图: 通顶(contentMargins 清垫) + 尾部化进页面白
+    // v1.10.78 浅色封面糊成一大片白=用户嫌留白更多 → 图整体压暗 + 顶部深色帽檐带
     private func hero(_ sv: Openhongguo.Series) -> some View {
         ZStack {
             AsyncImage(url: URL(string: sv.coverUrl)) { $0.resizable().scaledToFill() }
@@ -2383,14 +2385,18 @@ struct TheaterDetailView: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: 300)
                 .clipped()
-                .blur(radius: 30).saturation(1.15)
-            LinearGradient(colors: [Color.black.opacity(0.45), Color.clear],
-                           startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 0.28))
-            // iOS17 SDK: stops 要走 Gradient(stops:) 喂给 LinearGradient(colors:stops:) 不中
+                .blur(radius: 30).saturation(1.1).brightness(-0.18).contrast(1.06)
+            // 深色帽檐: 状态栏+导航区稳稳压黑, 白字白箭头吃得住
             LinearGradient(gradient: Gradient(stops: [
-                .init(color: Color.clear, location: 0.18),
-                .init(color: Color.black.opacity(0.42), location: 0.52),
-                .init(color: Color.black.opacity(0.12), location: 0.68),
+                .init(color: Color.black.opacity(0.68), location: 0.0),
+                .init(color: Color.black.opacity(0.28), location: 0.20),
+                .init(color: Color.clear, location: 0.38),
+            ]), startPoint: .top, endPoint: .bottom)
+            // 深色腰段 + 尾部一路化进页面白
+            LinearGradient(gradient: Gradient(stops: [
+                .init(color: Color.clear, location: 0.22),
+                .init(color: Color.black.opacity(0.45), location: 0.55),
+                .init(color: Color.black.opacity(0.12), location: 0.70),
                 .init(color: Color(UIColor.systemBackground), location: 1.0),
             ]), startPoint: .top, endPoint: .bottom)
         }
