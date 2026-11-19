@@ -2378,7 +2378,7 @@ struct TheaterDetailView: View {
     // 状态栏+导航栏净高: 氛围图要出血到屏幕最顶
     private var topInset: CGFloat {
         let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene
-        return scene?.windows?.first?.safeAreaInsets.top ?? 0
+        return scene?.windows.first?.safeAreaInsets.top ?? 0
     }
 
     // 氛围图: 通顶 + 顶部压暗(白返回箭头吃得开) + 尾部整段化进页面白
@@ -2393,10 +2393,13 @@ struct TheaterDetailView: View {
                 .blur(radius: 30).saturation(1.15)
             LinearGradient(colors: [Color.black.opacity(0.45), Color.clear],
                            startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 0.28))
-            LinearGradient(colors: [Color.clear, Color.black.opacity(0.42), Color.black.opacity(0.12),
-                                    Color(UIColor.systemBackground)],
-                           stops: [0.18, 0.52, 0.68, 1.0],
-                           startPoint: .top, endPoint: .bottom)
+            // iOS17 SDK: stops 要走 Gradient(stops:) 喂给 LinearGradient(colors:stops:) 不中
+            LinearGradient(gradient: Gradient(stops: [
+                .init(color: Color.clear, location: 0.18),
+                .init(color: Color.black.opacity(0.42), location: 0.52),
+                .init(color: Color.black.opacity(0.12), location: 0.68),
+                .init(color: Color(UIColor.systemBackground), location: 1.0),
+            ]), startPoint: .top, endPoint: .bottom)
         }
         .frame(height: 300 + inset)
         .clipped()
