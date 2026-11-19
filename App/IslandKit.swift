@@ -320,7 +320,7 @@ enum BoxProgress {
 // 一键：点岛按钮 → 不打开 App，直接后台解析
 // （Xcode26/iOS26：岛上按钮必须 LiveActivityIntent，App 进程后台执行不弹界面）
 struct ParseClipIntent: LiveActivityIntent {
-    static var title: LocalizedStringResource = "盒子：解析剪贴板"
+    static var title: LocalizedStringResource = "勾栏：解析剪贴板"
     static var openAppWhenRunning = false    // 关键：不打开 App，后台进程直接干活
     func perform() async throws -> some IntentResult {
         await BoxIsland.runParse()
@@ -330,7 +330,7 @@ struct ParseClipIntent: LiveActivityIntent {
 
 // 已解析 → 开始下载（App 进程被唤醒，直接走完整下载管线，界面不用露面）
 struct IslandDownloadIntent: LiveActivityIntent {
-    static var title: LocalizedStringResource = "盒子：开始下载"
+    static var title: LocalizedStringResource = "勾栏：开始下载"
     static var openAppWhenRunning = false    // 后台唤醒 App 进程开下，界面不出场
     @Parameter(title: "链接") var link: String?
     init() {}
@@ -349,7 +349,7 @@ struct IslandDownloadIntent: LiveActivityIntent {
 
 // 恢复待命
 struct IslandStandbyIntent: LiveActivityIntent {
-    static var title: LocalizedStringResource = "盒子：重新待命"
+    static var title: LocalizedStringResource = "勾栏：重新待命"
     static var openAppWhenRunning = false
     func perform() async throws -> some IntentResult {
         BoxIsland.update {

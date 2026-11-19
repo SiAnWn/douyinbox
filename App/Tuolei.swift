@@ -365,7 +365,7 @@ struct GalleryHomeView: View {
                 ContentUnavailableView {
                     Label("画廊还空着", systemImage: "photo.stack")
                 } description: {
-                    Text("去 匣 › 内置浏览器，看到好图集\n点工具条上的 ✨ 一键聚图入库")
+                    Text("去 拾 › 齿轮 › 工具 › 内置浏览器，看到好图集\n点工具条上的 ✨ 一键聚图入库")
                 } actions: {
                     NavigationLink("了解图叻计划") { GalleryAboutView() }
                 }

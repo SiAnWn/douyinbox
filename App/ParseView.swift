@@ -339,7 +339,7 @@ struct ParseView: View {
             }
             if autoPickAfterParse, let r = result, r.videoID.hasPrefix("hg_") {
                 // 红果一键流：不自动下、不跳抖音，就地弹面板等选（岛显"等待"）
-                BoxIsland.update { $0.phase = "parsing"; $0.pct = 0; $0.note = "已解析，回盒子选画质" }
+                BoxIsland.update { $0.phase = "parsing"; $0.pct = 0; $0.note = "已解析，回勾栏选画质" }
             }
             status = "选一个清晰度下载"
         } catch {

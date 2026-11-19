@@ -121,7 +121,7 @@ struct SettingsView: View {
                             if v { UNUserNotificationCenter.current()
                                     .requestAuthorization(options: [.alert, .sound]) { _, _ in } }
                         }))
-                    Text("岛状态词由系统择机刷新；横幅通知则当下即达。复制链接→点一下岛→盒子自动解析、自动下最高画质、1.5秒后把你送回抖音，下载在后台继续。")
+                    Text("岛状态词由系统择机刷新；横幅通知则当下即达。复制链接→点一下岛→勾栏自动解析、自动下最高画质、1.5秒后把你送回抖音，下载在后台继续。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("接口 Key（各产品独立，只存本机）") {

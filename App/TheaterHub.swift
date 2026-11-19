@@ -1415,18 +1415,58 @@ private struct ShowRow: View {
     }
 }
 
+// v1.10.82 二级榜切片降格: 小号纯文字段(选中加粗黑+橙下划线), 跟一级橙胶囊拉开层级
+private struct TextSegRow: View {
+    let names: [(String, Bool)]
+    let onPick: (Int) -> Void
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 18) {
+                ForEach(Array(names.enumerated()), id: \.offset) { i, p in
+                    Button { onPick(i) } label: {
+                        VStack(spacing: 4) {
+                            Text(p.0)
+                                .font(.system(size: 13, weight: p.1 ? .bold : .regular))
+                                .foregroundStyle(p.1 ? Color.primary : Color.secondary)
+                            Capsule()
+                                .fill(p.1 ? Color.orange : Color.clear)
+                                .frame(width: 18, height: 3)
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 2)
+        }
+    }
+}
+
 private struct MoreButton: View {
     let busy: Bool
+    var count = 0                                     // v1.10.82 >0 时底下挂"已上 N 部"灰字
     let more: () -> Void
     var body: some View {
-        Button(action: more) {
-            HStack {
-                Spacer()
-                if busy { ProgressView() } else { Text("加载更多 ↓").font(.footnote).foregroundStyle(.secondary) }
-                Spacer()
+        // v1.10.82 统一语言: 居中橙描边胶囊, 三屏一个姿势
+        VStack(spacing: 6) {
+            Button(action: more) {
+                HStack(spacing: 6) {
+                    if busy { ProgressView().controlSize(.small) }
+                    Text(busy ? "正在张罗…" : "加载更多")
+                        .font(.footnote.weight(.semibold))
+                }
+                .foregroundStyle(.orange)
+                .padding(.horizontal, 22).padding(.vertical, 8)
+                .background(Capsule().strokeBorder(Color.orange.opacity(0.55), lineWidth: 1.2))
+            }
+            .disabled(busy)
+            if count > 0 {
+                Text("已上 \(count) 部")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
         }
-        .disabled(busy)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 4)
     }
 }
 
@@ -1659,8 +1699,9 @@ private struct RankTab: View {
                 }
                 if let cur = vm.contents.first(where: { $0.id == vm.content || $0.selected }),
                    !cur.boards.isEmpty {
-                    ChipScroller(labels: cur.boards.map { ($0.name, $0.id == vm.board || ($0.selected && vm.board.isEmpty)) },
-                                 onPick: { vm.load(board: cur.boards[$0].id) })
+                    // v1.10.82 小榜切片改文字段, 一级橙胶囊不再跟二级打堆
+                    TextSegRow(names: cur.boards.map { ($0.name, $0.id == vm.board || ($0.selected && vm.board.isEmpty)) },
+                               onPick: { vm.load(board: cur.boards[$0].id) })
                 }
             }
             if topSeg == 0 {
@@ -1678,7 +1719,7 @@ private struct RankTab: View {
                         GridSkeleton()
                     } else {
                         GridRankCards(items: vm.items.filter { !$0.seriesId.isEmpty })
-                        MoreButton(busy: vm.busy, more: { vm.more() })
+                        MoreButton(busy: vm.busy, count: vm.items.count, more: { vm.more() })
                     }
                 } header: {
                     Text("红果榜单 · 匿名直连")
@@ -1798,9 +1839,10 @@ private struct ActorBoard: View {
                             HStack(spacing: 10) {
                             // v1.10.66 前三已上台, 列表行号续 04 起(凑不满三台时仍从 01)
                                 Text(String(format: "%02d", i + (rows.count >= 3 ? 4 : 1)))
-                                    .font(.system(size: 15, weight: .heavy, design: .rounded))
-                                    .foregroundStyle(Color.secondary)
-                                    .frame(width: 30)
+                                    // v1.10.82 名次再淡半档, 头像当主角
+                                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                    .foregroundStyle(Color(uiColor: .tertiaryLabel))
+                                    .frame(width: 32)
                                 AsyncImage(url: URL(string: hgImgURL(it.avatarUrl))) {
                                     $0.resizable().scaledToFill()
                                 } placeholder: { Color.gray.opacity(0.15) }
@@ -1974,7 +2016,7 @@ private struct FilterPage: View {
                 Grid2Cards(rows: vm.rows)
                     .padding(.horizontal, 8)
                 // 翻页走手动(v59 铁律)
-                MoreButton(busy: vm.busy, more: { vm.more() })
+                MoreButton(busy: vm.busy, count: vm.rows.count, more: { vm.more() })
                     .padding(.bottom, 12)
             }
             .padding(.vertical, 6)
