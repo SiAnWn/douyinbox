@@ -2338,6 +2338,25 @@ struct TheaterDetailView: View {
     @State private var sel: Set<Int> = []
     @State private var vol = 0
     @State private var introOpen = false
+    // v1.10.80 已下载侦察(用户点单): 短剧/<剧名>/第NN集 有文件=该集已存, 数字格挂绿章
+    @State private var have: Set<Int> = []
+
+    private func scanHave(_ title: String) {
+        let dir = SavePaths.docs.appendingPathComponent("短剧/\(title)")
+        guard let fs = try? FileManager.default.contentsOfDirectory(atPath: dir.path) else {
+            have = []
+            return
+        }
+        var set = Set<Int>()
+        for f in fs {
+            if let r = f.range(of: "第(\\d{1,3})集", options: .regularExpression) {
+                if let n = Int(f[r].filter { $0.isNumber }) { set.insert(n) }
+            }
+        }
+        have = set
+    }
+
+    private var epsNums: Set<Int> { Set(eps.map { $0.number }) }
 
     var body: some View {
         Group {
@@ -2366,6 +2385,7 @@ struct TheaterDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
+        .onAppear { if let t = s?.title { scanHave(t) } }   // 下完回来转一圈, 角标跟上
         .task {
             busy = true
             defer { busy = false }
@@ -2374,6 +2394,7 @@ struct TheaterDetailView: View {
             s = try? await c.getSeries(want.sid)
             HGTrail.note("hgdetail sid=\(want.sid) ok=\(s != nil)")
             guard s != nil else { return }
+            if let t = s?.title { scanHave(t) }
             Task {
                 // 集表: 选集网格用(目录口, 免闸)
                 eps = (try? await Hongguo.episodes(want.sid)) ?? []
@@ -2619,6 +2640,12 @@ struct TheaterDetailView: View {
                 HStack(spacing: 6) {
                     Text("选集").font(.system(size: 17, weight: .bold))
                     Text("共 \(eps.count) 集 · 点数字挑着下").font(.caption).foregroundStyle(.secondary)
+                    // v1.10.80 已存进度一眼看(用户点单)
+                    if !have.isEmpty {
+                        Text("已存 \(have.filter { epsNums.contains($0) }.count)/\(eps.count)")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.green)
+                    }
                     Spacer()
                     if !sel.isEmpty {
                         Button("清空") { sel.removeAll() }.font(.footnote)
@@ -2657,6 +2684,15 @@ struct TheaterDetailView: View {
                                 .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
                                     .strokeBorder(sel.contains(n) ? Color.orange : Color.clear,
                                                   lineWidth: 1.3))
+                                // v1.10.80 已存那集挂绿章 缺哪集一眼看见
+                                .overlay(alignment: .topTrailing) {
+                                    if have.contains(n) {
+                                        Image(systemName: "checkmark.seal.fill")
+                                            .font(.system(size: 10))
+                                            .foregroundStyle(.green)
+                                            .padding(3)
+                                    }
+                                }
                         }
                         .buttonStyle(.plain)
                     }
