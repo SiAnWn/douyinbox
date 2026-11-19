@@ -1902,8 +1902,7 @@ struct PodiumCard: View {
     }
 }
 
-// v1.10.67 筛选找片(用户甩红果官方截图点单): 左竖类柱 + 右条件胶囊墙 + 双列海报瀑布
-// 数据=当年 v24 的 CatVM(shortFilterPanel/shortFilter) 原班, 布局照图重排
+// v1.10.69 用户点单: 类柱从左边搬到顶上横滑, 屏幕全宽给海报墙, 卡片更大
 private struct FilterPage: View {
     @ObservedObject var vm: CatVM
 
@@ -1915,48 +1914,34 @@ private struct FilterPage: View {
 
     var body: some View {
         let parts = split()
-        HStack(alignment: .top, spacing: 0) {
-            if let cat = parts.0, !cat.options.isEmpty {
-                ScrollView(.vertical, showsIndicators: false) {
-                    VStack(spacing: 0) {
-                        ForEach(cat.options, id: \.value) { o in
-                            let on = vm.picks[cat.key] == o.value
-                            Button { vm.pick(key: cat.key, value: o.value) } label: {
-                                Text(o.name)
-                                    .font(.system(size: 13, weight: on ? .bold : .regular))
-                                    .foregroundStyle(on ? .orange : .primary)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 13)
-                                    .background(on ? Color.white : Color.clear)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                }
-                .frame(width: 96)
-                .background(Color(white: 0.95))
-            }
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: 8) {
-                    ForEach(parts.1.filter { !$0.options.isEmpty }, id: \.key) { row in
-                        ChipScroller(labels: row.options.map { ($0.name, vm.picks[row.key] == $0.value) },
-                                     onPick: { vm.pick(key: row.key, value: row.options[$0].value) })
-                    }
-                    if !vm.note.isEmpty {
-                        Text(vm.note).font(.caption).foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    if vm.rows.isEmpty && vm.busy {
-                        GridSkeleton().padding(.horizontal, 8)
-                    }
-                    Grid2Cards(rows: vm.rows)
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(spacing: 8) {
+                // 第一道: 类别横滑(真人剧/漫剧/AI剧…全随服务端自取)
+                if let cat = parts.0, !cat.options.isEmpty {
+                    ChipScroller(labels: cat.options.map { ($0.name, vm.picks[cat.key] == $0.value) },
+                                 onPick: { vm.pick(key: cat.key, value: cat.options[$0].value) })
                         .padding(.horizontal, 8)
-                    // 翻页走手动(v59 铁律), 左柱短列表不设自动哨兵
-                    MoreButton(busy: vm.busy, more: { vm.more() })
-                        .padding(.bottom, 12)
+                        .padding(.top, 6)
                 }
-                .padding(.vertical, 8)
+                // 其余条件组逐行横滑
+                ForEach(parts.1.filter { !$0.options.isEmpty }, id: \.key) { row in
+                    ChipScroller(labels: row.options.map { ($0.name, vm.picks[row.key] == $0.value) },
+                                 onPick: { vm.pick(key: row.key, value: row.options[$0].value) })
+                }
+                if !vm.note.isEmpty {
+                    Text(vm.note).font(.caption).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                if vm.rows.isEmpty && vm.busy {
+                    GridSkeleton().padding(.horizontal, 8)
+                }
+                Grid2Cards(rows: vm.rows)
+                    .padding(.horizontal, 8)
+                // 翻页走手动(v59 铁律)
+                MoreButton(busy: vm.busy, more: { vm.more() })
+                    .padding(.bottom, 12)
             }
+            .padding(.vertical, 6)
         }
         .task { vm.loadPanel() }
     }
