@@ -65,6 +65,8 @@ final class TheaterNav: ObservableObject {
         case want(HgWant)
         case actorGo(HgActorGo)
         case actor(HgActor)
+        case search          // v1.10.41: 搜索页也走值跳转(iDuanJu Route.search 同款),
+                             // 全栈只留一种推屏姿势, 治"侧滑返回跳过搜索页直落主页"
     }
 
     var bind: Binding<NavigationPath>?
@@ -81,6 +83,7 @@ final class TheaterNav: ObservableObject {
     func go(_ w: HgWant, _ tag: String = "") { push(.want(w), tag) }
     func go(_ a: HgActorGo, _ tag: String = "") { push(.actorGo(a), tag) }
     func go(_ a: HgActor, _ tag: String = "") { push(.actor(a), tag) }
+    func openSearch(_ tag: String = "") { push(.search, tag) }
 
     func back() {
         guard let b = bind, b.wrappedValue.count > 0 else { return }
@@ -178,7 +181,7 @@ struct Poster2: View {
 // 首屏骨架: 加载不再干转圈(灰海报格子等人)
 struct GridSkeleton: View {
     var body: some View {
-        LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)],
+        LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)],
                   spacing: 12) {
             ForEach(0..<6, id: \.self) { _ in
                 Color.gray.opacity(0.14)
@@ -764,9 +767,7 @@ struct TheaterHomeView: View {
             .navigationTitle("剧场")
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    NavigationLink {
-                        TheaterSearchTab(vm: disc)
-                    } label: { Image(systemName: "magnifyingglass") }
+                    Button { nav.openSearch("mag") } label: { Image(systemName: "magnifyingglass") }
                 }
             }
             .task(id: seg) {
@@ -777,23 +778,25 @@ struct TheaterHomeView: View {
                     rails.load()
                 }
             }
-            .theaterDestinations()
+            .theaterRoutes(disc)
         }
         .environmentObject(nav)
         .onAppear { nav.bind = $path }
-        .theaterDestinations()
+        .theaterRoutes(disc)
     }
 }
 
 // 右上放大镜: 红果同款全页搜索(猜词+热搜榜)
 // 目的地注册(iDuanJu routes() 同款): 单一 Route 枚举一份注册, 钉在栈根内容上
+// v1.10.41: 搜索页收编进 Route 值跳转, 全栈再无 view-style 混编(治侧滑串页)
 extension View {
-    func theaterDestinations() -> some View {
+    func theaterRoutes(_ disc: DiscoverVM) -> some View {
         navigationDestination(for: TheaterNav.Route.self) { r in
             switch r {
             case .want(let w): TheaterDetailView(want: w)
             case .actorGo(let a): ActorPage(uid: a.uid, name: a.name)
             case .actor(let a): ActorResolveView(name: a.name)
+            case .search: TheaterSearchTab(vm: disc)
             }
         }
     }
@@ -907,9 +910,14 @@ private struct TheaterSearchTab: View {
                     if vm.sbusy {
                         HStack { Spacer(); ProgressView(); Spacer() }
                     } else if vm.searchHasMore {
+                        // 滑到底自动续页(v1.10.41): List 里"卡片 onAppear"不可靠(行级虚拟化),
+                        // 改把哨兵挂在底部这一行上——它一进视野就自动翻页, 手点按钮仍是兜底
                         Button { vm.moreSearch() } label: {
                             Text("加载更多").font(.subheadline.weight(.medium))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 4)
                         }
+                        .onAppear { vm.moreSearch() }
                     }
                 }
             }
@@ -936,7 +944,7 @@ private struct Grid2Cards: View {
     var rank0 = 0                                   // >0 则从 rank0 起挂奖牌徽章
     var nearEnd: (Int) -> Void = { _ in }           // 滚到尾部自动续页
     var body: some View {
-        LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)],
+        LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)],
                   spacing: 12) {
             ForEach(Array(rows.enumerated()), id: \.offset) { i, s in
                 Button { nav.go(HgWant(sid: s.id, title: s.title), "grid " + s.id) } label: {
@@ -1004,7 +1012,7 @@ struct Grid2Lite: View {
     var rank0 = 0
     var nearEnd: (Int) -> Void = { _ in }
     var body: some View {
-        LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)],
+        LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)],
                   spacing: 12) {
             ForEach(Array(items.enumerated()), id: \.offset) { i, c in
                 Button { nav.go(HgWant(sid: c.sid, title: c.title), "lite " + c.sid) } label: {
