@@ -970,9 +970,15 @@ private struct TopRankCardBig: View {
     var body: some View {
         Button { nav.go(HgWant(sid: card.sid, title: card.title), "top " + card.sid) } label: {
             ZStack(alignment: .bottom) {
-                AsyncImage(url: URL(string: hgCoverUrl(sid: card.sid, card.cover))) {
-                    $0.resizable().scaledToFill()
-                } placeholder: { Color.gray.opacity(0.2) }
+                // v1.10.58 三卡等高修法(用户"TOP3和TOP1/2高度不对"): 各封面原始比例
+                // 不同会各自顶高度, 先垫 0.6 透明底座定形(v.9.50 铁律), 封面
+                // scaledToFill 溢出的部分由外层 clipShape 剪掉
+                Color.clear.aspectRatio(0.6, contentMode: .fit)
+                    .overlay {
+                        AsyncImage(url: URL(string: hgCoverUrl(sid: card.sid, card.cover))) {
+                            $0.resizable().scaledToFill()
+                        } placeholder: { Color.clear }
+                    }
                 IdjRankStyle.gradient(rank)
                     .mask(LinearGradient(colors: [.clear, .black, .black],
                                          startPoint: .init(x: 0.5, y: 0.35), endPoint: .bottom))
@@ -988,7 +994,6 @@ private struct TopRankCardBig: View {
                 .foregroundStyle(.white)
                 .padding(.horizontal, 4).padding(.bottom, 12)
             }
-            .aspectRatio(0.6, contentMode: .fit)
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .buttonStyle(.plain)
