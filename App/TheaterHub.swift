@@ -343,14 +343,20 @@ final class CastVM: ObservableObject {
     @Published var items: [RankItem] = []
     @Published var busy = false
     @Published var note = ""
+    // v1.10.63 演员榜分男/女: 榜接口自己不分级, 但演员主页 tags=[男演员/女演员] 是真身
+    // → 扫个人页补一本性别账(UserDefaults 持久化, 扫过不重扫)
+    @Published var genders: [String: String] = [:]      // uid -> M/F/?
+    @Published var genderBusy = false
     private var cursor: String?
+    private var pages = 0
 
     func load() {
         cursor = nil
+        pages = 0
         fetch(reset: true)
     }
     func more() {
-        guard cursor != nil, !busy else { return }
+        guard cursor != nil, !busy, pages < 5 else { return }   // 性别过滤后列表短, 防 v59 永动机
         fetch(reset: false)
     }
     private func fetch(reset: Bool) {
@@ -371,9 +377,39 @@ final class CastVM: ObservableObject {
                 ActorVM.uidByName[it.actor] = it.userId
             }
             CoverBank.registerRank(sr.items)
+            self.pages += 1
             self.cursor = sr.hasMore ? sr.cursor : nil
             if self.items.isEmpty { self.note = "榜上空空的" }
         }
+    }
+
+    // 性别补账: 三路并发 Person, 250ms 限速; 75 位 ≈ 8 秒扫完, 之后总/男/女秒切
+    func fillGenders() async {
+        guard !genderBusy else { return }
+        if genders.isEmpty,
+           let m = UserDefaults.standard.dictionary(forKey: "hgActorGenders") as? [String: String] {
+            genders = m
+        }
+        let todo = items.filter { !$0.userId.isEmpty && genders[$0.userId] == nil }
+        guard !todo.isEmpty, let c = Hongguo.client else { return }
+        genderBusy = true
+        defer { genderBusy = false }
+        var lanes: [[RankItem]] = [[], [], []]
+        for (i, it) in todo.enumerated() { lanes[i % 3].append(it) }
+        await withTaskGroup(of: Void.self) { tg in
+            for lane in lanes {
+                tg.addTask {
+                    for it in lane {
+                        let p = try? await Hongguo.attempt(c, { try await c.person(it.userId) })
+                        let tag = p?.tags.first(where: { $0.contains("男") || $0.contains("女") }) ?? ""
+                        self.genders[it.userId] = tag.contains("男") ? "M" : (tag.contains("女") ? "F" : "?")
+                        try? await Task.sleep(nanoseconds: 250_000_000)
+                    }
+                }
+            }
+        }
+        UserDefaults.standard.set(genders, forKey: "hgActorGenders")
+        HGTrail.note("hgcast 性别账=\(genders.count)")
     }
 }
 
@@ -826,38 +862,14 @@ struct TheaterHomeView: View {
     @StateObject private var rails = RailVM()
     @StateObject private var nav = TheaterNav.shared
     @State private var path = NavigationPath()
-    private let tabs = ["首页", "演员"]
 
     var body: some View {
         NavigationStack(path: $path) {
             VStack(spacing: 0) {
-                // 红果首页同款页签: 加粗+橙色下划小线, 不用系统 segmented
-                HStack(spacing: 0) {
-                    ForEach(tabs.indices, id: \.self) { i in
-                        VStack(spacing: 5) {
-                            Text(tabs[i])
-                                .font(.system(size: i == seg ? 17 : 15,
-                                              weight: i == seg ? .heavy : .regular))
-                                .foregroundStyle(i == seg ? .primary : .secondary)
-                                .animation(.snappy(duration: 0.2), value: seg)
-                            Capsule()
-                                .fill(i == seg ? Color.orange : Color.clear)
-                                .frame(width: 20, height: 3)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .contentShape(Rectangle())
-                        .onTapGesture { seg = i }
-                    }
-                }
-                .padding(.horizontal, 10)
-                .padding(.top, 2)
-
-                Group {
-                    switch seg {
-                    case 1: CastTab(vm: cast)
-                    default: DiscoverTab(vm: disc, rails: rails)
-                    }
-                }
+                // v1.10.63 首页=榜单页(用户钦点照 iDuanJu 榜单屏): 分类胶囊(演员榜+服务端
+                // 自述五类) + 榜切片 + 列表; 演员榜并入第一类(总/男/女). 旧首页 DiscoverTab
+                // (轮播+推荐)与原演员 tab 退役, struct 留档随时复活
+                RankTab(vm: rank, cast: cast)
             }
             .navigationTitle("剧场")
             .toolbar {
@@ -865,13 +877,8 @@ struct TheaterHomeView: View {
                     Button { nav.openSearch("mag") } label: { Image(systemName: "magnifyingglass") }
                 }
             }
-            .task(id: seg) {
-                switch seg {
-                case 1: if cast.items.isEmpty { cast.load() }
-                default:
-                    if disc.rows.isEmpty { disc.load() }
-                    rails.load()
-                }
+            .task {
+                if rank.contents.isEmpty { rank.load() }
             }
             .theaterRoutes(disc, rails)
         }
@@ -1587,18 +1594,32 @@ private struct FlowGuess: View {
 private struct RankTab: View {
     @EnvironmentObject private var nav: TheaterNav
     @ObservedObject var vm: RankVM
+    @ObservedObject var cast: CastVM
+    @State private var actorSeg = false                // v1.10.63 演员榜收编为榜单第一类
     var body: some View {
         VStack(spacing: 8) {
-            if !vm.contents.isEmpty {
-                ChipScroller(labels: vm.contents.map { ($0.name, $0.id == vm.content || ($0.selected && vm.content.isEmpty)) },
-                             onPick: { vm.load(content: vm.contents[$0].id, board: "") })
-                    .padding(.top, 6)
-                if let cur = vm.contents.first(where: { $0.id == vm.content || $0.selected }),
-                   !cur.boards.isEmpty {
-                    ChipScroller(labels: cur.boards.map { ($0.name, $0.id == vm.board || ($0.selected && vm.board.isEmpty)) },
-                                 onPick: { vm.load(board: cur.boards[$0].id) })
-                }
+            // v63 用户钦点首页=榜单页: 分类胶囊行头插"演员榜", 其余跟着服务端自述
+            // (全部/系列剧/漫剧/真人剧/AI剧 全是服务端起的名字)
+            ChipScroller(labels: Self.chipLabels(vm: vm, actorSeg: actorSeg),
+                         onPick: { i in
+                             if i == 0 {
+                                 actorSeg = true
+                                 if cast.items.isEmpty { cast.load() }
+                             } else {
+                                 actorSeg = false
+                                 vm.load(content: vm.contents[i - 1].id, board: "")
+                             }
+                         })
+                .padding(.top, 6)
+            if !actorSeg,
+               let cur = vm.contents.first(where: { $0.id == vm.content || $0.selected }),
+               !cur.boards.isEmpty {
+                ChipScroller(labels: cur.boards.map { ($0.name, $0.id == vm.board || ($0.selected && vm.board.isEmpty)) },
+                             onPick: { vm.load(board: cur.boards[$0].id) })
             }
+            if actorSeg {
+                ActorBoard(vm: cast)
+            } else {
             List {
                 if !vm.note.isEmpty { Section { Text(vm.note).font(.caption).foregroundStyle(.secondary) } }
                 Section {
@@ -1670,7 +1691,17 @@ private struct RankTab: View {
             }
             .overlay { if vm.busy && vm.items.isEmpty { ProgressView().controlSize(.large) } }
             .refreshable { vm.load() }
+            }
         }
+    }
+
+    // 分类胶囊(含演员榜): ViewBuilder 里不许 var, 照 actorSub 老规矩抽函数
+    static func chipLabels(vm: RankVM, actorSeg: Bool) -> [(String, Bool)] {
+        var out: [(String, Bool)] = [("演员榜", actorSeg)]
+        for c in vm.contents {
+            out.append((c.name, !actorSeg && (c.id == vm.content || (c.selected && vm.content.isEmpty))))
+        }
+        return out
     }
 
     // 演员/推广行的副标题(ViewBuilder 里不许 var 赋值, 抽函数)
@@ -1684,6 +1715,84 @@ private struct RankTab: View {
         }
         if !it.details.isEmpty { s += " · " + it.details.joined(separator: " ") }
         return s
+    }
+}
+
+// v1.10.63 演员榜(收编原"演员"tab): 总榜|男演员|女演员 三格,
+// 性别由 CastVM.fillGenders 扫个人页 tags 补账, 账本持久化二次秒开
+private struct ActorBoard: View {
+    @EnvironmentObject private var nav: TheaterNav
+    @ObservedObject var vm: CastVM
+    @State private var seg = 0
+    private let wants = ["", "M", "F"]
+    var body: some View {
+        List {
+            Section {
+                HStack(spacing: 8) {
+                    ForEach(0..<3, id: \.self) { i in
+                        Button {
+                            seg = i
+                            Task { await vm.fillGenders() }
+                        } label: {
+                            Text(["总榜", "男演员", "女演员"][i])
+                                .font(.footnote.weight(i == seg ? .bold : .regular))
+                                .padding(.horizontal, 12).padding(.vertical, 6)
+                                .background(Capsule().fill(i == seg ? Color.orange.opacity(0.16)
+                                                                     : Color.gray.opacity(0.12)))
+                                .foregroundStyle(i == seg ? Color.orange : .primary)
+                        }
+                    }
+                    if vm.genderBusy { ProgressView().controlSize(.small) }
+                    Spacer()
+                }
+                .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8))
+                .listRowBackground(Color.clear)
+            }
+            Section {
+                let rows = wants[seg].isEmpty ? vm.items : vm.items.filter { vm.genders[$0.userId] == wants[seg] }
+                if rows.isEmpty {
+                    Text(vm.genderBusy ? "正在扫演员性别，稍等…" : "这一档还薄，过两天再来翻")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+                ForEach(Array(rows.enumerated()), id: \.offset) { i, it in
+                    Button { nav.go(HgActorGo(uid: it.userId, name: it.actor), "actorboard " + it.actor) } label: {
+                        HStack(spacing: 10) {
+                            Text(String(format: "%02d", it.position))
+                                .font(.system(size: 15, weight: .heavy, design: .rounded))
+                                .foregroundStyle(it.position <= 3 ? Color.orange : Color.secondary)
+                                .frame(width: 30)
+                            AsyncImage(url: URL(string: hgImgURL(it.avatarUrl))) {
+                                $0.resizable().scaledToFill()
+                            } placeholder: { Color.gray.opacity(0.15) }
+                                .frame(width: 46, height: 46)
+                                .clipShape(Circle())
+                                .overlay(Circle().stroke(.white.opacity(0.35), lineWidth: 1))
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(it.actor).font(.subheadline.weight(.semibold)).lineLimit(1)
+                                Text(RankTab.actorSub(it))
+                                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.vertical, 2)
+                    }
+                    .buttonStyle(.plain)
+                    .onAppear {
+                        // 过滤后列表短, 近尾就补页+续扫 (more() 自带 5 页闸防永动机)
+                        if i >= rows.count - 3 {
+                            vm.more()
+                            Task { await vm.fillGenders() }
+                        }
+                    }
+                }
+            } header: {
+                Text("红果演员榜 · 匿名直连").font(.system(size: 15, weight: .heavy))
+            }
+        }
+        .listStyle(.plain)
+        .task { await vm.fillGenders() }
+        .refreshable { vm.load(); Task { await vm.fillGenders() } }
+        .overlay { if vm.busy && vm.items.isEmpty { ProgressView().controlSize(.large) } }
     }
 }
 
