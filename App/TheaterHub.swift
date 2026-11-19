@@ -1472,17 +1472,17 @@ private struct HeroCarousel: View {
                             .frame(maxWidth: .infinity, maxHeight: 172, alignment: .topLeading)
                         }
                         .padding(14)
-                        // iDuanJu 同款页码: 右下角小横条, 当前页拉长成胶囊, 不压内容
-                        HStack(spacing: 5) {
-                            ForEach(0..<rows.count, id: \.self) { k in
-                                Capsule()
-                                    .fill(Color.white.opacity(idx == k ? 0.95 : 0.35))
-                                    .frame(width: idx == k ? 16 : 6, height: 6)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                        .padding(.trailing, 12)
-                        .padding(.bottom, 10)
+                        // v1.10.61 用户点单"想知道一共几部+当前第几部": 右下角点位条升级成
+                        // "当前/总数"数字胶囊, 一屏一眼见底(旧小横条只看得出第几个看不出总数)
+                        Text("\(idx + 1)/\(rows.count)")
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 9).padding(.vertical, 5)
+                            .background(Capsule().fill(Color.black.opacity(0.38)))
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                            .padding(.trailing, 12)
+                            .padding(.bottom, 10)
                     }
                     .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                 }
