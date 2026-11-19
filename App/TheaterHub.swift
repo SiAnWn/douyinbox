@@ -499,10 +499,22 @@ final class DiscoverVM: ObservableObject {
             guard let c = Hongguo.client else { snote = "红果引擎未就绪"; return }
             // v1.10.39 搜索翻页根治(用户实锤"加载更多重复出现"): 旧版调 search 从不带游标,
             // 每次"加载更多"都拿回第一页; 且 pageSize 默认很小结果显不全。
-            // 照 iDuanJu 姿势: 游标+页大小喂 search/tab 口, 目录口不吃风控不再套 attempt 退避。
+            // 照 iDuanJu 姿势: 游标+页大小喂 search/tab 口 + 软拒(100103 类)短退避三连;
+            // 目录口不吃风控, 不套 attempt 的四段长退避。
             let opt = SearchOptions(cursor: cur, pageSize: 15)
-            if let pg = try? await c.search(q, options: opt) {
+            var pg: Page<SeriesSummary>?
+            for k in 0..<3 {
+                pg = try? await c.search(q, options: opt)
+                if pg != nil { break }
+                if k < 2 { try? await Task.sleep(nanoseconds: k == 0 ? 1_600_000_000 : 3_200_000_000) }
+            }
+            if let pg = pg {
                 var items = pg.items
+                // v1.10.40 文章/合集/演员假号行一刀切(PC 探针字段画像: 这些行 episodeCount 恒 0,
+                // 真剧全 >0; 它们既没封面又点不进详情, 留在列表里就是"卡片没图"的元凶)
+                let raw0 = items.count
+                items = items.filter { $0.episodeCount > 0 }
+                let dropped = raw0 - items.count
                 // 防重铁闸: 服务端游标偶尔犯浑给重复行, 已见过的直接丢
                 items = items.filter { sseen.insert($0.id).inserted }
                 CoverBank.register(items)
@@ -510,8 +522,8 @@ final class DiscoverVM: ObservableObject {
                     if let c2 = CoverBank.data[items[i].id] { items[i].coverUrl = c2 }
                 }
                 if reset { self.sres = items } else { self.sres += items }
-                self.scur = (pg.hasMore && !items.isEmpty) ? pg.cursor : nil
-                HGTrail.note("hgsearch back '\(q.prefix(12))' n=\(items.count) more=\(pg.hasMore) total=\(self.sres.count) nocover=\(items.filter { $0.coverUrl.isEmpty }.count)")
+                self.scur = (pg.hasMore && raw0 > 0) ? pg.cursor : nil
+                HGTrail.note("hgsearch back '\(q.prefix(12))' n=\(items.count) drop=\(dropped) more=\(pg.hasMore) total=\(self.sres.count) nocover=\(items.filter { $0.coverUrl.isEmpty }.count)")
                 if self.sres.isEmpty { self.snote = "搜不到「\(q)」，换个词试试" }
                 await self.fillCovers(Array(items.prefix(8)))
             } else { self.snote = "搜索口这次没搭手，再来一次" }
@@ -885,7 +897,12 @@ private struct TheaterSearchTab: View {
                     // 搜索页绝不自动翻页(v1.10.33 用户实锤: 结果只有5张时
                     // 任何 onAppear 都触发续页, 列表当场膨胀重排, 手指按下去
                     // 详情页被布局抖动弹回=闪一下+返回连弹冤案)
-                    Grid2Cards(rows: vm.sres, nearEnd: { _ in })
+                    // 懒加载回来了(v1.10.40): 33 版封它是因为 NavigationLink 会被列表膨胀
+                    // 抖断(闪屏案); 38 换 Button+程序化栈后膨胀无害, 照 iDuanJu 滚到
+                    // 尾 4 格自动续页, 底部按钮留作兜底
+                    Grid2Cards(rows: vm.sres, nearEnd: { i in
+                        if i >= vm.sres.count - 4 { vm.moreSearch() }
+                    })
                         .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
                     if vm.sbusy {
                         HStack { Spacer(); ProgressView(); Spacer() }
