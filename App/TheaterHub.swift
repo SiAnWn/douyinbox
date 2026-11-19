@@ -532,12 +532,10 @@ final class DiscoverVM: ObservableObject {
                     if let c2 = CoverBank.data[items[i].id] { items[i].coverUrl = c2 }
                 }
                 if reset { self.sres = items } else { self.sres += items }
-                // v1.10.43 演员加餐(用户"还是不够全"案): 红果搜索对演员名只给十九部
-                // 精选(PC 40页实锤后面全是轮回)。搜演员名时后台走已验证的
-                // 人气榜uid桥→personWorks, 把 TA 的全部作品并进结果, 一次补全
-                if reset, pg.items.contains(where: { $0.title == q && $0.episodeCount == 0 }) {
-                    actorBonus(q)
-                }
+                // v1.10.44 加餐改无条件(PC 回看实锤: content_type_short_play 把演员行
+                // 也筛掉了, 43 版"搜索行里找演员"的探针永远扑空)。每次新搜索后台都
+                // 查一次人气榜身份, 有戏就加餐, 没戏静默; 查询结果进程内记忆不重烧
+                if reset { actorBonus(q) }
                 // v1.10.43 断头绳(PC -sdeep 40页实锤: 演员类查询服务端只有约20部,
                 // hasMore 却永远 true、从第3页起全量轮回旧剧—不给断头绳能翻到地老天荒
                 // "看着多其实不全"。规则: 游标自我复制或整页零新剧, 当场收线)
@@ -556,12 +554,17 @@ final class DiscoverVM: ObservableObject {
     // 人气榜uid桥(ActorVM.lookup, 演员tab同款已验证)→personWorks 全量翻页,
     // 把 TA 的所有作品(去重后)拼进搜索结果 = 红果只给19部精选的补全方案
     private var actorBonusDone = ""
+    private static var uidMemo: [String: String] = [:]   // 名字→榜uid 进程内记忆(空串=查过没有)
     private func actorBonus(_ name: String) {
         guard actorBonusDone != name else { return }
         actorBonusDone = name
         Task { @MainActor in
             guard let c = Hongguo.client else { return }
-            let uid = await ActorVM.lookup(name)
+            var uid = DiscoverVM.uidMemo[name] ?? ""
+            if DiscoverVM.uidMemo[name] == nil {
+                uid = await ActorVM.lookup(name)
+                DiscoverVM.uidMemo[name] = uid
+            }
             guard !uid.isEmpty else {
                 HGTrail.note("hgsearch actor noUid '\(name)'")
                 return
