@@ -14,8 +14,12 @@ struct ShelfGroup: Identifiable {
 
 enum DramaShelf {
     // 尾巴季号剥离: "第N季/部"、"-N"、" N"、裸"N"、"Season N"、汉字季
+    // 对拍(shelf_test.py)补三刀: 裸尾数\d{1,3}也剥(红果第二季官方名就叫"云渺2")、
+    // 切完的尾巴把 ·－—_ 等连接符一并 trim、光杆"二季"也能剥
+    static let trimSet = CharacterSet(charactersIn: " \t\u{3000}-－—_·")
+
     static func base(_ name: String) -> String {
-        var n = name.trimmingCharacters(in: .whitespaces)
+        var n = name.trimmingCharacters(in: trimSet)
         let zh = "[一二三四五六七八九十两]"
         var guard0 = 0
         while n.count > 2, guard0 < 6 {
@@ -24,10 +28,11 @@ enum DramaShelf {
             for pat in ["第\\s*\\d+\\s*[季部]$", "\\s*[季部]\\s*\\d+$",
                         "\\s*[\\-－—_·]\\s*\\d{1,3}$", "\\s+\\d{1,3}$",
                         "(?i)\\s*season\\s*\\d+$",
-                        "第\\s*\(zh)\\s*[季部]$", "\\s*[季部]\\s*\(zh)$"] {
+                        "第\\s*\(zh)\\s*[季部]$", "\\s*[季部]\(zh)$",
+                        "\(zh)[季部]$", "\\d{1,3}$"] {
                 if let r = n.range(of: pat, options: [.regularExpression, .caseInsensitive]) {
                     let cut = String(n[n.startIndex..<r.lowerBound])
-                        .trimmingCharacters(in: .whitespaces)
+                        .trimmingCharacters(in: trimSet)
                     if cut.count >= 2 { n = cut; changed = true }
                     break
                 }
@@ -53,6 +58,11 @@ enum DramaShelf {
         if let r = name.range(of: "[\\-－—_·\\s](\\d{1,3})$", options: .regularExpression) {
             let digits = name[r].filter { $0.isNumber }
             return Int(digits) ?? 0
+        }
+        // 裸尾数 "云渺2" (前缀须非数字, 防把剧名整体吃掉)
+        if let r = name.range(of: "(?<=[^0-9])\\d{1,3}$", options: .regularExpression),
+           name.count > 3 {
+            return Int(name[r]) ?? 0
         }
         return 0
     }
