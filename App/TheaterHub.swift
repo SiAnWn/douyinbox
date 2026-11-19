@@ -935,7 +935,7 @@ struct TopBoards: View {
                 if cards.count > 3 {
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4),
                               spacing: 10) {
-                        ForEach(Array(cards.dropFirst(3)).enumerated()), id: \.offset) { i, c in
+                        ForEach(Array(cards.dropFirst(3).enumerated()), id: \.offset) { i, c in
                             MiniRankCard(rank: i + 4, card: c)
                         }
                     }
