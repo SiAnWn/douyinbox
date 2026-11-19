@@ -466,8 +466,12 @@ final class DiscoverVM: ObservableObject {
         HGTrail.note("hgsearch go '\(smode.prefix(20))'")
         guard !smode.isEmpty else { sres = []; snote = ""; return }
         rememberHist(smode)
-        fetchSearch(reset: true)
+        // v1.10.42 二次搜索叠加案: 旧页还在路上时发起新搜索, 旧结果晚到会把
+        // 新结果"顶"成追加。换代号(gen), 迟到的旧页直接作废; 列表立刻清空重开
+        sgen &+= 1
+        fetchSearch(reset: true, gen: sgen)
     }
+    private var sgen = 0
 
     // 搜索历史(照 iDuanJu 历史搜索 chips, v1.10.39): 最近10条, 一键清空
     @Published var shist: [String] = UserDefaults.standard.stringArray(forKey: "hgSearchHist") ?? []
@@ -486,39 +490,41 @@ final class DiscoverVM: ObservableObject {
 
     func moreSearch() {
         guard scur != nil, !sbusy else { return }
-        fetchSearch(reset: false)
+        fetchSearch(reset: false, gen: sgen)
     }
 
     var searchHasMore: Bool { scur != nil }
 
-    private func fetchSearch(reset: Bool) {
-        guard !sbusy else { return }
+    private func fetchSearch(reset: Bool, gen: Int) {
+        if !reset { guard !sbusy else { return } }
         sbusy = true
-        if reset { snote = ""; sseen = [] }
+        if reset { snote = ""; sseen = []; sres = []; scur = nil }
         let q = smode
         let cur = reset ? nil : scur
         Task {
-            defer { sbusy = false }
-            guard let c = Hongguo.client else { snote = "红果引擎未就绪"; return }
-            // v1.10.39 搜索翻页根治(用户实锤"加载更多重复出现"): 旧版调 search 从不带游标,
-            // 每次"加载更多"都拿回第一页; 且 pageSize 默认很小结果显不全。
-            // 照 iDuanJu 姿势: 游标+页大小喂 search/tab 口 + 软拒(100103 类)短退避三连;
-            // 目录口不吃风控, 不套 attempt 的四段长退避。
-            let opt = SearchOptions(cursor: cur, pageSize: 15)
+            guard let c = Hongguo.client else {
+                if gen == self.sgen { snote = "红果引擎未就绪"; sbusy = false }
+                return
+            }
+            // v1.10.42 纯短剧口: filters=content_type_short_play(Go SDK 实测常量, 官网搜索
+            // 默认就是这条 tab)。文章/合集/小说从源头不再混入, eps=0 客户端过滤降为兜底。
+            // 注意: 游标不携带筛选, 续页必须原样带上同一 filters(SDK 文档明言)。
+            let opt = SearchOptions(cursor: cur, pageSize: 20,
+                                    filters: ["content_type_short_play"])
             var pg: Page<SeriesSummary>?
             for k in 0..<3 {
                 pg = try? await c.search(q, options: opt)
                 if pg != nil { break }
                 if k < 2 { try? await Task.sleep(nanoseconds: k == 0 ? 1_600_000_000 : 3_200_000_000) }
             }
+            guard gen == self.sgen else { return }     // 已被更新的搜索接管, 迟到页整包作废
+            sbusy = false
             if let pg = pg {
                 var items = pg.items
-                // v1.10.40 文章/合集/演员假号行一刀切(PC 探针字段画像: 这些行 episodeCount 恒 0,
-                // 真剧全 >0; 它们既没封面又点不进详情, 留在列表里就是"卡片没图"的元凶)
+                // 文章/合集/演员假号行兜底(PC 探针画像: 这些行 episodeCount 恒 0)
                 let raw0 = items.count
                 items = items.filter { $0.episodeCount > 0 }
                 let dropped = raw0 - items.count
-                // 防重铁闸: 服务端游标偶尔犯浑给重复行, 已见过的直接丢
                 items = items.filter { sseen.insert($0.id).inserted }
                 CoverBank.register(items)
                 for i in items.indices where items[i].coverUrl.isEmpty {
@@ -892,6 +898,15 @@ private struct TheaterSearchTab: View {
                             Label(s, systemImage: "magnifyingglass")
                                 .font(.subheadline)
                         }
+                    }
+                }
+            }
+            if vm.sbusy && !vm.smode.isEmpty && vm.sres.isEmpty {
+                Section {
+                    HStack(spacing: 10) {
+                        ProgressView()
+                        Text("搜索中…").font(.subheadline).foregroundStyle(.secondary)
+                        Spacer()
                     }
                 }
             }
