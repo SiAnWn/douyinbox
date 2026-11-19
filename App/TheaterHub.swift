@@ -1472,26 +1472,28 @@ private struct HeroCarousel: View {
                             .frame(maxWidth: .infinity, maxHeight: 172, alignment: .topLeading)
                         }
                         .padding(14)
-                        // v1.10.61 用户点单"想知道一共几部+当前第几部": 右下角点位条升级成
-                        // "当前/总数"数字胶囊, 一屏一眼见底(旧小横条只看得出第几个看不出总数)
-                        Text("\(idx + 1)/\(rows.count)")
-                            .font(.system(size: 12, weight: .semibold, design: .rounded))
-                            .monospacedDigit()
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 9).padding(.vertical, 5)
-                            .background(Capsule().fill(Color.black.opacity(0.38)))
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                            .padding(.trailing, 12)
-                            .padding(.bottom, 10)
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .tag(i)
-            }
-        }
-        .tabViewStyle(.page(indexDisplayMode: .never))
-        .frame(height: 218)
+                     }
+                     .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                 }
+                 .buttonStyle(.plain)
+                 .tag(i)
+             }
+         }
+         .tabViewStyle(.page(indexDisplayMode: .never))
+         .frame(height: 218)
+         // v1.10.62 页码真身: 61 挂在每页里被 TabView 分页容器吃掉(49 圆角悬案老坑重现),
+         // 改 overlay 钉在 TabView 容器本体=和 clipShape 同层, 谁也吞不了它; 滑页时数字跟着
+         // selection 变, 黑透底白字在亮卡片上也立得住
+         .overlay(alignment: .bottomTrailing) {
+             Text("\(idx + 1)/\(rows.count)")
+                 .font(.system(size: 12, weight: .semibold, design: .rounded))
+                 .monospacedDigit()
+                 .foregroundStyle(.white)
+                 .padding(.horizontal, 9).padding(.vertical, 5)
+                 .background(Capsule().fill(Color.black.opacity(0.38)))
+                 .padding(.trailing, 12)
+                 .padding(.bottom, 10)
+         }
         // v1.10.49 铁证修法: 页内 clipShape 连吃三版瘪(45/46/48), 改剪 TabView 容器本体
         // ——轮播整体一个圆角模具, 页面在模具里滑动, 想不圆都难
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
