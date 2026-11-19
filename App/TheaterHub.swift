@@ -462,7 +462,23 @@ final class DiscoverVM: ObservableObject {
         smode = q.trimmingCharacters(in: .whitespacesAndNewlines)
         HGTrail.note("hgsearch go '\(smode.prefix(20))'")
         guard !smode.isEmpty else { sres = []; snote = ""; return }
+        rememberHist(smode)
         fetchSearch(reset: true)
+    }
+
+    // 搜索历史(照 iDuanJu 历史搜索 chips, v1.10.39): 最近10条, 一键清空
+    @Published var shist: [String] = UserDefaults.standard.stringArray(forKey: "hgSearchHist") ?? []
+    func rememberHist(_ t: String) {
+        var a = shist
+        a.removeAll { $0 == t }
+        a.insert(t, at: 0)
+        if a.count > 10 { a = Array(a.prefix(10)) }
+        shist = a
+        UserDefaults.standard.set(a, forKey: "hgSearchHist")
+    }
+    func clearHist() {
+        shist = []
+        UserDefaults.standard.removeObject(forKey: "hgSearchHist")
     }
 
     func moreSearch() {
@@ -475,26 +491,33 @@ final class DiscoverVM: ObservableObject {
     private func fetchSearch(reset: Bool) {
         guard !sbusy else { return }
         sbusy = true
-        if reset { snote = "" }
+        if reset { snote = ""; sseen = [] }
         let q = smode
         let cur = reset ? nil : scur
         Task {
             defer { sbusy = false }
             guard let c = Hongguo.client else { snote = "红果引擎未就绪"; return }
-            if let pg = try? await Hongguo.attempt(c, { try await c.search(q) }) {
+            // v1.10.39 搜索翻页根治(用户实锤"加载更多重复出现"): 旧版调 search 从不带游标,
+            // 每次"加载更多"都拿回第一页; 且 pageSize 默认很小结果显不全。
+            // 照 iDuanJu 姿势: 游标+页大小喂 search/tab 口, 目录口不吃风控不再套 attempt 退避。
+            let opt = SearchOptions(cursor: cur, pageSize: 15)
+            if let pg = try? await c.search(q, options: opt) {
                 var items = pg.items
+                // 防重铁闸: 服务端游标偶尔犯浑给重复行, 已见过的直接丢
+                items = items.filter { sseen.insert($0.id).inserted }
                 CoverBank.register(items)
                 for i in items.indices where items[i].coverUrl.isEmpty {
                     if let c2 = CoverBank.data[items[i].id] { items[i].coverUrl = c2 }
                 }
                 if reset { self.sres = items } else { self.sres += items }
-                self.scur = pg.hasMore ? pg.cursor : nil
-                HGTrail.note("hgsearch back '\(q.prefix(12))' n=\(items.count) more=\(pg.hasMore) nocover=\(items.filter { $0.coverUrl.isEmpty }.count)")
+                self.scur = (pg.hasMore && !items.isEmpty) ? pg.cursor : nil
+                HGTrail.note("hgsearch back '\(q.prefix(12))' n=\(items.count) more=\(pg.hasMore) total=\(self.sres.count) nocover=\(items.filter { $0.coverUrl.isEmpty }.count)")
                 if self.sres.isEmpty { self.snote = "搜不到「\(q)」，换个词试试" }
                 await self.fillCovers(Array(items.prefix(8)))
             } else { self.snote = "搜索口这次没搭手，再来一次" }
         }
     }
+    private var sseen: Set<String> = []
 
     // 银行也空着的封面: 去详情口一张张贴回来(限量, 温和限速)
     private func fillCovers(_ batch: [SeriesSummary]) async {
@@ -781,13 +804,43 @@ private struct TheaterSearchTab: View {
                 .background(RoundedRectangle(cornerRadius: 12).fill(Color.gray.opacity(0.12)))
                 .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8))
                 if vm.sres.isEmpty {
-                    if vm.guesses.isEmpty && vm.hotBoards.isEmpty {
+                    if vm.guesses.isEmpty && vm.hotBoards.isEmpty && vm.shist.isEmpty {
                         Button("拉一下红果热搜 🔥") { Task { await vm.fetchHot() } }
                             .font(.footnote)
                     }
+                    if !vm.shist.isEmpty {
+                        Section {
+                            HStack {
+                                Text("历史搜索")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Button {
+                                    vm.clearHist()
+                                } label: {
+                                    Image(systemName: "trash")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 0, trailing: 8))
+                            FlowGuess(words: vm.shist) { q = $0; vm.doSearch($0) }
+                                .listRowInsets(EdgeInsets(top: 2, leading: 8, bottom: 2, trailing: 8))
+                        }
+                    }
                     if !vm.guesses.isEmpty {
-                        FlowGuess(words: vm.guesses) { q = $0; vm.doSearch($0) }
-                            .listRowInsets(EdgeInsets(top: 2, leading: 8, bottom: 2, trailing: 8))
+                        Section {
+                            HStack {
+                                Text("搜索发现")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                            }
+                            .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 0, trailing: 8))
+                            FlowGuess(words: vm.guesses) { q = $0; vm.doSearch($0) }
+                                .listRowInsets(EdgeInsets(top: 2, leading: 8, bottom: 2, trailing: 8))
+                        }
                     }
                 ForEach(Array(vm.hotBoards.enumerated()), id: \.offset) { _, b in
                     Section(b.name) {
