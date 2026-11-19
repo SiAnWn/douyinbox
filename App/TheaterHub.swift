@@ -1687,7 +1687,7 @@ struct TheaterDetailView: View {
                         .foregroundStyle(.white)
                         .lineLimit(2)
                         .shadow(color: .black.opacity(0.6), radius: 3, y: 1)
-                    Text(heroMeta(sv))
+                    Text(Self.heroMeta(sv))
                         .font(.system(size: 13))
                         .foregroundStyle(.white.opacity(0.8))
                         .lineLimit(2)
