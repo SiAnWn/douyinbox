@@ -856,11 +856,11 @@ struct TheaterHomeView: View {
                     rails.load()
                 }
             }
-            .theaterRoutes(disc)
+            .theaterRoutes(disc, rails)
         }
         .environmentObject(nav)
         .onAppear { nav.bind = $path }
-        .theaterRoutes(disc)
+        .theaterRoutes(disc, rails)
     }
 }
 
@@ -868,20 +868,86 @@ struct TheaterHomeView: View {
 // 目的地注册(iDuanJu routes() 同款): 单一 Route 枚举一份注册, 钉在栈根内容上
 // v1.10.41: 搜索页收编进 Route 值跳转, 全栈再无 view-style 混编(治侧滑串页)
 extension View {
-    func theaterRoutes(_ disc: DiscoverVM) -> some View {
+    func theaterRoutes(_ disc: DiscoverVM, _ rails: RailVM) -> some View {
         navigationDestination(for: TheaterNav.Route.self) { r in
             switch r {
             case .want(let w): TheaterDetailView(want: w)
             case .actorGo(let a): ActorPage(uid: a.uid, name: a.name)
             case .actor(let a): ActorResolveView(name: a.name)
-            case .search: TheaterSearchTab(vm: disc)
+            case .search: TheaterSearchTab(vm: disc, rails: rails)
             }
         }
     }
 }
 
+// v1.10.52 搜索空状态三张大卡(照 iDuanJu 搜索页): 金银铜牌+榜名·TOP N+热度小字+白"查看详情"
+private struct Top3Cards: View {
+    @EnvironmentObject private var nav: TheaterNav
+    let boards: [(String, HRail.CardLike?)]
+    var body: some View {
+        VStack(spacing: 10) {
+            ForEach(Array(boards.enumerated()), id: \.offset) { i, b in
+                if let c = b.1, !c.sid.isEmpty {
+                    Button { nav.go(HgWant(sid: c.sid, title: c.title), "top3 " + c.sid) } label: {
+                        Top3CardBody(rank: i + 1, label: b.0, card: c)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+}
+
+private struct Top3CardBody: View {      // body 拆小护类型检查器(v24 铁律)
+    let rank: Int
+    let label: String
+    let card: HRail.CardLike
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack(alignment: .topLeading) {
+                AsyncImage(url: URL(string: card.cover)) {
+                    $0.resizable().scaledToFill()
+                } placeholder: { Color.gray.opacity(0.25) }
+                .frame(width: 104, height: 148)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                RankBadge2(rank: rank)
+                    .padding(6)
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                Text(label + " · TOP " + String(rank))
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.orange)
+                Text(card.title)
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundStyle(.white)
+                    .lineLimit(2)
+                if !card.sub.isEmpty {
+                    Text(card.sub)
+                        .font(.caption).foregroundStyle(.white.opacity(0.75))
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 6)
+                HStack(spacing: 4) {
+                    Image(systemName: "play.fill").font(.system(size: 9))
+                    Text("查看详情").font(.footnote.weight(.semibold))
+                }
+                .foregroundStyle(.black)
+                .padding(.horizontal, 12).padding(.vertical, 6)
+                .background(Capsule().fill(Color.white.opacity(0.92)))
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(12)
+        .frame(height: 172)
+        .background(LinearGradient(colors: [Color(white: 0.20), Color(white: 0.08)],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing))
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+}
+
 private struct TheaterSearchTab: View {
     @ObservedObject var vm: DiscoverVM
+    @ObservedObject var rails: RailVM
     @State private var q = ""
     var body: some View {
         List {
@@ -918,6 +984,14 @@ private struct TheaterSearchTab: View {
                     .padding(.horizontal, 2)
                 }
                 .listRowInsets(EdgeInsets(top: 0, leading: 8, bottom: 6, trailing: 8))
+                // 三张 TOP 大卡(v1.10.52 用户钦点): 没出结果时就是它仨当家, 出的结果秒让位
+                if vm.sres.isEmpty {
+                    Top3Cards(boards: [("热播榜", rails.hot.first),
+                                       ("新剧榜", rails.fresh.first),
+                                       ("必看榜", rails.must.first)])
+                        .task { rails.load() }
+                        .padding(.vertical, 2)
+                }
                 if vm.sres.isEmpty {
                     if vm.guesses.isEmpty && vm.hotBoards.isEmpty && vm.shist.isEmpty {
                         Button("拉一下红果热搜 🔥") { Task { await vm.fetchHot() } }
