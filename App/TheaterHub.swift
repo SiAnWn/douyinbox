@@ -1217,13 +1217,15 @@ private struct HeroCarousel: View {
             ForEach(Array(rows.enumerated()), id: \.offset) { i, s in
                 Button { nav.go(HgWant(sid: s.id, title: s.title), "hero " + s.id) } label: {
                     ZStack {
+                        // 圆角底垫(v1.10.48): 图再黑也是圆卡, 不再和直角背景糊成一团
+                        RoundedRectangle(cornerRadius: 18)
+                            .fill(Color(white: 0.07))
                         AsyncImage(url: URL(string: s.coverUrl)) {
                             $0.resizable().scaledToFill()
                                 .blur(radius: 40)
-                                .saturation(0.85)
-                                .overlay(Color.black.opacity(0.62))
+                                .overlay(Color.black.opacity(0.38))
                                 .overlay(
-                                    LinearGradient(colors: [.black.opacity(0.25), .black.opacity(0.62)],
+                                    LinearGradient(colors: [.black.opacity(0.05), .black.opacity(0.35)],
                                                    startPoint: .top, endPoint: .bottom)
                                 )
                         } placeholder: {
@@ -1231,7 +1233,7 @@ private struct HeroCarousel: View {
                                            startPoint: .top, endPoint: .bottom)
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .clipped()
+                        .clipShape(RoundedRectangle(cornerRadius: 18))
                         HStack(alignment: .top, spacing: 12) {
                             AsyncImage(url: URL(string: s.coverUrl)) {
                                 $0.resizable().scaledToFill()
