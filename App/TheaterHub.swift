@@ -901,7 +901,7 @@ private struct TheaterSearchTab: View {
                     }
                 }
             }
-            if vm.sbusy && !vm.smode.isEmpty && vm.sres.isEmpty {
+            if vm.sbusy && !q.isEmpty && vm.sres.isEmpty {
                 Section {
                     HStack(spacing: 10) {
                         ProgressView()
