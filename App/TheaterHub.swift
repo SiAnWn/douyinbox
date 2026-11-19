@@ -927,11 +927,13 @@ struct TopBoards: View {
                             .frame(maxWidth: .infinity)
                     }
                 }
+                // v1.10.56 他家搜索页 4-20 = 两列短图列表(CompactRankRow 真身),
+                // 不是五列竖卡网格(NumberedPosterCell 是他家首页件 又拿错零件)
                 if cards.count > 3 {
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 5),
-                              spacing: 12) {
+                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 10),
+                                        GridItem(.flexible(), spacing: 10)], spacing: 12) {
                         ForEach(Array(cards.dropFirst(3).enumerated()), id: \.offset) { i, c in
-                            TopRankMini(rank: i + 4, card: c)
+                            CompactRankRow(rank: i + 4, card: c)
                         }
                     }
                 }
@@ -967,7 +969,7 @@ private struct TopRankCardBig: View {
                     .mask(LinearGradient(colors: [.clear, .black, .black],
                                          startPoint: .init(x: 0.5, y: 0.35), endPoint: .bottom))
                 VStack(spacing: 2) {
-                    Text("TOP " + String(rank))
+                    Text("TOP" + String(rank))
                         .font(.system(size: 24, weight: .black, design: .rounded))
                     Text(card.title)
                         .font(.subheadline.weight(.semibold)).lineLimit(1)
@@ -985,41 +987,41 @@ private struct TopRankCardBig: View {
     }
 }
 
-private struct TopRankMini: View {
+// iDuanJu CompactRankRow 逐行移植(他家搜索页 4-20 真身: 两列 小图+右上名次章+
+// 标题+红字热度; 名次章前三用金银铜色 其余中国红)
+private struct CompactRankRow: View {
     @EnvironmentObject private var nav: TheaterNav
     let rank: Int
     let card: HRail.CardLike
     var body: some View {
         Button { nav.go(HgWant(sid: card.sid, title: card.title), "top " + card.sid) } label: {
-            VStack(alignment: .leading, spacing: 4) {
-                Color.clear.aspectRatio(0.75, contentMode: .fit)
+            HStack(spacing: 10) {
+                Color.clear.frame(width: 46, height: 62)
                     .overlay {
                         AsyncImage(url: URL(string: hgCoverUrl(sid: card.sid, card.cover))) {
                             $0.resizable().scaledToFill()
                         } placeholder: { Color.gray.opacity(0.2) }
                     }
-                    .overlay(alignment: .topLeading) {
-                        Text(String(format: "%02d", rank))
-                            .font(.system(size: 18, weight: .black, design: .rounded)).italic()
-                            .foregroundStyle(.white)
-                            .shadow(color: rank <= 3 ? IdjRankStyle.numeralColor(rank) : .black,
-                                    radius: 0, x: 2, y: 2)
-                            .padding(.leading, 2).offset(y: -2)
+                    .overlay(alignment: .topTrailing) {
+                        Text(String(rank))
+                            .font(.caption2.weight(.heavy)).foregroundStyle(.white)
+                            .padding(.horizontal, 4).padding(.vertical, 1)
+                            .background(rank <= 3 ? IdjRankStyle.numeralColor(rank)
+                                                   : Color(red: 0.8, green: 0.15, blue: 0.25),
+                                        in: RoundedRectangle(cornerRadius: 3))
                     }
-                    .overlay(alignment: .bottom) {
-                        LinearGradient(colors: [.clear, .black.opacity(0.55)],
-                                       startPoint: .center, endPoint: .bottom)
-                    }
-                    .overlay(alignment: .bottomLeading) {
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(card.title)
+                        .font(.subheadline).foregroundStyle(.primary).lineLimit(1)
+                    HStack(spacing: 6) {
                         if !card.sub.isEmpty {
-                            HeatTag(text: card.sub).scaleEffect(0.85).padding(3)
+                            Text(card.sub).foregroundStyle(Color(red: 0.95, green: 0.3, blue: 0.25))
                         }
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                Text(card.title)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
+                    .font(.caption)
+                }
+                Spacer(minLength: 0)
             }
         }
         .buttonStyle(.plain)
