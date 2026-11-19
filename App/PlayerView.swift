@@ -7,6 +7,8 @@ enum ProgressStore {
     static func get(_ id: String) -> Double { UserDefaults.standard.double(forKey: "prog_" + id) }
     static func set(_ id: String, _ t: Double) { UserDefaults.standard.set(t, forKey: "prog_" + id) }
     static func clear(_ id: String) { UserDefaults.standard.removeObject(forKey: "prog_" + id) }
+    // v1.10.83 分得清"没播过"与"播完清零"(get 两头都是 0)
+    static func has(_ id: String) -> Bool { UserDefaults.standard.object(forKey: "prog_" + id) != nil }
 }
 
 @MainActor

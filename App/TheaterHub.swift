@@ -2431,11 +2431,21 @@ struct TheaterDetailView: View {
     @State private var introOpen = false
     // v1.10.80 已下载侦察(用户点单): 短剧/<剧名>/第NN集 有文件=该集已存, 数字格挂绿章
     @State private var have: Set<Int> = []
+    // v1.10.83 继续观看: 最后播过的一集(看完自动让位下一集), 点=进本地连播并接着半截进度
+    @State private var resumeIdx: Int?
+    @State private var resumeNum = 0
+    @State private var resumeHalf = false
+    @State private var feedPage: FeedPageItem?
+
+    private func epNum(_ t: String) -> Int? {
+        guard let r = t.range(of: "第(\\d{1,3})集", options: .regularExpression) else { return nil }
+        return Int(t[r].filter { $0.isNumber })
+    }
 
     private func scanHave(_ title: String) {
         let dir = SavePaths.docs.appendingPathComponent("短剧/\(title)")
         guard let fs = try? FileManager.default.contentsOfDirectory(atPath: dir.path) else {
-            have = []
+            have = []; resumeIdx = nil; feedPage = nil
             return
         }
         var set = Set<Int>()
@@ -2445,6 +2455,28 @@ struct TheaterDetailView: View {
             }
         }
         have = set
+        // 继续观看账: 对本地集表(与播放器同数字序)找最后播过的一集
+        guard let s0 = app.dramaSeries.first(where: { $0.name == title }) else {
+            feedPage = nil; resumeIdx = nil
+            return
+        }
+        let evs = Library.videos(in: s0.url, numeric: true)
+        feedPage = evs.isEmpty ? nil : FeedPageItem(series: s0, eps: evs)
+        let played = evs.enumerated().compactMap { i, v -> (idx: Int, num: Int, half: Bool)? in
+            guard let n = epNum(v.title), ProgressStore.has(v.id) else { return nil }
+            return (i, n, ProgressStore.get(v.id) > 2)
+        }
+        if let lastP = played.max(by: { $0.num < $1.num }) {
+            if lastP.half {
+                resumeIdx = lastP.idx; resumeNum = lastP.num; resumeHalf = true
+            } else if let nx = evs.firstIndex(where: { epNum($0.title) == lastP.num + 1 }) {
+                resumeIdx = nx; resumeNum = lastP.num + 1; resumeHalf = false
+            } else {
+                resumeIdx = lastP.idx; resumeNum = lastP.num; resumeHalf = false
+            }
+        } else {
+            resumeIdx = nil
+        }
     }
 
     private var epsNums: Set<Int> { Set(eps.map { $0.number }) }
@@ -2505,6 +2537,34 @@ struct TheaterDetailView: View {
             VStack(alignment: .leading, spacing: 0) {
                 hero(sv)
                 heroInfo(sv)
+                // v1.10.83 继续观看橙带(用户点单): 钉在标题正下, 一戳直达半截进度
+                if let idx = resumeIdx, let pg = feedPage {
+                    Button {
+                        app.feedFullIdx = idx
+                        app.feedFull = pg
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "play.circle.fill").font(.system(size: 26))
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("继续观看 · 第\(resumeNum)集")
+                                    .font(.system(size: 15, weight: .bold))
+                                Text(resumeHalf ? "接着上回看到的地方" : "上集看完了 · 直接开下一集")
+                                    .font(.caption).opacity(0.85)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 13, weight: .bold)).opacity(0.7)
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 16).padding(.vertical, 12)
+                        .background(LinearGradient(colors: [.orange, Color(red: 1, green: 0.55, blue: 0.2)],
+                                                   startPoint: .leading, endPoint: .trailing))
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 14)
+                }
                 VStack(alignment: .leading, spacing: 18) {
                     tagChips(sv)
                     introBlock(sv.description)
