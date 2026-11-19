@@ -2355,14 +2355,13 @@ struct TheaterDetailView: View {
     }
 
     private func detailBody(_ sv: Openhongguo.Series) -> some View {
+        // v1.10.77 出血真药: contentMargins 把顶部安全区垫清零, 氛围图顶到屏幕最上沿
+        // (上版负 padding 没顶上去=安全区还垫着那条白条)
         ScrollView {
-            // v1.10.75 一体化手术: 氛围图通顶出血 → 长渐变慢慢化进白底 →
-            // 海报+标题上压氛围下坐白底(嵌进去不是贴上去), 信息块连贯成一张纸
             VStack(alignment: .leading, spacing: 0) {
                 hero(sv)
                 heroInfo(sv)
                 VStack(alignment: .leading, spacing: 18) {
-                    statsRow
                     tagChips(sv)
                     introBlock(sv.description)
                     actionRow(sv)
@@ -2373,22 +2372,16 @@ struct TheaterDetailView: View {
             }
             .padding(.bottom, 26)
         }
+        .contentMargins(.top, 0, for: .automatic)
     }
 
-    // 状态栏+导航栏净高: 氛围图要出血到屏幕最顶
-    private var topInset: CGFloat {
-        let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene
-        return scene?.windows.first?.safeAreaInsets.top ?? 0
-    }
-
-    // 氛围图: 通顶 + 顶部压暗(白返回箭头吃得开) + 尾部整段化进页面白
+    // 氛围图: 通顶(contentMargins 清垫) + 顶部压暗喂白箭头 + 尾部化进页面白
     private func hero(_ sv: Openhongguo.Series) -> some View {
-        let inset = topInset
-        return ZStack {
+        ZStack {
             AsyncImage(url: URL(string: sv.coverUrl)) { $0.resizable().scaledToFill() }
                 placeholder: { Color.gray.opacity(0.25) }
                 .frame(maxWidth: .infinity)
-                .frame(height: 300 + inset)
+                .frame(height: 300)
                 .clipped()
                 .blur(radius: 30).saturation(1.15)
             LinearGradient(colors: [Color.black.opacity(0.45), Color.clear],
@@ -2401,9 +2394,8 @@ struct TheaterDetailView: View {
                 .init(color: Color(UIColor.systemBackground), location: 1.0),
             ]), startPoint: .top, endPoint: .bottom)
         }
-        .frame(height: 300 + inset)
+        .frame(height: 300)
         .clipped()
-        .padding(.top, -inset)
     }
 
     // 海报+标题组上提 80pt 横跨渐变带: 上半坐灰雾下半坐白, 黑字不再悬空
@@ -2439,6 +2431,15 @@ struct TheaterDetailView: View {
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
+                // v1.10.77 用户嫌数据大横条扎眼: statsRow 退役, 数字折成标题下一行小灰字
+                let cells = statsCells()
+                if !cells.isEmpty {
+                    Text(cells.map { "\($0.0) \($0.1)" }.joined(separator: "  ·  "))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
             }
             .padding(.top, 26)
             Spacer(minLength: 0)

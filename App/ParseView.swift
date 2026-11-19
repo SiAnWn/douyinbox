@@ -289,7 +289,7 @@ struct ParseView: View {
                 mix = try await MixAPI.fetch(mixID: mixID)
                 status = "合集已就绪，开始批量"
                 if earlyReturn, let m = mix {
-                    BoxIsland.banner("百宝箱 · 合集已备好",
+                    BoxIsland.banner("勾栏 · 合集已备好",
                                      "\(m.name.prefix(24)) 共\(m.eps.count)集，点通知回来选集下载")
                 }
                 return
@@ -303,7 +303,7 @@ struct ParseView: View {
                     mix = upgraded
                     status = "发现短剧！已升级全集（\(m.eps.count)集）"
                     if earlyReturn {
-                        BoxIsland.banner("百宝箱 · 短剧合集已备好",
+                        BoxIsland.banner("勾栏 · 短剧合集已备好",
                                          "\(m.name.prefix(24)) 共\(m.eps.count)集，点通知回来选集下载")
                     }
                     return

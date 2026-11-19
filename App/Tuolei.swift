@@ -340,7 +340,7 @@ struct TuoleiSheet: View {
                 }
             }
             running = false
-            BoxIsland.banner("百宝箱 · 图叻", savedFiles.isEmpty
+            BoxIsland.banner("勾栏 · 图叻", savedFiles.isEmpty
                              ? "一张都没存下（可能被防盗链拦了）"
                              : "「\(String(name.prefix(20)))」已存 \(savedFiles.count) 张" + (failed > 0 ? "，失败 \(failed)" : ""))
             dismiss()
