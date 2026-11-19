@@ -1600,35 +1600,44 @@ private struct RankTab: View {
     @ObservedObject var vm: RankVM
     @ObservedObject var cast: CastVM
     @ObservedObject var cat: CatVM
-    @State private var actorSeg = false                // v1.10.63 演员榜收编为榜单第一类
-    @State private var filterSeg = false               // v1.10.67 筛选找片(用户甩红果截图点单)
+    @State private var topSeg = 2                      // v1.10.68 七胶囊挤成三档: 0=筛选找片 1=演员榜 2=榜单(默认)
     var body: some View {
         VStack(spacing: 8) {
-            // v63 用户钦点首页=榜单页: 分类胶囊行头插"演员榜", 其余跟着服务端自述
-            // (全部/系列剧/漫剧/真人剧/AI剧 全是服务端起的名字)
-            // v67 再头插"筛选找片": 左竖类柱+右条件墙(照红果官方那屏)
-            ChipScroller(labels: Self.chipLabels(vm: vm, actorSeg: actorSeg, filterSeg: filterSeg),
-                         onPick: { i in
-                             filterSeg = (i == 0)
-                             actorSeg = (i == 1)
-                             if i == 0 {
-                                 cat.loadPanel()
-                             } else if i == 1 {
-                                 if cast.items.isEmpty { cast.load() }
-                             } else {
-                                 vm.load(content: vm.contents[i - 2].id, board: "")
-                             }
-                         })
-                .padding(.top, 6)
-            if !actorSeg && !filterSeg,
-               let cur = vm.contents.first(where: { $0.id == vm.content || $0.selected }),
-               !cur.boards.isEmpty {
-                ChipScroller(labels: cur.boards.map { ($0.name, $0.id == vm.board || ($0.selected && vm.board.isEmpty)) },
-                             onPick: { vm.load(board: cur.boards[$0].id) })
+            // 一级三大档(左对齐胶囊组, 选中橙): 服务端的五个内容类收进"榜单"当二级
+            HStack(spacing: 10) {
+                ForEach(0..<3, id: \.self) { i in
+                    let on = topSeg == i
+                    Button {
+                        topSeg = i
+                        if i == 0 { cat.loadPanel() }
+                        if i == 1, cast.items.isEmpty { cast.load() }
+                    } label: {
+                        Text(["筛选找片", "演员榜", "榜单"][i])
+                            .font(.system(size: 15, weight: on ? .bold : .regular))
+                            .padding(.horizontal, 16).padding(.vertical, 8)
+                            .background(Capsule().fill(on ? Color.orange.opacity(0.16)
+                                                         : Color.gray.opacity(0.12)))
+                            .foregroundStyle(on ? Color.orange : .primary)
+                    }
+                }
+                Spacer(minLength: 0)
             }
-            if filterSeg {
+            .padding(.horizontal, 12)
+            .padding(.top, 6)
+            if topSeg == 2 {
+                if !vm.contents.isEmpty {
+                    ChipScroller(labels: vm.contents.map { ($0.name, $0.id == vm.content || ($0.selected && vm.content.isEmpty)) },
+                                 onPick: { vm.load(content: vm.contents[$0].id, board: "") })
+                }
+                if let cur = vm.contents.first(where: { $0.id == vm.content || $0.selected }),
+                   !cur.boards.isEmpty {
+                    ChipScroller(labels: cur.boards.map { ($0.name, $0.id == vm.board || ($0.selected && vm.board.isEmpty)) },
+                                 onPick: { vm.load(board: cur.boards[$0].id) })
+                }
+            }
+            if topSeg == 0 {
                 FilterPage(vm: cat)
-            } else if actorSeg {
+            } else if topSeg == 1 {
                 ActorBoard(vm: cast)
             } else {
             List {
@@ -1646,15 +1655,6 @@ private struct RankTab: View {
             .refreshable { vm.load() }
             }
         }
-    }
-
-    // 分类胶囊(含筛选找片+演员榜): ViewBuilder 里不许 var, 照 actorSub 老规矩抽函数
-    static func chipLabels(vm: RankVM, actorSeg: Bool, filterSeg: Bool) -> [(String, Bool)] {
-        var out: [(String, Bool)] = [("筛选找片", filterSeg), ("演员榜", actorSeg)]
-        for c in vm.contents {
-            out.append((c.name, !actorSeg && !filterSeg && (c.id == vm.content || (c.selected && vm.content.isEmpty))))
-        }
-        return out
     }
 
     // 演员/推广行的副标题(ViewBuilder 里不许 var 赋值, 抽函数)
