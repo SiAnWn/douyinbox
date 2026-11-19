@@ -1749,9 +1749,10 @@ private struct ActorBoard: View {
                     ForEach(Array(rows.enumerated()), id: \.offset) { i, it in
                         Button { nav.go(HgActorGo(uid: it.userId, name: it.actor), "actorboard " + it.actor) } label: {
                             HStack(spacing: 10) {
-                                Text(String(format: "%02d", it.position))
+                            // v1.10.65 男/女榜行号=过滤后重新排号(i+1), 不顶总榜旧名次
+                                Text(String(format: "%02d", i + 1))
                                     .font(.system(size: 15, weight: .heavy, design: .rounded))
-                                    .foregroundStyle(it.position <= 3 ? Color.orange : Color.secondary)
+                                    .foregroundStyle(i < 3 ? Color.orange : Color.secondary)
                                     .frame(width: 30)
                                 AsyncImage(url: URL(string: hgImgURL(it.avatarUrl))) {
                                     $0.resizable().scaledToFill()
