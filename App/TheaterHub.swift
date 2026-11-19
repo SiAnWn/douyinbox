@@ -461,8 +461,18 @@ final class DiscoverVM: ObservableObject {
     private var scur: String?
     private var smode = ""
 
-    func doSearch(_ q: String) {
-        smode = q.trimmingCharacters(in: .whitespacesAndNewlines)
+    // v1.10.51 搜索频道 tab(照 iDuanJu 胶囊行): 0=短剧(默认) 1=漫剧 2=AI剧 3=影视
+    static let filterVals = ["content_type_short_play", "content_type_dynamic_comic",
+                             "content_type_ai_dynamic_comic", "content_type_long_video"]
+    @Published var sfilter = 0
+    func setFilter(_ i: Int) {
+        guard i != sfilter else { return }
+        sfilter = i
+        HGTrail.note("hgsearch filter=\(i)")
+        if !smode.isEmpty { doSearch(smode) }
+    }
+
+    func doSearch(_ q: String) {        smode = q.trimmingCharacters(in: .whitespacesAndNewlines)
         HGTrail.note("hgsearch go '\(smode.prefix(20))'")
         guard !smode.isEmpty else { sres = []; snote = ""; return }
         rememberHist(smode)
@@ -509,8 +519,11 @@ final class DiscoverVM: ObservableObject {
             // v1.10.42 纯短剧口: filters=content_type_short_play(Go SDK 实测常量, 官网搜索
             // 默认就是这条 tab)。文章/合集/小说从源头不再混入, eps=0 客户端过滤降为兜底。
             // 注意: 游标不携带筛选, 续页必须原样带上同一 filters(SDK 文档明言)。
-            let opt = SearchOptions(cursor: cur, pageSize: 20,
-                                    filters: ["content_type_short_play"])
+            // v1.10.52 频道筛选(v1.52 勘误: 此功能实际随 51 版首发, 见 git 记录):
+            // 照 iDuanJu 搜索页"真人剧|漫剧|AI剧|影视"胶囊行, 值用 Go SDK 实测常量。
+            // 游标不携筛选, 所以续页原样带同一组(SDK 文档明言)。
+            let fval = Self.filterVals[max(0, min(sfilter, 3))]
+            let opt = SearchOptions(cursor: cur, pageSize: 20, filters: [fval])
             var pg: Page<SeriesSummary>?
             for k in 0..<3 {
                 pg = try? await c.search(q, options: opt)
@@ -535,7 +548,7 @@ final class DiscoverVM: ObservableObject {
                 // v1.10.44 加餐改无条件(PC 回看实锤: content_type_short_play 把演员行
                 // 也筛掉了, 43 版"搜索行里找演员"的探针永远扑空)。每次新搜索后台都
                 // 查一次人气榜身份, 有戏就加餐, 没戏静默; 查询结果进程内记忆不重烧
-                if reset { actorBonus(q) }
+                if reset, sfilter == 0 { actorBonus(q) }
                 // v1.10.43 断头绳(PC -sdeep 40页实锤: 演员类查询服务端只有约20部,
                 // hasMore 却永远 true、从第3页起全量轮回旧剧—不给断头绳能翻到地老天荒
                 // "看着多其实不全"。规则: 游标自我复制或整页零新剧, 当场收线)
@@ -883,6 +896,28 @@ private struct TheaterSearchTab: View {
                 .padding(10)
                 .background(RoundedRectangle(cornerRadius: 12).fill(Color.gray.opacity(0.12)))
                 .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8))
+                // v1.10.51 频道胶囊行(照 iDuanJu 搜索页"真人剧|漫剧|AI剧|影视"):
+                // 点频道=换搜索池, 结果立刻按所选频道重查; 短剧=默认即原行为
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(Array(["短剧", "漫剧", "AI剧", "影视"].enumerated()), id: \.offset) { i, name in
+                            let on = vm.sfilter == i
+                            Button { vm.setFilter(i) } label: {
+                                Text(name)
+                                    .font(.system(size: 13, weight: on ? .semibold : .regular))
+                                    .foregroundStyle(on ? Color.orange : Color.primary)
+                                    .padding(.horizontal, 14).padding(.vertical, 6)
+                                    .background(Capsule().fill(on ? Color.orange.opacity(0.13)
+                                                                : Color.gray.opacity(0.10)))
+                                    .overlay(Capsule().strokeBorder(on ? Color.orange.opacity(0.55)
+                                                                     : Color.clear, lineWidth: 1))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 2)
+                }
+                .listRowInsets(EdgeInsets(top: 0, leading: 8, bottom: 6, trailing: 8))
                 if vm.sres.isEmpty {
                     if vm.guesses.isEmpty && vm.hotBoards.isEmpty && vm.shist.isEmpty {
                         Button("拉一下红果热搜 🔥") { Task { await vm.fetchHot() } }
