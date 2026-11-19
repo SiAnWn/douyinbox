@@ -1767,7 +1767,9 @@ private struct ActorBoard: View {
                                 } placeholder: { Color.gray.opacity(0.15) }
                                     .frame(width: 46, height: 46)
                                     .clipShape(Circle())
-                                    .overlay(Circle().stroke(.white.opacity(0.35), lineWidth: 1))
+                                    // v1.10.74 C项 白圈+浅灰外圈双层描边(白底上单层白=隐身)
+                                    .overlay(Circle().stroke(.white, lineWidth: 1.5))
+                                    .overlay(Circle().stroke(Color.primary.opacity(0.10), lineWidth: 1))
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(it.actor).font(.subheadline.weight(.semibold)).lineLimit(1)
                                     Text(RankTab.actorSub(it))
@@ -1891,7 +1893,9 @@ struct PodiumCard: View {
             }
         }
         .clipShape(Circle())
-        .overlay(Circle().stroke(.white, lineWidth: 3)))
+        // v1.10.74 C项 领奖台头像 白圈2pt + 浅灰细外圈(浅色卡上纯白描边会糊边)
+        .overlay(Circle().stroke(.white, lineWidth: 2))
+        .overlay(Circle().stroke(Color.primary.opacity(0.10), lineWidth: 1)))
     }
 }
 
