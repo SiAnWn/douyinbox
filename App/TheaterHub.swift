@@ -1536,9 +1536,10 @@ private struct DiscoverTab: View {
             }
             if !vm.rows.isEmpty {
                 Section {
-                    Grid2Cards(rows: vm.rows, nearEnd: { i in
-                        if i >= vm.rows.count - 3 { vm.more() }
-                    })
+                    // v1.10.59 自动翻页废除(用户报"滑到底转圈一直不停, 每次6部, 新卡
+                    // 灰底→图切一下视觉一卡一卡"): discover 一页只有 6 条, 推不走
+                    // 近尾哨兵 → more() 无限连锁; 照搜索 v.33 铁律改手动加载更多
+                    Grid2Cards(rows: vm.rows)
                     .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
                     MoreButton(busy: vm.busy, more: { vm.more() })
                 } header: {
