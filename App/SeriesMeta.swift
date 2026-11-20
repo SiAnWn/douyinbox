@@ -18,6 +18,11 @@ struct SeriesMeta: Codable {
     var desc = ""
     var cover = false
     var fetchedAt = ""
+    // v1.10.88 官方合集关系(归册金标准): 多季共用同一 relatedAlbumId, seasonIdx=官方季号;
+    // albumFetched=档案已带官方结论(即便 albumId 空=单季), 免 backfill 反复重拉
+    var albumId = ""
+    var seasonIdx = 0
+    var albumFetched = false
 }
 
 enum SeriesMetaStore {
@@ -55,6 +60,10 @@ enum SeriesMetaStore {
         m.desc = s.description.trimmingCharacters(in: .whitespacesAndNewlines)
         m.heat = big(s.heat)
         m.plays = big(s.playCount)
+        // v1.10.88 官方季关系入档(老档案缺此三字段=albumFetched false → 补档会重拉一次)
+        m.albumId = s.relatedAlbumId
+        m.seasonIdx = s.seasonIndex
+        m.albumFetched = true
         for r in s.rows {
             let t = r.text.trimmingCharacters(in: .whitespaces)
             if t.isEmpty { continue }
@@ -85,8 +94,8 @@ enum SeriesMetaStore {
         var ok = 0, skipped = 0
         for (i, s) in list.enumerated() {
             if Task.isCancelled { break }
-            // 增量补档: 已有简介或海报=档案有效, 直接跳过(一千部剧只补那缺的一部)
-            if let old = SeriesMetaStore.load(s.url), !old.desc.isEmpty || old.cover {
+            // v1.10.88 档案有效且官方季关系已拉过才算补齐; 老档案没这仨字段的会重拉一遍(一轮代价)
+            if let old = SeriesMetaStore.load(s.url), (!old.desc.isEmpty || old.cover), old.albumFetched {
                 skipped += 1
                 continue
             }

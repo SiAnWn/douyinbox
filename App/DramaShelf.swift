@@ -117,22 +117,42 @@ enum DramaShelf {
         return 0
     }
 
+    // v1.10.88 归册金标准: 剧档案里的官方 relatedAlbumId 为主键(乡下真千金那种
+    // 换名续季自动合、同名不同剧本的不会乱合); 档案没拉过的老剧退名字规则
+    static func meta(_ s: Series) -> SeriesMeta? {
+        if let hit = memo[s.id] { return hit }
+        let m = SeriesMetaStore.load(s.url)
+        memo[s.id] = m
+        return m
+    }
+    private static var memo: [String: SeriesMeta?] = [:]
+
+    static func seasonOf(_ s: Series) -> Int {
+        meta(s)?.seasonIdx ?? seasonNo(s.name)
+    }
+
     static func group(_ list: [Series]) -> [ShelfGroup] {
+        memo = [:]
         var dict: [String: [Series]] = [:]
         var titles: [String: String] = [:]
         for s in list {
-            let b = base(s.name)
-            // v1.10.87 标点抹平: "我家娘子，不对劲第四季"与"我家娘子不对劲1：xx"
-            // 差的只是逗号 — 分组键剔掉所有标点空格, 只留汉字与字母数字
-            let key = norm(b)
-            dict[key, default: []].append(s)
-            if titles[key] == nil || base(s.name).count < (titles[key] ?? "zzzz").count {
-                titles[key] = b
+            let m = meta(s)
+            let key: String
+            if let m, !m.albumId.isEmpty {
+                key = "A:" + m.albumId                          // 官方合集
+            } else if let m, m.albumFetched {
+                key = "S:" + s.id                               // 官方认证单季, 别再按名字硬凑
+            } else {
+                key = "N:" + norm(base(s.name))                 // 无档案退名字规则
             }
+            dict[key, default: []].append(s)
+            let b = base(s.name)
+            let cur = titles[key]
+            if cur == nil || (b.count < (cur ?? "zzzz").count && b.count >= 2) { titles[key] = b }
         }
         return dict.map { k, v in
             ShelfGroup(id: k, title: titles[k] ?? k, vols: v.sorted { a, b in
-                let sa = seasonNo(a.name), sb = seasonNo(b.name)
+                let sa = seasonOf(a), sb = seasonOf(b)
                 if sa != sb { return sa < sb }
                 return a.name.localizedStandardCompare(b.name) == .orderedAscending
             })
@@ -188,7 +208,16 @@ struct ShelfGrid<Destination: View>: View {
                                     .clipShape(RoundedRectangle(cornerRadius: 5))
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(s.name).font(.body.weight(.medium))
-                                    Text("\(s.count) 集").font(.caption).foregroundStyle(.secondary)
+                                    // v1.10.88 官方季号徽章: 第N季一眼分明
+                                    let sn = DramaShelf.seasonOf(s)
+                                    HStack(spacing: 6) {
+                                        Text("\(s.count) 集").font(.caption).foregroundStyle(.secondary)
+                                        if sn > 0 {
+                                            Text("第\(sn)季")
+                                                .font(.caption2.weight(.semibold))
+                                                .foregroundStyle(.orange)
+                                        }
+                                    }
                                 }
                             }
                         }
