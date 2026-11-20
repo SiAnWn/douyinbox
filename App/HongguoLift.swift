@@ -35,13 +35,22 @@ func hgCrashReport(_ sg: Int32) {
 
 // MARK: - 墓碑面包屑：每阶段同步写 Documents/HGTrail.txt，闪退也留遗嘱
 enum HGTrail {
+    private static var bannered = false
     private static var url: URL {
         SavePaths.docs.appendingPathComponent("HGTrail.txt")
     }
     static func note(_ s: String) {
         let df = DateFormatter()
         df.dateFormat = "HH:mm:ss"
-        let line = "[" + df.string(from: Date()) + "] " + s + "\n"
+        var line = "[" + df.string(from: Date()) + "] " + s + "\n"
+        // v1.10.103 遗嘱版号横幅: 用户点名要版本入日志(每次判案先对暗号免装错版本)
+        if !bannered {
+            bannered = true
+            let inf = Bundle.main.infoDictionary
+            let v = (inf?["CFBundleShortVersionString"] as? String) ?? "?"
+            let b = (inf?["CFBundleVersion"] as? String) ?? "?"
+            line = "[" + df.string(from: Date()) + "] === app v" + v + " (build " + b + ") ===\n" + line
+        }
         guard let d = line.data(using: .utf8) else { return }
         let f = url
         if fm.fileExists(atPath: f.path) {
