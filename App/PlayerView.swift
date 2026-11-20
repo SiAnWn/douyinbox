@@ -214,7 +214,7 @@ struct PlayerScrubber: View {
 
 // v1.10.95 映退tab: 本页播放器整体封箱留档(sel == .play 续播分支随 tab 退役),
 // 活下来的播放器是下面的 InlinePlayer(藏·inline / 场·连播 / feedFull 全屏)
-#if false
+// v1.10.104 映 tab 复活: 解除 95 号存档封印(#if false), PlayerView 原编原上岗
 struct PlayerView: View {
     @EnvironmentObject var app: AppState
     @StateObject private var pc = PlayerController()
@@ -346,7 +346,6 @@ struct PlayerView: View {
         .padding()
     }
 }
-#endif
 
 // MARK: - 就地全屏播放器（库/收藏）
 
