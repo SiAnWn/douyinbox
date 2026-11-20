@@ -10,11 +10,14 @@ private func fmtGB(_ b: Int) -> String {
     return String(format: "%.0f KB", Double(b) / 1024.0)
 }
 
+// v1.10.94 方案A第二刀: 内层四段切换器(视频/图集/音频/收藏)废除, 本组件按 kind 参数化
+// (0 视频 2 音频 3 收藏); 图集旧"图集_"系统搬去 画 段当"抖音图集"分区;
+// 藏 tab 统一一排五段 影|音|藏|画|私, 一屏一段一张网格, 不再俄罗斯套娃
 struct LibraryView: View {
+    let kind: Int
     @EnvironmentObject var app: AppState
     @State private var search = ""
     @State private var sort = 0   // 0 最新 1 名称 2 大小
-    @State private var seg = 0    // 0视频 1图集 2音频 3收藏
     @State private var filterTags: Set<String> = []   // 多选筛选，任一命中
     @State private var shownLimit = 180   // 分批渲染，几万条也丝滑
     @State private var showNewTag = false
@@ -47,8 +50,7 @@ struct LibraryView: View {
     private var tagChips: [String] { TagStore.chips(ids: Set(app.videos.map { $0.id })) }
 
     private var navTitle: String {
-        switch seg {
-        case 1: return "图集"
+        switch kind {
         case 2: return "音频"
         case 3: return "收藏"
         default: return "视频库"
@@ -56,10 +58,7 @@ struct LibraryView: View {
     }
 
     private var poolSizeText: String {
-        if seg == 1 {
-            return "\(app.albums.count) 本 · \(app.albums.reduce(0) { $0 + $1.count }) 图"
-        }
-        let list = pool(seg == 0 ? 0 : (seg == 2 ? 2 : 3))   // 统计跟随标签/搜索筛选
+        let list = pool(kind)   // 统计跟随标签/搜索筛选
         let total = list.reduce(0) { $0 + $1.size }
         let free = (try? FileManager.default.attributesOfFileSystem(forPath: NSHomeDirectory()))?[.systemFreeSize] as? Int ?? 0
         let filtered = !filterTags.isEmpty || !search.isEmpty
@@ -107,29 +106,13 @@ struct LibraryView: View {
     var body: some View {
         Group {
             VStack(spacing: 0) {
-                Picker("视图", selection: $seg) {
-                    Text("视频 (\(vidCount))").tag(0)
-                    Text("图集 (\(app.albums.count))").tag(1)
-                    Text("音频 (\(audCount))").tag(2)
-                    Text("收藏 (\(favCount))").tag(3)
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal)
-                .padding(.top, 6)
-
                 Text(poolSizeText)
                     .font(.caption2).foregroundStyle(.secondary)
-                    .padding(.top, 5).padding(.bottom, 1)
+                    .padding(.top, 8).padding(.bottom, 2)
 
-                if seg != 1 { chipRow }
+                if kind == 0 { chipRow }   // 标签是视频的事, 音/藏页不摆
 
-                TabView(selection: $seg) {
-                    fileGrid(0).tag(0)
-                    albumsPage.tag(1)
-                    fileGrid(2).tag(2)
-                    fileGrid(3).tag(3)
-                }
-                .tabViewStyle(.page(indexDisplayMode: .never))
+                fileGrid(kind)
             }
             .navigationTitle(navTitle)
             .searchable(text: $search, prompt: "搜索")
@@ -143,9 +126,10 @@ struct LibraryView: View {
                 }
             }
             .refreshable { await app.refreshAsync() }
-            .onChange(of: seg) { _ in shownLimit = 180 }
+            .onAppear { shownLimit = 180 }
             .onChange(of: search) { _ in shownLimit = 180 }
             .onChange(of: filterTags) { _ in shownLimit = 180 }
+            .onChange(of: sort) { _ in shownLimit = 180 }
             .alert("新建标签", isPresented: $showNewTag) {
                 TextField("标签名（12 字内）", text: $newTagName)
                 Button("取消", role: .cancel) { newTagName = "" }
@@ -268,6 +252,11 @@ struct LibraryView: View {
     }
 
     private var albumsPage: some View {
+        // v1.10.94 旧"图集_"系统已迁至 画 段(GalleryHomeView·抖音图集) — 此段留档勿用
+        EmptyView()
+    }
+    #if false
+    private var albumsPageOld: some View {
         ScrollView {
             LazyVGrid(columns: cols, spacing: 10) {
                 ForEach(app.albums) { a in
@@ -311,6 +300,7 @@ struct LibraryView: View {
             }
         }
     }
+    #endif
 }
 
 struct CoverTile: View {

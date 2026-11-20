@@ -1,6 +1,7 @@
 import SwiftUI
 
-// MARK: - 藏（本地仓库）：影｜私｜画廊 三段(v1.10.93 方案A第一步: 剧墙搬去 场·书架, 印并入拾右上角齿轮)
+// MARK: - 藏（本地仓库）：影｜音｜藏｜画｜私 一段一屏(v1.10.94 方案A第二刀: 全扁平,
+// 杀掉了 外层三段×视频库内层四段 的俄罗斯套娃; 每段自带搜索/排序, 不再叠切换器)
 
 struct StashHubView: View {
     @EnvironmentObject var app: AppState
@@ -11,8 +12,10 @@ struct StashHubView: View {
             VStack(spacing: 0) {
                 Picker("", selection: $seg) {
                     Text("影").tag(0)
-                    Text("私").tag(1)
-                    Text("画廊").tag(2)
+                    Text("音").tag(1)
+                    Text("★").tag(2)      // 收藏: 用星避与 tab 名"藏"撞字
+                    Text("画").tag(3)
+                    Text("私").tag(4)
                 }
                 .pickerStyle(.segmented)
                 .padding([.horizontal], 14)
@@ -20,10 +23,12 @@ struct StashHubView: View {
 
                 Group {
                     switch seg {
-                    case 0: LibraryView()
-                    case 1: PrivateView()
-                    case 2: GalleryHomeView()
-                    default: LibraryView()
+                    case 0: LibraryView(kind: 0)
+                    case 1: LibraryView(kind: 2)
+                    case 2: LibraryView(kind: 3)
+                    case 3: GalleryHomeView()
+                    case 4: PrivateView()
+                    default: LibraryView(kind: 0)
                     }
                 }
             }

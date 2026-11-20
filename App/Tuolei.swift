@@ -358,10 +358,11 @@ struct GalleryHomeView: View {
         let files: [URL]
     }
     @State private var albums: [GAlbum] = []
+    @EnvironmentObject private var app: AppState
 
     var body: some View {
         Group {
-            if albums.isEmpty {
+            if albums.isEmpty && app.albums.isEmpty {
                 ContentUnavailableView {
                     Label("画廊还空着", systemImage: "photo.stack")
                 } description: {
@@ -371,44 +372,93 @@ struct GalleryHomeView: View {
                 }
             } else {
                 ScrollView {
-                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)],
-                              alignment: .leading, spacing: 12) {
-                        ForEach(albums) { a in
-                            NavigationLink {
-                                GalleryAlbumView(name: a.name, files: a.files)
-                            } label: {
-                                VStack(alignment: .leading, spacing: 5) {
-                                    AsyncImage(url: a.cover) { ph in
-                                        switch ph {
-                                        case .success(let img): img.resizable().scaledToFill()
-                                        default: Color.gray.opacity(0.1)
+                    LazyVStack(alignment: .leading, spacing: 16) {
+                        // v1.10.94 方案A第二刀: 旧"图集_"系统(解析抖音图文作品 era 存根目录)
+                        // 从视频库的分段里搬来画廊同居一室, 藏页不再两层切换器
+                        if !app.albums.isEmpty {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("抖音图集 · 旧档").font(.subheadline.weight(.semibold))
+                                LazyVGrid(columns: [GridItem(.flexible(), spacing: 10),
+                                                     GridItem(.flexible(), spacing: 10)],
+                                          alignment: .leading, spacing: 12) {
+                                    ForEach(app.albums) { a in
+                                        Button { app.openAlbum = a } label: {
+                                            VStack(alignment: .leading, spacing: 5) {
+                                                Color.clear
+                                                    .frame(maxWidth: .infinity)
+                                                    .frame(height: 160)
+                                                    .background(Color.gray.opacity(0.12))
+                                                    .overlay { AlbumThumb(url: a.cover).clipped() }
+                                                    .overlay(alignment: .bottomTrailing) {
+                                                        Text("\(a.count) 图")
+                                                            .font(.caption2).foregroundStyle(.white)
+                                                            .padding(4).background(.black.opacity(0.5), in: Capsule())
+                                                            .padding(4)
+                                                    }
+                                                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                                                Text(a.title).font(.subheadline).lineLimit(1)
+                                            }
+                                        }
+                                        .buttonStyle(.plain)
+                                        .contextMenu {
+                                            Button("删除整本", role: .destructive) {
+                                                try? FileManager.default.removeItem(at: a.url)
+                                                app.refresh()
+                                            }
                                         }
                                     }
-                                    .frame(maxWidth: .infinity)
-                                    .frame(height: 160).clipped()
-                                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                                    Text(a.name).font(.subheadline).lineLimit(1)
-                                    Text("\(a.files.count) 张").font(.caption2).foregroundStyle(.secondary)
                                 }
                             }
-                            .buttonStyle(.plain)
-                            .contextMenu {
-                                Button("删除图集", role: .destructive) {
-                                    if let first = a.files.first {
-                                        try? FileManager.default.removeItem(
-                                            at: first.deletingLastPathComponent())
-                                    }
-                                    load()
-                                }
-                            }
+                            .padding(.horizontal, 12)
+                            .padding(.top, 12)
                         }
-                    }.padding(12)
+                        if !albums.isEmpty {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("图叻收藏").font(.subheadline.weight(.semibold))
+                                LazyVGrid(columns: [GridItem(.flexible(), spacing: 10),
+                                                     GridItem(.flexible(), spacing: 10)],
+                                          alignment: .leading, spacing: 12) {
+                                    ForEach(albums) { a in
+                                        NavigationLink {
+                                            GalleryAlbumView(name: a.name, files: a.files)
+                                        } label: {
+                                            VStack(alignment: .leading, spacing: 5) {
+                                                AsyncImage(url: a.cover) { ph in
+                                                    switch ph {
+                                                    case .success(let img): img.resizable().scaledToFill()
+                                                    default: Color.gray.opacity(0.1)
+                                                    }
+                                                }
+                                                .frame(maxWidth: .infinity)
+                                                .frame(height: 160).clipped()
+                                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                                                Text(a.name).font(.subheadline).lineLimit(1)
+                                                Text("\(a.files.count) 张").font(.caption2).foregroundStyle(.secondary)
+                                            }
+                                        }
+                                        .buttonStyle(.plain)
+                                        .contextMenu {
+                                            Button("删除图集", role: .destructive) {
+                                                if let first = a.files.first {
+                                                    try? FileManager.default.removeItem(
+                                                        at: first.deletingLastPathComponent())
+                                                }
+                                                load()
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            .padding(.horizontal, 12)
+                        }
+                    }
+                    .padding(.bottom, 12)
                 }
             }
         }
-        .navigationTitle("画廊 · \(albums.count)")
+        .navigationTitle("画廊 · \(albums.count + app.albums.count)")
         .onAppear { load() }
-        .refreshable { load() }
+        .refreshable { load(); app.refresh() }
     }
 
     private func load() {
