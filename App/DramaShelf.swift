@@ -270,6 +270,33 @@ struct ShelfGrid<Destination: View>: View {
         HGTrail.note("shelf clearmeta " + s.name)
         bump += 1
     }
+
+    private func cell(_ name: String, _ cover: URL?, _ badge: String, pack: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Color.clear
+                .frame(maxWidth: .infinity)
+                .aspectRatio(0.667, contentMode: .fit)
+                .overlay {
+                    Group {
+                        if let c = cover { Thumb(url: c) } else { Color(white: 0.15) }
+                    }
+                    .clipped()
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(alignment: .bottomTrailing) {
+                    Text(badge)
+                        .font(.caption2.weight(pack ? .bold : .regular))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 5).padding(.vertical, 2)
+                        .background(Capsule().fill(pack ? Color.orange.opacity(0.9) : .black.opacity(0.55)))
+                        .padding(4)
+                }
+            Text(name)
+                .font(.caption)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+        }
+    }
 }
 
 // MARK: - v1.10.90 人工认档: 长按单卡 → 搜红果 → 点谁就是谁(改名上架/马甲名唯一解)
@@ -371,34 +398,6 @@ private struct RebindSheet: View {
             HGTrail.note("shelf rebind \(s.name) -> \(title) solo=\(solo)")
             busy = false
             note = "已认档：\(title)"
-        }
-    }
-}
-
-    private func cell(_ name: String, _ cover: URL?, _ badge: String, pack: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Color.clear
-                .frame(maxWidth: .infinity)
-                .aspectRatio(0.667, contentMode: .fit)
-                .overlay {
-                    Group {
-                        if let c = cover { Thumb(url: c) } else { Color(white: 0.15) }
-                    }
-                    .clipped()
-                }
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .overlay(alignment: .bottomTrailing) {
-                    Text(badge)
-                        .font(.caption2.weight(pack ? .bold : .regular))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 5).padding(.vertical, 2)
-                        .background(Capsule().fill(pack ? Color.orange.opacity(0.9) : .black.opacity(0.55)))
-                        .padding(4)
-                }
-            Text(name)
-                .font(.caption)
-                .lineLimit(2)
-                .multilineTextAlignment(.leading)
         }
     }
 }
