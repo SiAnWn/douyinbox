@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import Openhongguo   // v1.10.90 认档弹窗要用 SeriesSummary
 
 // MARK: - v1.10.85 多季归册(用户点单): "云渺 / 云渺2 / 云渺·第二季" 这类同名多册
 // 在剧墙归成一张册卡, 点开分季挑。纯本地名字分组, 不联网不碰库结构。
