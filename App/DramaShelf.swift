@@ -158,6 +158,10 @@ enum DramaShelf {
                 key = n > 0 ? "N:" + norm(base(s.name)) : "B:" + s.id
             }
             dict[key, default: []].append(s)
+            // v1.10.108 户籍判决留痕: 只记入了册通道(A:/N:)的, 孤本不刷屏 — 老千悬案等查户口专用
+            if key.hasPrefix("A:") || key.hasPrefix("N:") {
+                HGTrail.note("shelf key " + s.name + " → " + key)
+            }
             let b = base(s.name)
             let cur = titles[key]
             if cur == nil || (b.count < (cur ?? "zzzz").count && b.count >= 2) { titles[key] = b }

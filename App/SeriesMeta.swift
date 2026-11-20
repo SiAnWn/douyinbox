@@ -162,12 +162,17 @@ enum SeriesMetaStore {
             if Task.isCancelled { break }
             let r = try? await Hongguo.attempt(c, { try await c.search(s.name) })
             guard let pg = r else {
+                HGTrail.note("autocheck fail name=" + s.name + " (搜索口报错)")
                 try? await Task.sleep(nanoseconds: 1_200_000_000)
                 continue
             }
             if let hit = pg.items.first(where: { DramaShelf.norm($0.title) == DramaShelf.norm(s.name) }), !hit.id.isEmpty {
+                HGTrail.note("autocheck hit name=" + s.name + " sid=" + hit.id)
                 await harvest(c, sid: hit.id, title: s.name, dir: s.url)
                 if FileManager.default.fileExists(atPath: file(s.url).path) { ok += 1 }
+            } else {
+                let top = pg.items.prefix(3).map { $0.title }.joined(separator: " | ")
+                HGTrail.note("autocheck miss name=" + s.name + " rows=\(pg.items.count) top=[" + top + "]")
             }
             try? await Task.sleep(nanoseconds: 900_000_000)
         }
