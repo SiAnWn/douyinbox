@@ -327,8 +327,13 @@ struct CoverTile: View {
                         ProgressView().tint(.white)
                     }
                 }
+                // v1.10.96 横版卡吃邻案: scaledToFill 的 view frame=按图比例放大(横图撑到2.6倍卡宽),
+                // .clipped() 只剪像素不剪点击区 → 透明溢出盖邻卡截胡(点"大哼"播出"画卷" 只能点边缘).
+                // 真解=.frame 把 view 尺寸钉回底座 bounds, 点击区立正
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipped()
             }
+            .contentShape(Rectangle())   // 整卡热区=底座 保险栓
             .task(id: v.url) {
                 if v.isAudio { return }
                 img = await ThumbCache.shared.image(v.url)
@@ -353,6 +358,8 @@ struct AlbumThumb: View {
                 Image(systemName: "photo.on.rectangle.angled").font(.title2).foregroundStyle(.secondary)
             }
         }
+        // v1.10.96 同族补丁: 图集封面也有横图 点击区钉回框内
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
         .task(id: url) {
             if let u = url, img == nil {
@@ -377,6 +384,8 @@ struct Thumb: View {
                 ProgressView().tint(.white)
             }
         }
+        // v1.10.96 同 CoverTile: frame 钉死防横图点击区溢出 (剧墙册卡/搜索格全用此件)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
         .task(id: url) { img = await ThumbCache.shared.image(url) }
     }
