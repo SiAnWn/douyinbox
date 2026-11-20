@@ -138,7 +138,9 @@ enum DramaShelf {
         for s in list {
             let m = meta(s)
             let key: String
-            if let m, !m.albumId.isEmpty, albumTrust(m, s) {
+            if let m, m.solo {
+                key = "S:" + s.id                                // v1.10.90 人工钦定单剧, 天王老子来了也不进册
+            } else if let m, !m.albumId.isEmpty, albumTrust(m, s) {
                 key = "A:" + m.albumId                          // v89 只信验明正身的官方合集
             } else if let m, m.albumFetched {
                 if m.svrTitle == SeriesMeta.noMatch {
@@ -187,16 +189,20 @@ enum DramaShelf {
     }
 }
 
-// 剧墙: 单册=原卡直接进; 多季册=一张卡挂"全N季"徽, 点开分季清单
+// 剧墙: 单册=原卡直接进, 长按单卡可"重新认档/清空档案"; 多季册=一张卡挂"N季"徽, 点开分季清单
 // destination 由 callers 供给(短剧=DramaEpisodes / 私盒=PrivateEpisodes)
 struct ShelfGrid<Destination: View>: View {
-    let groups: [ShelfGroup]
+    let source: [Series]
     let destination: (Series) -> Destination
     @State private var openPack: ShelfGroup?
+    @State private var rebind: Series?
+    @State private var bump = 0
     private let cols = [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())]
 
     var body: some View {
-        ScrollView {
+        // bump 踢一下即全量重分组(认档/清档后立改墙, memo 每次自清)
+        let groups = bump >= 0 ? DramaShelf.group(source) : []
+        return ScrollView {
             LazyVGrid(columns: cols, spacing: 10) {
                 ForEach(groups) { g in
                     if g.isPack {
@@ -205,6 +211,11 @@ struct ShelfGrid<Destination: View>: View {
                     } else if let s = g.vols.first {
                         NavigationLink(value: s) { cell(s.name, s.cover, "\(s.count)集", pack: false) }
                             .buttonStyle(.plain)
+                            // v1.10.90 人工认档钥匙: 红果改名上架的剧(云渺→云渺第一季)自动认不到, 长按你来点名
+                            .contextMenu {
+                                Button { rebind = s } label: { Label("重新认档", systemImage: "text.magnifyingglass") }
+                                Button(role: .destructive) { clearMeta(s) } label: { Label("清空档案撤假海报", systemImage: "trash") }
+                            }
                     }
                 }
             }
@@ -247,7 +258,122 @@ struct ShelfGrid<Destination: View>: View {
             }
             .presentationDetents([.medium, .large])
         }
+        .sheet(item: $rebind) { s in
+            RebindSheet(s: s) { bump += 1 }
+        }
     }
+
+    private func clearMeta(_ s: Series) {
+        let fm = FileManager.default
+        try? fm.removeItem(at: SeriesMetaStore.file(s.url))
+        try? fm.removeItem(at: s.url.appendingPathComponent("封面.jpg"))
+        HGTrail.note("shelf clearmeta " + s.name)
+        bump += 1
+    }
+}
+
+// MARK: - v1.10.90 人工认档: 长按单卡 → 搜红果 → 点谁就是谁(改名上架/马甲名唯一解)
+private struct RebindSheet: View {
+    let s: Series
+    let onDone: () -> Void
+    @Environment(\.dismiss) private var dis
+    @State private var q: String
+    @State private var rows: [SeriesSummary] = []
+    @State private var busy = false
+    @State private var note = ""
+    @State private var solo = false
+
+    init(s: Series, onDone: @escaping () -> Void) {
+        self.s = s
+        self.onDone = onDone
+        _q = State(initialValue: s.name)
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                Toggle(isOn: $solo) {
+                    Text("钦定单剧 · 谁也别想把它塞进合集").font(.footnote)
+                }
+                .tint(.orange)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
+                if busy && rows.isEmpty {
+                    Spacer()
+                    ProgressView().controlSize(.large)
+                    Text("正去红果打听…").font(.footnote).foregroundStyle(.secondary).padding(6)
+                    Spacer()
+                } else if rows.isEmpty {
+                    Spacer()
+                    Text(note.isEmpty ? "红果没有同名剧 — 换个词搜搜(比如主演名字)" : note)
+                        .font(.callout).foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center).padding(.horizontal, 30)
+                    Spacer()
+                } else {
+                    List(rows, id: \.id) { r in
+                        Button { bind(r.id, r.title) } label: {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(r.title).font(.body.weight(.medium))
+                                Text("\(r.episodeCount) 集").font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .listStyle(.plain)
+                }
+                if !note.isEmpty && !rows.isEmpty {
+                    Text(note).font(.footnote).foregroundStyle(.orange)
+                        .frame(maxWidth: .infinity).padding(6)
+                }
+            }
+            .navigationTitle("给「\(s.name)」认档")
+            .navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $q, placement: .navigationBarDrawer(displayMode: .always))
+            .onSubmit(of: .search) { go() }
+            .task { if rows.isEmpty && !busy { go() } }
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完事") { dis(); onDone() }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private func go() {
+        busy = true
+        rows = []
+        note = ""
+        Task {
+            guard let c = Hongguo.client else {
+                busy = false; note = "红果引擎未就绪"; return
+            }
+            let r = try? await Hongguo.attempt(c, { try await c.search(q) })
+            rows = (r?.items ?? []).filter { $0.episodeCount > 0 }
+            if rows.isEmpty { note = "「\(q)」红果没搜到, 换个词(试试主演名)" }
+            busy = false
+        }
+    }
+
+    private func bind(_ sid: String, _ title: String) {
+        guard !busy else { return }
+        busy = true
+        note = "认档中…"
+        Task {
+            guard let c = Hongguo.client else {
+                busy = false; note = "红果引擎未就绪"; return
+            }
+            await SeriesMetaStore.harvest(c, sid: sid, title: s.name, dir: s.url)
+            if var m = SeriesMetaStore.load(s.url) {
+                m.solo = solo
+                try? JSONEncoder().encode(m).write(to: SeriesMetaStore.file(s.url))
+            }
+            HGTrail.note("shelf rebind \(s.name) -> \(title) solo=\(solo)")
+            busy = false
+            note = "已认档：\(title)"
+        }
+    }
+}
 
     private func cell(_ name: String, _ cover: URL?, _ badge: String, pack: Bool) -> some View {
         VStack(alignment: .leading, spacing: 4) {

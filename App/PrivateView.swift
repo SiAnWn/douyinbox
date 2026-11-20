@@ -28,7 +28,7 @@ struct PrivateView: View {
                 } else if shown.isEmpty {
                     ContentUnavailableView("没有匹配", systemImage: "magnifyingglass", description: Text("换个关键词"))
                 } else {
-                    ShelfGrid(groups: DramaShelf.group(shown)) { s in PrivateEpisodes(series: s) }
+                    ShelfGrid(source: shown) { s in PrivateEpisodes(series: s) }
                         .searchable(text: $search, prompt: "搜索私密")
                         .toolbar {
                             ToolbarItem(placement: .topBarTrailing) {

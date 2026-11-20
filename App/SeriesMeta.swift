@@ -28,6 +28,8 @@ struct SeriesMeta: Codable {
     // 档案海报与季关系 — 从此只认同名命中, 并把真名存档供归册验明正身
     var sid = ""
     var svrTitle = ""
+    /// v1.10.90 人工钦定"这是一部独立剧"(认档弹窗勾选): 归册时谁也不进
+    var solo = false
     /// 红果侧查无同名(抖音版/下架)的结论标记: 归册见此标记不信 album, 且清掉假海报
     static let noMatch = "⊘无同名"
 }
@@ -63,6 +65,8 @@ enum SeriesMetaStore {
         }
         var m = SeriesMeta()
         m.title = title
+        // v1.10.90 重新认档/覆盖重拉时保住人工"钦定单剧"印章
+        m.solo = SeriesMetaStore.load(dir)?.solo ?? false
         m.total = s.episodeCount
         m.desc = s.description.trimmingCharacters(in: .whitespacesAndNewlines)
         m.heat = big(s.heat)
@@ -102,7 +106,6 @@ enum SeriesMetaStore {
         let list = app.dramaSeries
         guard !list.isEmpty else { progress("剧库是空的"); return }
         var ok = 0, cleared = 0, skipped = 0
-        let enc = JSONEncoder()
         for (i, s) in list.enumerated() {
             if Task.isCancelled { break }
             // v1.10.89 老档案没验过身份证(svrTitle 空)的会重拉一轮全库换证
@@ -111,10 +114,17 @@ enum SeriesMetaStore {
                 continue
             }
             progress("验明正身 \(i + 1)/\(list.count)：\(s.name)")
-            // v1.10.89 只认严格同名(旧 ?? first 兜底=抖音版云渺被安上云渺1户口的冤案源头)
-            guard let pg = try? await Hongguo.attempt(c, { try await c.search(s.name) }),
-                  let hit = pg.items.first(where: { $0.title == s.name }),
-                  !hit.id.isEmpty else {
+            // v1.10.90 搜索口失败(限流/瞬抖)不写"查无"结论, 下次再来; 只有搜到了没同名才算无同名
+            let r = try? await Hongguo.attempt(c, { try await c.search(s.name) })
+            guard let pg = r else {
+                try? await Task.sleep(nanoseconds: 1_200_000_000)
+                continue
+            }
+            if let hit = pg.items.first(where: { $0.title == s.name }), !hit.id.isEmpty {
+                await harvest(c, sid: hit.id, title: s.name, dir: s.url)
+                if FileManager.default.fileExists(atPath: file(s.url).path) { ok += 1 }
+                try? await Task.sleep(nanoseconds: 900_000_000)   // 匿名口温和
+            } else {
                 // 红果查无同名: 写死结论防反复白跑; 顺手卸掉可能攀错的 album 与假海报
                 if var old = SeriesMetaStore.load(s.url) {
                     old.albumFetched = true
@@ -125,15 +135,11 @@ enum SeriesMetaStore {
                         try? FileManager.default.removeItem(at: s.url.appendingPathComponent("封面.jpg"))
                         old.cover = false
                     }
-                    if let j = try? enc.encode(old) { try? j.write(to: file(s.url)) }
+                    if let j = try? JSONEncoder().encode(old) { try? j.write(to: file(s.url)) }
                     cleared += 1
                 }
                 try? await Task.sleep(nanoseconds: 400_000_000)
-                continue
             }
-            await harvest(c, sid: hit.id, title: s.name, dir: s.url)
-            if FileManager.default.fileExists(atPath: file(s.url).path) { ok += 1 }
-            try? await Task.sleep(nanoseconds: 900_000_000)   // 匿名口温和
         }
         progress("补齐完成：新验 \(ok) 部 · 卸错档案 \(cleared) 部 · 已带证跳过 \(skipped) 部")
     }
