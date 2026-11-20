@@ -1,38 +1,39 @@
 import SwiftUI
 
-// MARK: - 藏（本地仓库）：影｜音｜藏｜画｜私 一段一屏(v1.10.94 方案A第二刀: 全扁平,
-// 杀掉了 外层三段×视频库内层四段 的俄罗斯套娃; 每段自带搜索/排序, 不再叠切换器)
+// MARK: - 藏（本地仓库）：影｜剧｜音｜★｜私 (v1.10.104 IA 终局: 藏退 tab 收进场书架入口,
+// 画段让位 QuickPic 外部项目(图仍在 Documents/画廊/ 一张不丢); 剧段=原场·书架 DramaView 并入)
 
 struct StashHubView: View {
     @EnvironmentObject var app: AppState
     @State private var seg = 0
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                Picker("", selection: $seg) {
-                    Text("影").tag(0)
-                    Text("音").tag(1)
-                    Text("★").tag(2)      // 收藏: 用星避与 tab 名"藏"撞字
-                    Text("画").tag(3)
-                    Text("私").tag(4)
-                }
-                .pickerStyle(.segmented)
-                .padding([.horizontal], 14)
-                .padding(.vertical, 8)
+        // v1.10.104 摘掉自带 NavigationStack: 现在挂在场栈里(push 目的地), 防双层套娃
+        VStack(spacing: 0) {
+            Picker("", selection: $seg) {
+                Text("影").tag(0)
+                Text("剧").tag(1)
+                Text("音").tag(2)
+                Text("★").tag(3)      // 收藏: 用星避与 tab 名"藏"撞字
+                Text("私").tag(4)
+            }
+            .pickerStyle(.segmented)
+            .padding([.horizontal], 14)
+            .padding(.vertical, 8)
 
-                Group {
-                    switch seg {
-                    case 0: LibraryView(kind: 0)
-                    case 1: LibraryView(kind: 2)
-                    case 2: LibraryView(kind: 3)
-                    case 3: GalleryHomeView()
-                    case 4: PrivateView()
-                    default: LibraryView(kind: 0)
-                    }
+            Group {
+                switch seg {
+                case 0: LibraryView(kind: 0)
+                case 1: DramaView()
+                case 2: LibraryView(kind: 2)
+                case 3: LibraryView(kind: 3)
+                case 4: PrivateView()
+                default: LibraryView(kind: 0)
                 }
             }
         }
+        .navigationTitle("藏")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 

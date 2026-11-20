@@ -950,7 +950,7 @@ extension View {
             case .actorGo(let a): ActorPage(uid: a.uid, name: a.name)
             case .actor(let a): ActorResolveView(name: a.name)
             case .search: TheaterSearchTab(vm: disc, rails: rails)
-            case .shelf: DramaView()   // v1.10.93 书架(原藏·剧整面墙搬来)
+            case .shelf: StashHubView()   // v1.10.104 藏全面入驻书架: 影|剧|音|★|私 五段(画段让位 QuickPic)
             }
         }
     }

@@ -26,7 +26,7 @@ enum Orient {
     }
 }
 
-enum Tab: Hashable { case pick, feed, stash, theater }   // v1.10.95 映退tab: 播放已由 藏·inline + 场·连播 + 坊 全覆盖, PlayerView 留档
+enum Tab: Hashable { case pick, feed, play, theater }   // v1.10.104 终局IA: 拾|坊|映|场; 映复活放映厅, 藏收进场书架
 
 @MainActor
 final class AppState: ObservableObject {
@@ -38,7 +38,12 @@ final class AppState: ObservableObject {
     @Published var privateUnlocked = false
     @Published var favorites: Set<String> = []
     @Published var current: VideoItem?
-    @Published var aspectFill = true
+    // v1.10.104 全播放器默认"适配"(不裁切不拉伸 留边), 用户手动切拉伸后记住选择
+    @Published var aspectFill: Bool { didSet { UserDefaults.standard.set(aspectFill, forKey: "boxAspectFill") } }
+    init() {
+        videos = []
+        aspectFill = UserDefaults.standard.object(forKey: "boxAspectFill") as? Bool ?? false
+    }
     @Published var order: [String] = []
     @Published var idx = -1
     @Published var selection: Tab = .pick
@@ -74,7 +79,7 @@ final class AppState: ObservableObject {
     static let shared = AppState()
     let keepAlive = BGKeepAlive()
 
-    var immersive: Bool { selection == .feed && !revealUI }
+    var immersive: Bool { (selection == .feed || selection == .play) && !revealUI }
 
     // 灵动岛“开始下载”按钮 → 回 App 自动解析+下最优档
     func islandDownload(_ link: String) {
@@ -281,11 +286,11 @@ struct RootView: View {
                 .tabItem { Label("拾", systemImage: "tray.and.arrow.down") }.tag(Tab.pick)
             TheaterFeedView()
                 .tabItem { Label("坊", systemImage: "rectangle.stack") }.tag(Tab.feed)
-            StashHubView()
-                .tabItem { Label("藏", systemImage: "books.vertical") }.tag(Tab.stash)
-                .badge(app.subsBadge)
+            PlayerView()
+                .tabItem { Label("映", systemImage: "play.rectangle") }.tag(Tab.play)
             TheaterHomeView()
                 .tabItem { Label("场", systemImage: "ticket") }.tag(Tab.theater)
+                .badge(app.subsBadge)
         }
         .fullScreenCover(item: $app.coverVideo) { v in
             InlinePlayer(video: v).environmentObject(app)
@@ -309,7 +314,7 @@ struct RootView: View {
             }
         }
         .onChange(of: app.selection) { sel in
-            if sel != .stash { app.privateUnlocked = false }
+            if sel != .theater { app.privateUnlocked = false }   // v1.10.104 藏在场栈 modal/push 内, 离场页才锁
         }
         .onChange(of: scenePhase) { p in
             if p == .active { BoxIsland.checkStale() }        // 前台补刀：卡"下载中"立刷终态
