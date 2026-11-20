@@ -498,6 +498,23 @@ enum HGCurrent {
                 ("need_personal_recommend", "1"), ("player_so_load", "1"), ("is_android_pad_screen", "0"), ("openudid", openudid)]
     }
 
+    // MARK: - 软拒熔断 (v1.10.99, 学 iDuanJu playerBlockedUntil)
+    // 现象: 连打几十枪后该出口 IP 被网关整轮 200+len=0 (换号无效, 11-20 下午真机案),
+    // 继续枪林弹雨只会加深黑名单。熔断 = 全线空后熄火 5 分钟, 期间 resolve 直接劝退,
+    // 文案指路飞行模式换 IP; 设置里"重置红果匿名设备"可当场清熔断。
+    static let softBlockKey = "hgSoftBlockUntil"
+    static var softBlocked: Bool { Date().timeIntervalSince1970 < UserDefaults.standard.double(forKey: softBlockKey) }
+    static var softBlockLeft: Int { max(0, Int(UserDefaults.standard.double(forKey: softBlockKey) - Date().timeIntervalSince1970)) }
+    static func softBlock(secs: Int = 300, reason: String) {
+        // 只有本来就通/刚过期的口全空才值得熔断: 600s 封顶防叠罗汉
+        let until = Date().timeIntervalSince1970 + Double(secs)
+        if until > UserDefaults.standard.double(forKey: softBlockKey) {
+            UserDefaults.standard.set(until, forKey: softBlockKey)
+        }
+        HGTrail.note("softblock \(secs)s \(reason)")
+    }
+    static func clearSoftBlock() { UserDefaults.standard.removeObject(forKey: softBlockKey) }
+
     // MARK: - player batch 请求 (PC 实弹 11-20 午: 1080P 五档 + spade_a)
     static let curUA = "com.phoenix.read/73932 (Linux; U; Android 14; zh_CN; 23127PN0CC; Build/UKQ1.230804.001; Cronet/TTNetVersion:8d40f833 2026-03-03 QuicVersion:21ac1950 2025-11-18)"
     static let curHosts = ["https://api5-normal-sinfonlinea.fqnovel.com",
@@ -571,6 +588,7 @@ enum HGCurrent {
             if idx < vids.count { try? await Task.sleep(nanoseconds: 2_500_000_000) }
         }
         HGTrail.note("reserve done \(out.count)/\(vids.count)")
+        if out.isEmpty { softBlock(reason: "reserve 0/\(vids.count)") }
         return out
     }
 
@@ -615,6 +633,7 @@ enum HGCurrent {
             }
         }
         HGTrail.note("cur miss vid=\(vid)")
+        softBlock(reason: "cur miss \(vid.prefix(8))")
         return nil
     }
 }

@@ -37,11 +37,12 @@ struct SettingsView: View {
                     }
                 }
                 Section("红果短剧") {
-                    Button("重置红果匿名设备（被风控时空结果再用）") {
+                    Button("重置红果匿名设备（被风控/冷却熔断时用）") {
                         hgBusy = true
                         Task {
                             if let c = Hongguo.client { try? await c.resetDevice() }
-                            hgMsg = "已换新匿名设备，可重试红果链接"
+                            HGCurrent.clearSoftBlock()
+                            hgMsg = "已换新匿名设备并解除线路熔断，可重试红果链接（配合开关一次飞行模式换 IP 更稳）"
                             hgBusy = false
                         }
                     }

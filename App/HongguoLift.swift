@@ -568,6 +568,11 @@ enum HongguoLift {
     // MARK: tab 请求 + 解析（设备池内部自管；两口全回空 = 参考同款轮换一次）
     static func resolve(vid: String) async throws -> Lift {
         HGTrail.note("lift start vid=\(vid)")
+        // v1.10.99 软拒熔断期: 熄火装死, 别再往黑名单上撞枪口
+        if HGCurrent.softBlocked {
+            let mins = max(1, (HGCurrent.softBlockLeft + 59) / 60)
+            throw GError.failed("红果网关正在冷却咱这条出口线（约还需 \(mins) 分钟）。开关一次飞行模式换条线基本立刻就好；或等冷却后重投。设置里“重置红果匿名设备”可立刻解除熔断")
+        }
         // v1.10.97 新方言先行: HGCurrent 设备号本地现mint现换, 不会被注册口旧号
         // 记仇黏死 (11-20 中午全线回空悬案根因 = 6h 缓存号被网关拉黑, renew 也换不动)
         if let lift = await HGCurrent.attempt(vid: vid) {
