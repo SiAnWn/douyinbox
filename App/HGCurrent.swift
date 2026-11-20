@@ -505,16 +505,73 @@ enum HGCurrent {
                            "https://reading.snssdk.com"]
     static let curPath = "/novel/player/multi_video_model/player/v1"
 
-    static func batchBody(vid: String, level: Int) -> Data? {
+    static func batchBody(vid: String, level: Int) -> Data? { batchBody(vids: [vid], level: level) }
+    static func batchBody(vids: [String], level: Int) -> Data? {
         let obj: [String: Any] = [
             "biz_param": ["detail_page_version": 0, "device_level": level, "disable_digg_stat": false,
                           "disable_video_relate_book": false, "need_all_video_definition": true,
                           "need_mp4_align": false, "use_os_player": false, "use_server_dns": true,
                           "use_server_dns_scene": "cold_start_stage", "video_platform": 1024] as [String: Any],
             "dr_scene": "player",
-            "mixed_video_id_map": ["1004": [vid]],
+            "mixed_video_id_map": ["1004": vids],
         ]
         return try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys])
+    }
+
+    // 一次请求一批 vid 的取流 (真机 13:24 案: 逐集84连枪吃限流软拒 → 整剧一枪批发)
+    // 每 30 集一单, 单与单间歇 2.5s; 全空则换 mint 号重试一回合
+    static func attemptBatch(_ vids: [String]) async -> [String: HongguoLift.Lift] {
+        var out: [String: HongguoLift.Lift] = [:]
+        let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
+        guard let body = batchBody(vids: vids, level: 4) else { return out }
+        for shot in 0..<2 {
+            let dev = mint()
+            guard let signed = sign(pairs: pairsFor(dev), nowMillis: nowMs, deviceID: dev.did,
+                                    versionName: "7.3.9.32", body: [UInt8](body)) else { continue }
+            for host in curHosts {
+                guard let u = URL(string: host + curPath + "?" + signed.query) else { continue }
+                var req = URLRequest(url: u)
+                req.httpMethod = "POST"
+                req.httpBody = body
+                req.setValue(curUA, forHTTPHeaderField: "User-Agent")
+                for (k, v) in signed.headers where !v.isEmpty { req.setValue(v, forHTTPHeaderField: k) }
+                req.setValue("8662", forHTTPHeaderField: "x-ss-dp")
+                req.setValue("101", forHTTPHeaderField: "lc")
+                let ticket = Int64(signed.headers["x-ss-req-ticket"] ?? "") ?? 0
+                req.setValue("\(ticket)-\(Int64(Date().timeIntervalSince1970 * 1_000_000_000) & 0x7fff_ffff)",
+                             forHTTPHeaderField: "x-reading-request")
+                do {
+                    let (data, resp) = try await HongguoLift.direct.data(for: req)
+                    let hr = resp as? HTTPURLResponse
+                    let code = hr?.statusCode ?? -1
+                    HGTrail.note("curl r\(shot) \(hr?.url?.host ?? "?") http=\(code) len=\(data.count) n=\(vids.count) did=\(dev.did)")
+                    guard code == 200, data.count > 20,
+                          let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
+                    for v in vids {
+                        if out[v] == nil, let lift = HongguoLift.parseTab(j, vid: v) { out[v] = lift }
+                    }
+                    if !out.isEmpty { return out }
+                } catch {
+                    HGTrail.note("curl net " + String(String(describing: error).prefix(60)))
+                }
+            }
+        }
+        return out
+    }
+
+    static func reserve(vids: [String]) async -> [String: HongguoLift.Lift] {
+        var out: [String: HongguoLift.Lift] = [:]
+        var idx = 0
+        while idx < vids.count {
+            let chunk = Array(vids[idx..<min(idx + 30, vids.count)])
+            idx += 30
+            let got = await attemptBatch(chunk)
+            out.merge(got) { a, _ in a }
+            if got.isEmpty { HGTrail.note("reserve chunk@\(idx) 全空") }
+            if idx < vids.count { try? await Task.sleep(nanoseconds: 2_500_000_000) }
+        }
+        HGTrail.note("reserve done \(out.count)/\(vids.count)")
+        return out
     }
 
     /// 新方言取流: 两轮, 每轮现造新设备号 (回空=丢号重造, 绝不守死一个)

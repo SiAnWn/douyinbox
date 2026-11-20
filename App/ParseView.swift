@@ -526,6 +526,12 @@ struct ParseView: View {
             let n = list.count
             let seriesName = Naming.sanitize(res.title)
             var okN = 0, failN = 0
+            // v1.10.98 批发取址: 逐集连枪吃网关软拒(真机13:24第24集案), batch 口一单30集
+            var reservations: [String: HongguoLift.Lift] = [:]
+            if n > 1 {
+                status = "红果批量取址（一单打包全剧）…"
+                reservations = await HGCurrent.reserve(vids: list.map { $0.id })
+            }
             for (i, ep) in list.enumerated() {
                 if Task.isCancelled { break }
                 let num = ep.number > 0 ? ep.number : i + 1
@@ -534,6 +540,17 @@ struct ParseView: View {
                     okN += 1
                     progress = Double(i + 1) / Double(n)
                     continue
+                }
+                // 预订单命中: 流地址早已批发到手, 直接下载不再碰取流口(免限流)
+                if let lf0 = reservations[ep.id] {
+                    status = String(format: "红果 %d/%d · 预订单直取 %@", i + 1, n, lf0.definition)
+                    let (done, why) = await saveLift(lf0, rel: rel)
+                    if done {
+                        okN += 1
+                        progress = Double(i + 1) / Double(n)
+                        continue
+                    }
+                    HGTrail.note("reserve miss ep\(num) \(why.prefix(60)) → 走单车道")
                 }
                 status = String(format: "红果 %d/%d 集 · %@", i + 1, n, def)
                 var savedOK = false
@@ -563,22 +580,7 @@ struct ParseView: View {
                             }
                             let lf = try await HongguoLift.resolve(vid: ep.id)
                             status = "lift 注册设备取流 \(lf.definition)，下载中…"
-                            let tmpL = try await HongguoLift.download(lf.url)
-                            if lf.keyHex.isEmpty {
-                                liftOK = SavePaths.write(tmpL, rel: rel)
-                                if !liftOK { liftWhy = "lift 明文存盘失败" }
-                            } else if let data = try? Data(contentsOf: tmpL),
-                                      let clear = CencMP4.decrypt(data, keyHex: lf.keyHex) {
-                                let dest = SavePaths.docs.appendingPathComponent(rel)
-                                try? FileManager.default.createDirectory(at: dest.deletingLastPathComponent(),
-                                                                         withIntermediateDirectories: true)
-                                try? FileManager.default.removeItem(at: dest)
-                                liftOK = (try? clear.write(to: dest)) != nil
-                                if !liftOK { liftWhy = "lift 解密后存盘失败" }
-                            } else {
-                                liftWhy = "lift 解密失败 key=\(lf.keyHex.prefix(8))…"
-                            }
-                            try? FileManager.default.removeItem(at: tmpL)
+                            (liftOK, liftWhy) = await saveLift(lf, rel: rel)
                         } catch let e { liftWhy = "lift " + e.localizedDescription }
                         if liftOK {
                             lastWhy = ""
@@ -662,6 +664,30 @@ struct ParseView: View {
         } catch {
             showProgress = false
             status = "红果失败：\(error.localizedDescription)"
+        }
+    }
+
+    //  lift/预订单 通用落盘: 下载 → (有 key 则 CENC 解密) → 写库, 返回 (成功?, 失败原因)
+    private func saveLift(_ lf: HongguoLift.Lift, rel: String) async -> (Bool, String) {
+        do {
+            let tmpL = try await HongguoLift.download(lf.url)
+            defer { try? FileManager.default.removeItem(at: tmpL) }
+            if lf.keyHex.isEmpty {
+                if SavePaths.write(tmpL, rel: rel) { return (true, "") }
+                return (false, "明文存盘失败")
+            }
+            guard let data = try? Data(contentsOf: tmpL),
+                  let clear = CencMP4.decrypt(data, keyHex: lf.keyHex) else {
+                return (false, "解密失败 key=\(lf.keyHex.prefix(8))…")
+            }
+            let dest = SavePaths.docs.appendingPathComponent(rel)
+            try? FileManager.default.createDirectory(at: dest.deletingLastPathComponent(),
+                                                     withIntermediateDirectories: true)
+            try? FileManager.default.removeItem(at: dest)
+            if (try? clear.write(to: dest)) != nil { return (true, "") }
+            return (false, "解密后存盘失败")
+        } catch let e {
+            return (false, "下载 " + e.localizedDescription)
         }
     }
 
