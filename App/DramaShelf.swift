@@ -262,6 +262,12 @@ struct ShelfGrid<Destination: View>: View {
         .sheet(item: $rebind) { s in
             RebindSheet(s: s) { bump += 1 }
         }
+        // v1.10.105 开门自动补档案: 补到几条就重踢分组, 老千+老千2 这类真系列进门即合册
+        .onAppear {
+            Task { @MainActor in
+                if await SeriesMetaStore.autoCheck(source) > 0 { bump += 1 }
+            }
+        }
     }
 
     private func clearMeta(_ s: Series) {

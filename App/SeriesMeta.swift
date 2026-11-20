@@ -143,6 +143,34 @@ enum SeriesMetaStore {
         }
         progress("补齐完成：新验 \(ok) 部 · 卸错档案 \(cleared) 部 · 已带证跳过 \(skipped) 部")
     }
+
+    /// v1.10.105 剧墙开门自动验明正身: 老千/老千2 案——官方 related 金标准一直有,
+    /// 只是档案没拉到头上就不合册。开门补没档的, 温和限速, 搜不到先跳过不写死(留给手动按钮)
+    @MainActor
+    static func autoCheck(_ list: [Series]) async -> Int {
+        guard let c = Hongguo.client else { return 0 }
+        var need = list.filter { s in
+            guard let old = SeriesMetaStore.load(s.url) else { return true }
+            return !old.albumFetched
+        }
+        need = Array(need.prefix(15))
+        var ok = 0
+        for s in need {
+            if Task.isCancelled { break }
+            let r = try? await Hongguo.attempt(c, { try await c.search(s.name) })
+            guard let pg = r else {
+                try? await Task.sleep(nanoseconds: 1_200_000_000)
+                continue
+            }
+            if let hit = pg.items.first(where: { $0.title == s.name }), !hit.id.isEmpty {
+                await harvest(c, sid: hit.id, title: s.name, dir: s.url)
+                if FileManager.default.fileExists(atPath: file(s.url).path) { ok += 1 }
+            }
+            try? await Task.sleep(nanoseconds: 900_000_000)
+        }
+        HGTrail.note("shelf autocheck done=\(ok)/\(need.count)")
+        return ok
+    }
 }
 
 // 离线弹幕仓库(v1.10.14): 短剧/<剧>/弹幕.json = {"集号":[{t毫秒,x文本}...]}
