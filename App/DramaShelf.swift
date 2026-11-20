@@ -13,12 +13,47 @@ struct ShelfGroup: Identifiable, Hashable {
 }
 
 enum DramaShelf {
+    // v1.10.86 真机定案: 红果多季真名是"云渺1：我修仙多年强亿点怎么了"数字在**中间带冒号**,
+    // 只剥尾巴永远合不上 → 加规则0 从名字里第一个数字块就地切主标题
+    static let seps: Set<Character> = ["：", ":", "-", "－", "—", "·"]
+    static let zhDigits: Set<Character> = ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十", "两"]
+
+    private static func cutPre(_ chars: [Character], _ i: Int) -> String? {
+        var pre = String(chars[0..<i]).trimmingCharacters(in: trimSet)
+        while pre.hasSuffix("第") {
+            pre = String(pre.dropLast()).trimmingCharacters(in: trimSet)
+        }
+        return pre.count >= 2 ? pre : nil
+    }
+
+    static func midBase(_ name: String) -> String? {
+        let chars = Array(name)
+        var i = 0
+        while i < chars.count {
+            let c = chars[i]
+            if c.isASCII, c.isNumber {
+                var j = i
+                while j < chars.count, chars[j].isASCII, chars[j].isNumber { j += 1 }
+                if j < chars.count, seps.contains(chars[j]) || chars[j] == "季" || chars[j] == "部" {
+                    return cutPre(chars, i)
+                }
+                return nil   // "18岁那年": 数字后是字不是分隔符, 只判第一个数字块
+            }
+            if zhDigits.contains(c), i + 1 < chars.count, chars[i + 1] == "季" || chars[i + 1] == "部" {
+                return cutPre(chars, i)
+            }
+            i += 1
+        }
+        return nil
+    }
+
     // 尾巴季号剥离: "第N季/部"、"-N"、" N"、裸"N"、"Season N"、汉字季
     // 对拍(shelf_test.py)补三刀: 裸尾数\d{1,3}也剥(红果第二季官方名就叫"云渺2")、
     // 切完的尾巴把 ·－—_ 等连接符一并 trim、光杆"二季"也能剥
     static let trimSet = CharacterSet(charactersIn: " \t\u{3000}-－—_·")
 
     static func base(_ name: String) -> String {
+        if let m = midBase(name) { return m }
         var n = name.trimmingCharacters(in: trimSet)
         let zh = "[一二三四五六七八九十两]"
         var guard0 = 0
@@ -42,8 +77,23 @@ enum DramaShelf {
         return n.isEmpty ? name : n
     }
 
-    // 季号(排序用): 从原名尾提取, 取不到=0
+    // 季号(排序用): 先就地找"数字块+冒号/季部"(云渺1：xxx), 再退尾巴老规矩, 取不到=0
     static func seasonNo(_ name: String) -> Int {
+        let chars = Array(name)
+        var i = 0
+        while i < chars.count {
+            let c = chars[i]
+            if c.isASCII, c.isNumber {
+                var j = i
+                while j < chars.count, chars[j].isASCII, chars[j].isNumber { j += 1 }
+                if j < chars.count, seps.contains(chars[j]) || chars[j] == "季" || chars[j] == "部" {
+                    return Int(String(chars[i..<j])) ?? 0
+                }
+                if j == chars.count, i > 0 { return Int(String(chars[i..<j])) ?? 0 }
+                break
+            }
+            i += 1
+        }
         let zhMap = ["一": 1, "二": 2, "三": 3, "四": 4, "五": 5,
                      "六": 6, "七": 7, "八": 8, "九": 9, "十": 10, "两": 2]
         if let r = name.range(of: "(第\\s*(\\d+)\\s*[季部]|(\\d+)\\s*[季部]|season\\s*(\\d+))$",
@@ -52,14 +102,13 @@ enum DramaShelf {
             return Int(digits) ?? 0
         }
         for (ch, v) in zhMap {
-            if name.range(of: "第\\s*" + ch + "\\s*[季部]$", options: .regularExpression) != nil { return v }
-            if name.range(of: "[\\-－—_·\\s]" + ch + "\\s*[季部]$", options: .regularExpression) != nil { return v }
+            if name.range(of: "第\\s*" + ch + "\\s*[季部]", options: .regularExpression) != nil { return v }
+            if name.range(of: "[\\-－—_·\\s]" + ch + "\\s*[季部]", options: .regularExpression) != nil { return v }
         }
         if let r = name.range(of: "[\\-－—_·\\s](\\d{1,3})$", options: .regularExpression) {
             let digits = name[r].filter { $0.isNumber }
             return Int(digits) ?? 0
         }
-        // 裸尾数 "云渺2" (前缀须非数字, 防把剧名整体吃掉)
         if let r = name.range(of: "(?<=[^0-9])\\d{1,3}$", options: .regularExpression),
            name.count > 3 {
             return Int(name[r]) ?? 0
