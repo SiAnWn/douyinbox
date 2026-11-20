@@ -568,6 +568,12 @@ enum HongguoLift {
     // MARK: tab 请求 + 解析（设备池内部自管；两口全回空 = 参考同款轮换一次）
     static func resolve(vid: String) async throws -> Lift {
         HGTrail.note("lift start vid=\(vid)")
+        // v1.10.97 新方言先行: HGCurrent 设备号本地现mint现换, 不会被注册口旧号
+        // 记仇黏死 (11-20 中午全线回空悬案根因 = 6h 缓存号被网关拉黑, renew 也换不动)
+        if let lift = await HGCurrent.attempt(vid: vid) {
+            HGTrail.note("lift ok cur def=\(lift.definition) \(lift.width)x\(lift.height) key=\(lift.keyHex.isEmpty ? "none" : String(lift.keyHex.prefix(8))) url=" + String(lift.url.absoluteString.prefix(90)))
+            return lift
+        }
         var lastErr = "空响应"
         for round in 0..<2 {
             let dev = try await device(renew: round > 0)
@@ -642,17 +648,25 @@ enum HongguoLift {
         throw GError.failed("lift: " + lastErr)
     }
 
+    // v1.10.97 新方言 (HGCurrent) 的 item 里 video_meta/encrypt_info 可能是 JSON 字符串
+    // (老 tab 口是 dict), 统一一个剥壳器给 digInt/digStr/ei 用
+    private static func metaDict(_ item: [String: Any], _ field: String = "video_meta") -> [String: Any]? {
+        if let m = item[field] as? [String: Any] { return m }
+        if let s = item[field] as? String, let d = s.data(using: .utf8),
+           let m = try? JSONSerialization.jsonObject(with: d) as? [String: Any] { return m }
+        return nil
+    }
     private static func digInt(_ d: [String: Any], _ k: String) -> Int {
         if let n = d[k] as? NSNumber { return n.intValue }
         if let s = d[k] as? String, let dv = Double(s) { return Int(dv) }
-        if let m = d["video_meta"] as? [String: Any] {
+        if let m = metaDict(d) {
             if let n = m[k] as? NSNumber { return n.intValue }
             if let s = m[k] as? String, let dv = Double(s) { return Int(dv) }
         }
         return 0
     }
     private static func digStr(_ d: [String: Any], _ k: String) -> String {
-        (d[k] as? String) ?? ((d["video_meta"] as? [String: Any])?[k] as? String) ?? ""
+        (d[k] as? String) ?? (metaDict(d)?[k] as? String) ?? ""
     }
     // 参考假值集合 [false,0,'0','false']=明文可用; 缺失(=nil)按参考属'缺解密信息'→ 不可用
     private static func isPlainFlag(_ v: Any?) -> Bool {
@@ -694,7 +708,8 @@ enum HongguoLift {
         for (_, raw) in vl {
             guard let item = raw as? [String: Any] else { continue }
             let codec = digStr(item, "codec_type").lowercased()
-            guard ["h264", "avc", "avc1", "hevc", "h265", "hvc1", "hev1", "bytevc1"].contains(codec) else { continue }
+            // v1.10.97: 新方言 item 不带 codec_type (gear_des_key 标 h265), 空 codec 放行
+            guard codec.isEmpty || ["h264", "avc", "avc1", "hevc", "h265", "hvc1", "hev1", "bytevc1"].contains(codec) else { continue }
             var w = digInt(item, "vwidth")
             var hh = digInt(item, "vheight")
             if w == 0 { w = digInt(item, "width") }
@@ -703,7 +718,7 @@ enum HongguoLift {
             var def = digStr(item, "quality_desc")
             if def.isEmpty { def = digStr(item, "definition") }
             var keyHex = ""
-            let ei = item["encrypt_info"] as? [String: Any]
+            let ei = metaDict(item, "encrypt_info")
             var spade = digStr(item, "spade_a")
             if spade.isEmpty, let e2 = ei { spade = (e2["spade_a"] as? String) ?? "" }
             if !spade.isEmpty { keyHex = spadeKey(spade) ?? "" }
