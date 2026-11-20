@@ -376,11 +376,45 @@ private struct RebindSheet: View {
             guard let c = Hongguo.client else {
                 busy = false; note = "红果引擎未就绪"; return
             }
+            // v1.10.90b 红果搜索口会藏剧(《云渺》搜索就是搜不到 分享链接却是正主)
+            // → 粘贴红果分享消息/链接/纯系列id 直接认档 绕过搜索
+            if let sid = await linkSid(q) {
+                await bind(sid, "红果分享链接")
+                return
+            }
             let r = try? await Hongguo.attempt(c, { try await c.search(q) })
             rows = (r?.items ?? []).filter { $0.episodeCount > 0 }
-            if rows.isEmpty { note = "「\(q)」红果没搜到, 换个词(试试主演名)" }
+            if rows.isEmpty { note = "「\(q)」红果没搜到 — 也可能是它搜索口藏剧: 去红果App点分享把链接粘进来" }
             busy = false
         }
+    }
+
+    // 从分享消息里揪系列id: http链接(跟随302看落点query) 或用户直接粘的15位以上纯数字
+    private func linkSid(_ text: String) async -> String? {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let r = t.range(of: "video_series_id=(\\d{10,})", options: .regularExpression) {
+            let digits = String(t[r]).filter { $0.isNumber }
+            if digits.count >= 10 { return digits }
+        }
+        if let r = t.range(of: "\\d{15,}", options: .regularExpression),
+           t.trimmingCharacters(in: CharacterSet(charactersIn: "0123456789")).isEmpty {
+            return String(t[r])
+        }
+        guard let u = t.range(of: "https?://\\S+", options: .regularExpression) else { return nil }
+        let urlStr = String(t[u])
+        guard let u2 = URL(string: urlStr) else { return nil }
+        var req = URLRequest(url: u2)
+        req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
+                     forHTTPHeaderField: "User-Agent")
+        req.timeoutInterval = 10
+        guard let (_, resp) = try? await URLSession.shared.data(for: req),
+              let hu = resp as? HTTPURLResponse,
+              let eff = hu.url?.absoluteString else { return nil }
+        if let r = eff.range(of: "video_series_id=(\\d{10,})", options: .regularExpression) {
+            let digits = String(eff[r]).filter { $0.isNumber }
+            if digits.count >= 10 { return digits }
+        }
+        return nil
     }
 
     private func bind(_ sid: String, _ title: String) {
