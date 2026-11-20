@@ -120,7 +120,8 @@ enum SeriesMetaStore {
                 try? await Task.sleep(nanoseconds: 1_200_000_000)
                 continue
             }
-            if let hit = pg.items.first(where: { $0.title == s.name }), !hit.id.isEmpty {
+            // v1.10.106 同名比对抹空格标点(老千 2 文件夹带空格 官方名不带 一字不差卡死验身)
+            if let hit = pg.items.first(where: { DramaShelf.norm($0.title) == DramaShelf.norm(s.name) }), !hit.id.isEmpty {
                 await harvest(c, sid: hit.id, title: s.name, dir: s.url)
                 if FileManager.default.fileExists(atPath: file(s.url).path) { ok += 1 }
                 try? await Task.sleep(nanoseconds: 900_000_000)   // 匿名口温和
@@ -151,7 +152,9 @@ enum SeriesMetaStore {
         guard let c = Hongguo.client else { return 0 }
         var need = list.filter { s in
             guard let old = SeriesMetaStore.load(s.url) else { return true }
-            return !old.albumFetched
+            // v1.10.106 旧版 exact 比对会把"老千 2"这类带空格文件夹误写成查无结论 → noMatch 也复审
+            if old.albumFetched && old.svrTitle != SeriesMeta.noMatch { return false }
+            return true
         }
         need = Array(need.prefix(15))
         var ok = 0
@@ -162,7 +165,7 @@ enum SeriesMetaStore {
                 try? await Task.sleep(nanoseconds: 1_200_000_000)
                 continue
             }
-            if let hit = pg.items.first(where: { $0.title == s.name }), !hit.id.isEmpty {
+            if let hit = pg.items.first(where: { DramaShelf.norm($0.title) == DramaShelf.norm(s.name) }), !hit.id.isEmpty {
                 await harvest(c, sid: hit.id, title: s.name, dir: s.url)
                 if FileManager.default.fileExists(atPath: file(s.url).path) { ok += 1 }
             }
