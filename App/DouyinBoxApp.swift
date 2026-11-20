@@ -26,7 +26,7 @@ enum Orient {
     }
 }
 
-enum Tab: Hashable { case pick, feed, play, stash, theater }
+enum Tab: Hashable { case pick, feed, stash, theater }   // v1.10.95 映退tab: 播放已由 藏·inline + 场·连播 + 坊 全覆盖, PlayerView 留档
 
 @MainActor
 final class AppState: ObservableObject {
@@ -74,7 +74,7 @@ final class AppState: ObservableObject {
     static let shared = AppState()
     let keepAlive = BGKeepAlive()
 
-    var immersive: Bool { (selection == .play || selection == .feed) && !revealUI }
+    var immersive: Bool { selection == .feed && !revealUI }
 
     // 灵动岛“开始下载”按钮 → 回 App 自动解析+下最优档
     func islandDownload(_ link: String) {
@@ -272,8 +272,7 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     private var tabOrientMask: UIInterfaceOrientationMask {
-        if app.selection == .play { return .all }
-        return .portrait
+        .portrait   // v1.10.95 映退tab后无人常驻横屏; InlinePlayer 横屏钮走 Orient 自请求
     }
 
     var body: some View {
@@ -282,16 +281,11 @@ struct RootView: View {
                 .tabItem { Label("拾", systemImage: "tray.and.arrow.down") }.tag(Tab.pick)
             TheaterFeedView()
                 .tabItem { Label("坊", systemImage: "rectangle.stack") }.tag(Tab.feed)
-            PlayerView()
-                .tabItem { Label("映", systemImage: "play.rectangle") }.tag(Tab.play)
             StashHubView()
                 .tabItem { Label("藏", systemImage: "books.vertical") }.tag(Tab.stash)
                 .badge(app.subsBadge)
             TheaterHomeView()
                 .tabItem { Label("场", systemImage: "ticket") }.tag(Tab.theater)
-        }
-        .onChange(of: app.selection) { sel in
-            if sel != .play { Orient.forcePortrait() }
         }
         .fullScreenCover(item: $app.coverVideo) { v in
             InlinePlayer(video: v).environmentObject(app)
