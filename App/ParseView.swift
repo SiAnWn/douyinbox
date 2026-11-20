@@ -494,6 +494,18 @@ struct ParseView: View {
     private func hongguoRun(_ res: ParseResult, _ opt: QualityOption) async {
         app.keepAlive.start()    // 老 BGKeepAlive: 红果批量是进程内串行, 不吃后台会话待遇必须续命
         await hongguoRunBody(res, opt)
+        // v1.10.102 灰度自救: 红果这两天开关门像电风扇(12:36开/13:39关/16:45开/17:35关),
+        // 批量一集没吞到且正踩熔断 → 原地等 120s 放闸, 清熔断自动再战一轮, 免用户手动重投
+        if !Task.isCancelled, HGCurrent.softBlocked,
+           status.hasPrefix("红果失败于") || status.hasPrefix("红果下载失败") {
+            let mins = max(1, (HGCurrent.softBlockLeft + 59) / 60)
+            status = "红果灰度关门了，等 \(mins) 分钟自动再战…"
+            try? await Task.sleep(nanoseconds: 120_000_000_000)
+            if !Task.isCancelled {
+                HGCurrent.clearSoftBlock()
+                await hongguoRunBody(res, opt)
+            }
+        }
         app.keepAlive.stop()
     }
 

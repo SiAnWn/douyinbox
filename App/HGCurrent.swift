@@ -521,6 +521,8 @@ enum HGCurrent {
                            "https://api5-normal-sinfonlineb.fqnovel.com",
                            "https://reading.snssdk.com"]
     static let curPath = "/novel/player/multi_video_model/player/v1"
+    // v1.10.102: 雷达扫出 apk 埋着的新门(11-20 服务端搬迁), 双门轮换防灰度摇摆
+    static let curPathNew = "/novel/player/multi_video_model/v1/"
 
     static func batchBody(vid: String, level: Int) -> Data? { batchBody(vids: [vid], level: level) }
     static func batchBody(vids: [String], level: Int) -> Data? {
@@ -546,7 +548,8 @@ enum HGCurrent {
             guard let signed = sign(pairs: pairsFor(dev), nowMillis: nowMs, deviceID: dev.did,
                                     versionName: "7.3.9.32", body: [UInt8](body)) else { continue }
             for host in curHosts {
-                guard let u = URL(string: host + curPath + "?" + signed.query) else { continue }
+              for door in [curPathNew, curPath] {   // v102 双门轮换
+                guard let u = URL(string: host + door + "?" + signed.query) else { continue }
                 var req = URLRequest(url: u)
                 req.httpMethod = "POST"
                 req.httpBody = body
@@ -571,6 +574,7 @@ enum HGCurrent {
                 } catch {
                     HGTrail.note("curl net " + String(String(describing: error).prefix(60)))
                 }
+              }   // for door
             }
         }
         return out
@@ -605,7 +609,8 @@ enum HGCurrent {
                 continue
             }
             for host in curHosts {
-                guard let u = URL(string: host + curPath + "?" + signed.query) else { continue }
+              for door in [curPathNew, curPath] {   // v102 双门轮换
+                guard let u = URL(string: host + door + "?" + signed.query) else { continue }
                 var req = URLRequest(url: u)
                 req.httpMethod = "POST"
                 req.httpBody = body
@@ -631,6 +636,7 @@ enum HGCurrent {
                 } catch {
                     HGTrail.note("cur net " + String(String(describing: error).prefix(60)))
                 }
+              }   // for door
             }
         }
         HGTrail.note("cur miss vid=\(vid)")
