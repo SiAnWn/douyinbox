@@ -573,18 +573,16 @@ enum HongguoLift {
             let mins = max(1, (HGCurrent.softBlockLeft + 59) / 60)
             throw GError.failed("红果网关正在冷却咱这条出口线（约还需 \(mins) 分钟）。开关一次飞行模式换条线基本立刻就好；或等冷却后重投。设置里“重置红果匿名设备”可立刻解除熔断")
         }
-        // v1.10.97 新方言先行: HGCurrent 设备号本地现mint现换, 不会被注册口旧号
-        // 记仇黏死 (11-20 中午全线回空悬案根因 = 6h 缓存号被网关拉黑, renew 也换不动)
-        if let lift = await HGCurrent.attempt(vid: vid) {
-            HGTrail.note("lift ok cur def=\(lift.definition) \(lift.width)x\(lift.height) key=\(lift.keyHex.isEmpty ? "none" : String(lift.keyHex.prefix(8))) url=" + String(lift.url.absoluteString.prefix(90)))
-            return lift
-        }
         var lastErr = "空响应"
         for round in 0..<2 {
+            // v1.10.101 顺序重整: V5(带11-20新门)先行 — 它是当下活口; 新方言(免注册mint号)第二把交椅
             let dev = try await device(renew: round > 0)
-            // V5 手机端新协议先行(上游 openhongguo PR#13 同套)，失败落回 video_tab 五头
             if let lift = await HGV5.attempt(vid: vid, dev: dev) {
                 HGTrail.note("lift ok v5 def=\(lift.definition) \(lift.width)x\(lift.height) key=\(lift.keyHex.isEmpty ? "none" : String(lift.keyHex.prefix(8))) url=" + String(lift.url.absoluteString.prefix(90)))
+                return lift
+            }
+            if let lift = await HGCurrent.attempt(vid: vid) {
+                HGTrail.note("lift ok cur def=\(lift.definition) \(lift.width)x\(lift.height) key=\(lift.keyHex.isEmpty ? "none" : String(lift.keyHex.prefix(8))) url=" + String(lift.url.absoluteString.prefix(90)))
                 return lift
             }
             let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
@@ -650,6 +648,8 @@ enum HongguoLift {
             if empties < tabHosts.count { break }   // 非全空 = 轮换也没用，直接认输
         }
         HGTrail.note("lift fail " + lastErr)
+        // v1.10.101: 三车道(V5双门+新方言+五头)全空才算"网关不理咱", 这时才拉熔断
+        HGCurrent.softBlock(reason: "全线空 " + String(lastErr.prefix(40)))
         throw GError.failed("lift: " + lastErr)
     }
 

@@ -527,10 +527,16 @@ struct ParseView: View {
             let seriesName = Naming.sanitize(res.title)
             var okN = 0, failN = 0
             // v1.10.98 批发取址: 逐集连枪吃网关软拒(真机13:24第24集案), batch 口一单30集
+            // v1.10.101: V5 方言预订单(打11-20新门, PC实测出货)优先, 新方言 batch 第二腿
             var reservations: [String: HongguoLift.Lift] = [:]
-            if n > 1 {
+            if n > 1, !HGCurrent.softBlocked {
                 status = "红果批量取址（一单打包全剧）…"
-                reservations = await HGCurrent.reserve(vids: list.map { $0.id })
+                let vids = list.map { $0.id }
+                if let dev = try? await HongguoLift.device() {
+                    reservations = await HGV5.reserve(vids: vids, dev: dev)
+                }
+                if reservations.isEmpty { reservations = await HGCurrent.reserve(vids: vids) }
+                HGTrail.note("hgrun reserve \(reservations.count)/\(n)")
             }
             for (i, ep) in list.enumerated() {
                 if Task.isCancelled { break }

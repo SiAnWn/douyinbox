@@ -9,6 +9,9 @@ import CommonCrypto
 enum HGV5 {
     // ---- 常量（线格式公开值，照抄 playback_v5_constants.go / f13.go）----
     static let license = "646637794"
+    // PR#17 (11-20 下午): 服务端把 player 段从路径搬进 body(dr_scene), 旧门 200 空体骗人
+    // 新门优先, 旧门留备胎 (服务端若回撤还能活)
+    static let pathNew = "/novel/player/multi_video_model/v1/"
     static let path = "/novel/player/multi_video_model/player/v1"
     static let v5UA = "com.phoenix.read/73932 (Linux; U; Android 12; zh_CN_#Hans; PGT-AN10; Build/V417IR;tt-ok/3.12.13.20)"
     static let magic = HGBase.fromHex("2d4b4fca49750d433fb5ae2c226dcc56")
@@ -73,6 +76,51 @@ enum HGV5 {
             "\"use_os_player\":false,\"use_server_dns\":false,\"video_platform\":1024},\"dr_scene\":\"player\"," +
             "\"mixed_video_id_map\":{\"1004\":[\"\(vid)\"]}}"
         return try? HongguoLift.hgGzip(Data(json.utf8))
+    }
+
+    // v1.10.101 批发预订单 V5 方言版 (PC 16:5x 实测新门 mixed 形态 = 5 流+密钥 23690B)
+    static func v5BodyBatch(vids: [String]) -> Data? {
+        let arr = vids.map { "\"\($0)\"" }.joined(separator: ",")
+        let json = "{\"biz_param\":{\"detail_page_version\":0,\"device_level\":1,\"disable_digg_stat\":false," +
+            "\"disable_video_relate_book\":false,\"need_all_video_definition\":true,\"need_mp4_align\":false," +
+            "\"use_os_player\":false,\"use_server_dns\":false,\"video_platform\":1024},\"dr_scene\":\"player\"," +
+            "\"mixed_video_id_map\":{\"1004\":[\(arr)]}}"
+        return try? HongguoLift.hgGzip(Data(json.utf8))
+    }
+
+    static func reserve(vids: [String], dev: HongguoLift.Device) async -> [String: HongguoLift.Lift] {
+        var out: [String: HongguoLift.Lift] = [:]
+        guard let body = v5BodyBatch(vids: vids),
+              let signed = sign(pairs: v5Pairs(dev), nowMs: Int64(Date().timeIntervalSince1970 * 1000), body: body) else { return out }
+        for host in v5Hosts {
+          for p in [pathNew, path] {
+            guard let u = URL(string: host + p + "?" + signed.query) else { continue }
+            var req = URLRequest(url: u)
+            req.httpMethod = "POST"
+            req.httpBody = body
+            req.setValue(v5UA, forHTTPHeaderField: "User-Agent")
+            req.setValue("application/json", forHTTPHeaderField: "Accept")
+            req.setValue("gzip", forHTTPHeaderField: "Content-Encoding")
+            req.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
+            for (k, v) in signed.headers { req.setValue(v, forHTTPHeaderField: k) }
+            do {
+                let (data, resp) = try await HongguoLift.direct.data(for: req)
+                let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
+                HGTrail.note("v5res \(host) p=\(p.hasSuffix("/v1/") ? "new" : "old") http=\(code) len=\(data.count) n=\(vids.count)")
+                guard code == 200, data.count > 20,
+                      let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
+                var jd = (j["data"] as? [String: Any]) ?? [:]
+                if let g = jd["1004"] as? [String: Any] { jd = g }
+                for v in vids where out[v] == nil {
+                    if let lift = HongguoLift.parseTab(["code": 0 as NSNumber, "data": jd], vid: v) { out[v] = lift }
+                }
+                if !out.isEmpty { return out }
+            } catch {
+                HGTrail.note("v5res net " + String(String(describing: error).prefix(60)))
+            }
+          }
+        }
+        return out
     }
 
     // ---- 原语 ----
@@ -462,7 +510,8 @@ enum HGV5 {
         }
         HGTrail.note("v5 signed q=\(signed.query.count) stub=\(signed.headers["x-ss-stub"]?.prefix(8) ?? "-")")
         for host in v5Hosts {
-            guard let u = URL(string: host + path + "?" + signed.query) else { continue }
+          for p in [pathNew, path] {   // 新门(player搬走后)优先, 旧门兜底
+            guard let u = URL(string: host + p + "?" + signed.query) else { continue }
             var req = URLRequest(url: u)
             req.httpMethod = "POST"
             req.httpBody = body
@@ -489,6 +538,7 @@ enum HGV5 {
             } catch {
                 HGTrail.note("v5 net " + String(String(describing: error).prefix(60)))
             }
+          }   // for p 双门
         }
         return nil
     }

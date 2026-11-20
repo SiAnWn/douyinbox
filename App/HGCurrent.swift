@@ -590,7 +590,6 @@ enum HGCurrent {
             if idx < vids.count { try? await Task.sleep(nanoseconds: 2_500_000_000) }
         }
         HGTrail.note("reserve done \(out.count)/\(vids.count)")
-        if out.isEmpty { softBlock(reason: "reserve 0/\(vids.count)") }
         return out
     }
 
@@ -635,7 +634,7 @@ enum HGCurrent {
             }
         }
         HGTrail.note("cur miss vid=\(vid)")
-        softBlock(reason: "cur miss \(vid.prefix(8))")
+        // v1.10.101: 熔断改由 resolve 全线失败处统一判, cur 单条死道不该错杀 V5 活口
         return nil
     }
 }
