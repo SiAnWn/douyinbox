@@ -1,6 +1,6 @@
 import SwiftUI
 
-// MARK: - 藏（书库中枢）：影｜剧｜私｜画廊 四段(v1.10.26 场升格为一级 tab, 印并入拾右上角齿轮)
+// MARK: - 藏（本地仓库）：影｜私｜画廊 三段(v1.10.93 方案A第一步: 剧墙搬去 场·书架, 印并入拾右上角齿轮)
 
 struct StashHubView: View {
     @EnvironmentObject var app: AppState
@@ -11,9 +11,8 @@ struct StashHubView: View {
             VStack(spacing: 0) {
                 Picker("", selection: $seg) {
                     Text("影").tag(0)
-                    Text("剧").tag(1)
-                    Text("私").tag(2)
-                    Text("画廊").tag(3)
+                    Text("私").tag(1)
+                    Text("画廊").tag(2)
                 }
                 .pickerStyle(.segmented)
                 .padding([.horizontal], 14)
@@ -22,9 +21,8 @@ struct StashHubView: View {
                 Group {
                     switch seg {
                     case 0: LibraryView()
-                    case 1: DramaView()
-                    case 2: PrivateView()
-                    case 3: GalleryHomeView()
+                    case 1: PrivateView()
+                    case 2: GalleryHomeView()
                     default: LibraryView()
                     }
                 }

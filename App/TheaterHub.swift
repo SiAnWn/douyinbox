@@ -75,6 +75,7 @@ final class TheaterNav: ObservableObject {
         case actor(HgActor)
         case search          // v1.10.41: 搜索页也走值跳转(iDuanJu Route.search 同款),
                              // 全栈只留一种推屏姿势, 治"侧滑返回跳过搜索页直落主页"
+        case shelf           // v1.10.93 方案A: 本地短剧墙搬进场 = 书架(开店进货收藏一条龙)
     }
 
     var bind: Binding<NavigationPath>?
@@ -919,7 +920,11 @@ struct TheaterHomeView: View {
             }
             .navigationTitle("剧场")
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
+                    // v1.10.93 书架入口: 本地剧墙从藏搬进场
+                    NavigationLink(value: TheaterNav.Route.shelf) {
+                        Image(systemName: "books.vertical")
+                    }
                     Button { nav.openSearch("mag") } label: { Image(systemName: "magnifyingglass") }
                 }
             }
@@ -945,6 +950,7 @@ extension View {
             case .actorGo(let a): ActorPage(uid: a.uid, name: a.name)
             case .actor(let a): ActorResolveView(name: a.name)
             case .search: TheaterSearchTab(vm: disc, rails: rails)
+            case .shelf: DramaView()   // v1.10.93 书架(原藏·剧整面墙搬来)
             }
         }
     }
