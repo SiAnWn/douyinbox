@@ -293,7 +293,8 @@ struct RootView: View {
                 .badge(app.subsBadge)
         }
         .fullScreenCover(item: $app.coverVideo) { v in
-            InlinePlayer(video: v).environmentObject(app)
+            // v1.10.107 剧里点进去也有弹幕: 视频文件所在文件夹即剧目录, 顺手加载弹幕.json
+            InlinePlayer(video: v, dmDir: v.url.deletingLastPathComponent()).environmentObject(app)
         }
         .fullScreenCover(item: $app.feedFull) { pg in
             InlinePlayer(video: pg.eps[min(app.feedFullIdx, pg.eps.count - 1)],

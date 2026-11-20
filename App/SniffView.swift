@@ -296,7 +296,7 @@ struct SniffView: View {
                 ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } }
             }
             .fullScreenCover(item: $webPlay) { v in
-                InlinePlayer(video: v)
+                InlinePlayer(video: v, dmDir: v.url.deletingLastPathComponent())
             }
         }
         .onAppear {
