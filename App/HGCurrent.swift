@@ -177,7 +177,7 @@ enum HGCurrent {
 
     // MARK: - compute: gorgon / helios / medusa 全家
     static func compute(query: String, digest: [UInt8], pb: [UInt8], mat: [UInt8], license: String, aid: String,
-                        t: UInt64, nonce: UInt16, flags: UInt16,
+                        seconds t: UInt64, nonce: UInt16, flags: UInt16,
                         heliosRandom: UInt32, random1: UInt32, random2: UInt32,
                         local: UInt64, previous: UInt32) -> (headers: [String: String], state: UInt32)? {
         guard mat.count == 32, digest.count == 16, (2...32768).contains(pb.count) else { return nil }
