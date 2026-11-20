@@ -339,7 +339,7 @@ private struct RebindSheet: View {
                     Spacer()
                 } else {
                     List(rows, id: \.id) { r in
-                        Button { bind(r.id, r.title) } label: {
+                        Button { Task { await bind(r.id, r.title) } } label: {
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(r.title).font(.body.weight(.medium))
                                 Text("\(r.episodeCount) 集").font(.caption).foregroundStyle(.secondary)
@@ -379,7 +379,7 @@ private struct RebindSheet: View {
             // v1.10.90b 红果搜索口会藏剧(《云渺》搜索就是搜不到 分享链接却是正主)
             // → 粘贴红果分享消息/链接/纯系列id 直接认档 绕过搜索
             if let sid = await linkSid(q) {
-                await bind(sid, "红果分享链接")
+                await bind(sid, "红果分享链接", force: true)
                 return
             }
             let r = try? await Hongguo.attempt(c, { try await c.search(q) })
@@ -417,22 +417,26 @@ private struct RebindSheet: View {
         return nil
     }
 
-    private func bind(_ sid: String, _ title: String) {
-        guard !busy else { return }
+    private func bind(_ sid: String, _ title: String, force: Bool = false) async {
+        guard force || !busy else { return }
         busy = true
         note = "认档中…"
-        Task {
-            guard let c = Hongguo.client else {
-                busy = false; note = "红果引擎未就绪"; return
-            }
-            await SeriesMetaStore.harvest(c, sid: sid, title: s.name, dir: s.url)
-            if var m = SeriesMetaStore.load(s.url) {
-                m.solo = solo
-                try? JSONEncoder().encode(m).write(to: SeriesMetaStore.file(s.url))
-            }
-            HGTrail.note("shelf rebind \(s.name) -> \(title) solo=\(solo)")
-            busy = false
-            note = "已认档：\(title)"
+        HGTrail.note("rebind start sid=\(sid) by=\(title)")
+        guard let c = Hongguo.client else {
+            busy = false; note = "红果引擎未就绪"; return
         }
+        await SeriesMetaStore.harvest(c, sid: sid, title: s.name, dir: s.url)
+        // v1.10.92 只认落盘的真凭证 防harvest无声失败还谎报已认档
+        guard let m = SeriesMetaStore.load(s.url), m.sid == sid else {
+            busy = false
+            note = "认档没成 — 红果接口没回话, 检查手机代理后重试"
+            return
+        }
+        var mm = m
+        mm.solo = solo
+        try? JSONEncoder().encode(mm).write(to: SeriesMetaStore.file(s.url))
+        HGTrail.note("rebind ok \(s.name) -> \(mm.svrTitle) solo=\(solo)")
+        busy = false
+        note = "已认档：\(mm.svrTitle)"
     }
 }
