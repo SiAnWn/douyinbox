@@ -23,6 +23,13 @@ struct SeriesMeta: Codable {
     var albumId = ""
     var seasonIdx = 0
     var albumFetched = false
+    // v1.10.89 档案身份证: sid + 官方真名 svrTitle(拉档那部剧的标题)。
+    // backfill 曾把"搜不到同名就抓第一条"当兜底, 80集抖音版"云渺"被塞了云渺1的
+    // 档案海报与季关系 — 从此只认同名命中, 并把真名存档供归册验明正身
+    var sid = ""
+    var svrTitle = ""
+    /// 红果侧查无同名(抖音版/下架)的结论标记: 归册见此标记不信 album, 且清掉假海报
+    static let noMatch = "⊘无同名"
 }
 
 enum SeriesMetaStore {
@@ -64,6 +71,9 @@ enum SeriesMetaStore {
         m.albumId = s.relatedAlbumId
         m.seasonIdx = s.seasonIndex
         m.albumFetched = true
+        // v1.10.89 身份证: 档案属于哪部官方剧写得明明白白
+        m.sid = sid
+        m.svrTitle = s.title
         for r in s.rows {
             let t = r.text.trimmingCharacters(in: .whitespaces)
             if t.isEmpty { continue }
@@ -91,24 +101,41 @@ enum SeriesMetaStore {
         guard let c = Hongguo.client else { progress("红果引擎未就绪"); return }
         let list = app.dramaSeries
         guard !list.isEmpty else { progress("剧库是空的"); return }
-        var ok = 0, skipped = 0
+        var ok = 0, cleared = 0, skipped = 0
+        let enc = JSONEncoder()
         for (i, s) in list.enumerated() {
             if Task.isCancelled { break }
-            // v1.10.88 档案有效且官方季关系已拉过才算补齐; 老档案没这仨字段的会重拉一遍(一轮代价)
-            if let old = SeriesMetaStore.load(s.url), (!old.desc.isEmpty || old.cover), old.albumFetched {
+            // v1.10.89 老档案没验过身份证(svrTitle 空)的会重拉一轮全库换证
+            if let old = SeriesMetaStore.load(s.url), old.albumFetched, !old.svrTitle.isEmpty {
                 skipped += 1
                 continue
             }
-            progress("补齐中 \(i + 1)/\(list.count)：\(s.name)")
+            progress("验明正身 \(i + 1)/\(list.count)：\(s.name)")
+            // v1.10.89 只认严格同名(旧 ?? first 兜底=抖音版云渺被安上云渺1户口的冤案源头)
             guard let pg = try? await Hongguo.attempt(c, { try await c.search(s.name) }),
-                  !pg.items.isEmpty else { continue }
-            let hit = pg.items.first { $0.title == s.name } ?? pg.items.first
-            guard let sid = hit?.id, !sid.isEmpty else { continue }
-            await harvest(c, sid: sid, title: s.name, dir: s.url)
+                  let hit = pg.items.first(where: { $0.title == s.name }),
+                  !hit.id.isEmpty else {
+                // 红果查无同名: 写死结论防反复白跑; 顺手卸掉可能攀错的 album 与假海报
+                if var old = SeriesMetaStore.load(s.url) {
+                    old.albumFetched = true
+                    old.albumId = ""
+                    old.seasonIdx = 0
+                    old.svrTitle = SeriesMeta.noMatch
+                    if old.cover {
+                        try? FileManager.default.removeItem(at: s.url.appendingPathComponent("封面.jpg"))
+                        old.cover = false
+                    }
+                    if let j = try? enc.encode(old) { try? j.write(to: file(s.url)) }
+                    cleared += 1
+                }
+                try? await Task.sleep(nanoseconds: 400_000_000)
+                continue
+            }
+            await harvest(c, sid: hit.id, title: s.name, dir: s.url)
             if FileManager.default.fileExists(atPath: file(s.url).path) { ok += 1 }
             try? await Task.sleep(nanoseconds: 900_000_000)   // 匿名口温和
         }
-        progress("补齐完成：新补 \(ok) 部 · 已有档案跳过 \(skipped) 部")
+        progress("补齐完成：新验 \(ok) 部 · 卸错档案 \(cleared) 部 · 已带证跳过 \(skipped) 部")
     }
 }
 

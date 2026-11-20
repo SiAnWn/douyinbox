@@ -138,12 +138,21 @@ enum DramaShelf {
         for s in list {
             let m = meta(s)
             let key: String
-            if let m, !m.albumId.isEmpty {
-                key = "A:" + m.albumId                          // 官方合集
+            if let m, !m.albumId.isEmpty, albumTrust(m, s) {
+                key = "A:" + m.albumId                          // v89 只信验明正身的官方合集
             } else if let m, m.albumFetched {
-                key = "S:" + s.id                               // 官方认证单季, 别再按名字硬凑
+                if m.svrTitle == SeriesMeta.noMatch {
+                    // 红果查无此剧(多半抖音版): 回名字规则, 有季号才攀队
+                    let n = seasonNo(s.name)
+                    key = n > 0 ? "N:" + norm(base(s.name)) : "B:" + s.id
+                } else {
+                    key = "S:" + s.id                            // 官方认证单季, 别再按名字硬凑
+                }
             } else {
-                key = "N:" + norm(base(s.name))                 // 无档案退名字规则
+                // v1.10.89 无档案兜底也要看牌: 只有名字里带季号才算续集意图;
+                // 光杆"云渺"绝不单枪匹马攀"云渺1：xxx"的队(用户点破的冤案)
+                let n = seasonNo(s.name)
+                key = n > 0 ? "N:" + norm(base(s.name)) : "B:" + s.id
             }
             dict[key, default: []].append(s)
             let b = base(s.name)
@@ -151,7 +160,9 @@ enum DramaShelf {
             if cur == nil || (b.count < (cur ?? "zzzz").count && b.count >= 2) { titles[key] = b }
         }
         return dict.map { k, v in
-            ShelfGroup(id: k, title: titles[k] ?? k, vols: v.sorted { a, b in
+            // 单册显示原名(剥号只给多季册用, 免得"云渺3：镇魔世家"被剥成光"云渺"误会)
+            let t = v.count == 1 ? v[0].name : (titles[k] ?? k)
+            return ShelfGroup(id: k, title: t, vols: v.sorted { a, b in
                 let sa = seasonOf(a), sb = seasonOf(b)
                 if sa != sb { return sa < sb }
                 return a.name.localizedStandardCompare(b.name) == .orderedAscending
@@ -161,6 +172,13 @@ enum DramaShelf {
             if g1.isPack != g2.isPack { return !g1.isPack }
             return g1.title.localizedStandardCompare(g2.title) == .orderedAscending
         }
+    }
+
+    // 档案的 album 是否配得上这个文件夹: svrTitle 剥号后须与文件夹名同源
+    private static func albumTrust(_ m: SeriesMeta, _ s: Series) -> Bool {
+        if m.svrTitle.isEmpty { return true }            // 老档案没换证, 暂且信(补档一轮后全换新)
+        if m.svrTitle == SeriesMeta.noMatch { return false }
+        return norm(base(m.svrTitle)) == norm(base(s.name))
     }
 
     // 只留字母数字(CJK 也算 alphanumeric) — 逗号空格标点全抹
