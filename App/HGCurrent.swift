@@ -577,6 +577,8 @@ enum HGCurrent {
     }
 
     static func reserve(vids: [String]) async -> [String: HongguoLift.Lift] {
+        // v1.10.100: 熔断期连预订单也别开枪 (99 版只在 resolve 劝退, 批发口漏查继续三连枪)
+        if softBlocked { HGTrail.note("reserve skip softblock \(softBlockLeft)s"); return [:] }
         var out: [String: HongguoLift.Lift] = [:]
         var idx = 0
         while idx < vids.count {

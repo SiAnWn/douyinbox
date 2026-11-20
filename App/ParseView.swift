@@ -588,6 +588,8 @@ struct ParseView: View {
                             continue
                         }
                         lastWhy = (resolveErr.isEmpty ? "no stream" : resolveErr) + " | " + liftWhy
+                        // v1.10.100 熔断已拉 = 别再一集一集顶枪口, 整串熄火保平安
+                        if HGCurrent.softBlocked { break }
                         continue
                     }
                     let baseFrac = Double(i) / Double(n)
