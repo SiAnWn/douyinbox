@@ -5,7 +5,8 @@ import UIKit
 // 在剧墙归成一张册卡, 点开分季挑。纯本地名字分组, 不联网不碰库结构。
 
 struct ShelfGroup: Identifiable, Hashable {
-    let id: String              // 册基名
+    let id: String              // 册基名(标点空格已抹平的分组键)
+    let title: String           // 给人看的名字(取首册剥号后的原形)
     let vols: [Series]          // 已按季号升序
     var isPack: Bool { vols.count > 1 }
     var cover: URL? { vols.first?.cover }
@@ -118,11 +119,19 @@ enum DramaShelf {
 
     static func group(_ list: [Series]) -> [ShelfGroup] {
         var dict: [String: [Series]] = [:]
+        var titles: [String: String] = [:]
         for s in list {
-            dict[base(s.name), default: []].append(s)
+            let b = base(s.name)
+            // v1.10.87 标点抹平: "我家娘子，不对劲第四季"与"我家娘子不对劲1：xx"
+            // 差的只是逗号 — 分组键剔掉所有标点空格, 只留汉字与字母数字
+            let key = norm(b)
+            dict[key, default: []].append(s)
+            if titles[key] == nil || base(s.name).count < (titles[key] ?? "zzzz").count {
+                titles[key] = b
+            }
         }
         return dict.map { k, v in
-            ShelfGroup(id: k, vols: v.sorted { a, b in
+            ShelfGroup(id: k, title: titles[k] ?? k, vols: v.sorted { a, b in
                 let sa = seasonNo(a.name), sb = seasonNo(b.name)
                 if sa != sb { return sa < sb }
                 return a.name.localizedStandardCompare(b.name) == .orderedAscending
@@ -130,8 +139,13 @@ enum DramaShelf {
         }.sorted { g1, g2 in
             // 册(多季)优先沉后按集数, 单册按更新时间感(名字序) — 与剧墙原排序气质一致
             if g1.isPack != g2.isPack { return !g1.isPack }
-            return g1.id.localizedStandardCompare(g2.id) == .orderedAscending
+            return g1.title.localizedStandardCompare(g2.title) == .orderedAscending
         }
+    }
+
+    // 只留字母数字(CJK 也算 alphanumeric) — 逗号空格标点全抹
+    static func norm(_ s: String) -> String {
+        String(String.UnicodeScalarView(s.unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }))
     }
 }
 
@@ -148,7 +162,7 @@ struct ShelfGrid<Destination: View>: View {
             LazyVGrid(columns: cols, spacing: 10) {
                 ForEach(groups) { g in
                     if g.isPack {
-                        Button { openPack = g } label: { cell(g.id, g.cover, "\(g.vols.count)季·\(g.epTotal)集", pack: true) }
+                        Button { openPack = g } label: { cell(g.title, g.cover, "\(g.vols.count)季·\(g.epTotal)集", pack: true) }
                             .buttonStyle(.plain)
                     } else if let s = g.vols.first {
                         NavigationLink(value: s) { cell(s.name, s.cover, "\(s.count)集", pack: false) }
@@ -180,7 +194,7 @@ struct ShelfGrid<Destination: View>: View {
                         }
                     }
                 }
-                .navigationTitle(g.id)
+                .navigationTitle(g.title)
                 .navigationBarTitleDisplayMode(.inline)
                 .navigationDestination(for: Series.self) { s in destination(s) }
             }
