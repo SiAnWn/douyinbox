@@ -348,7 +348,7 @@ enum DanmakuStore {
 
     @MainActor
     static func harvest(_ c: OpenhongguoClient, sid: String,
-                        eps: [(num: Int, id: String)], dir: URL, rounds: Int = 3) async {
+                        eps: [(num: Int, id: String)], dir: URL, maxRounds: Int = 8) async {
         var all: [String: [DMEntry]] = [:]
         var keys: [String: Set<String>] = [:]   // v1.10.122 去重账本 "集号"→{t|x}
         var anyPageOK = false          // 至少有一页成功才算"这剧真没弹幕", 防限流空手立假档
@@ -356,10 +356,11 @@ enum DanmakuStore {
         // 一集全量8093条, 单台匿名只分到35~297) — 第二轮前 resetDevice 换马甲再扫一遍,
         // 两轮并集去重, 弹幕量约翻倍; 代价每剧多 ~1 分钟后台
         // v1.10.123 每轮落一次盘: 并行收割中途被杀也保住已到手的部分, 不白干
-        func dump(_ tag: String) {
+        @discardableResult
+        func dump(_ tag: String) -> Int {
             guard anyPageOK else {
                 HGTrail.note("dm fail-all sid=\(sid) 未立档待重试")
-                return
+                return -1
             }
             for k in all.keys where all[k]!.count > 1 { all[k] = all[k]!.sorted { $0.t < $1.t } }
             try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -367,14 +368,20 @@ enum DanmakuStore {
                 // 页页成功却条条皆空 = 这剧服务器真没弹幕: 立空档当"查过了"记号
                 try? Data("{}".utf8).write(to: file(dir))
                 HGTrail.note("dm empty sid=\(sid) 立空档")
-                return
+                return 0
             }
             if let j = try? JSONEncoder().encode(all) {
                 try? j.write(to: file(dir))
                 HGTrail.note("dm ok(\(tag)) sid=\(sid) eps=\(all.count) bytes=\(j.count)")
+                return j.count
             }
+            return -1
         }
-        for rd in 1...max(1, rounds) {
+        // v1.10.124 马甲榨干制(用户"更多马甲"): 最多8轮换号连扫, 前3轮保底(单轮运气差不可杀,
+        // 真机样本 r2 只涨0.7% r3 暴涨37%), 第3轮起连续两轮增量<4% 自动收手止损
+        var lastBytes = -1
+        var dryStreak = 0
+        for rd in 1...max(1, maxRounds) {
             if rd > 1 { try? await c.resetDevice() }
             if rd > 1 { try? await Task.sleep(nanoseconds: 800_000_000) }   // 新号落地喘一口
             // 提速(用户投诉太慢): 每集页循环打包 6 集并发, 页间歇 60ms(PC 探针 40 连页无风控)
@@ -419,7 +426,17 @@ enum DanmakuStore {
                     merge(r.0, r.1, &all, &keys)
                 }
             }
-            dump("r\(rd)")
+            let got = dump("r\(rd)")
+            if rd >= 3, got >= 0, lastBytes > 0 {
+                let gain = Double(got - lastBytes) / Double(max(lastBytes, 1))
+                if gain < 0.04 { dryStreak += 1 } else { dryStreak = 0 }
+                HGTrail.note("dm r\(rd) +\(got - lastBytes)B(\(Int(gain * 100))%) dry=\(dryStreak)")
+                if dryStreak >= 2 {
+                    HGTrail.note("dm 榨干收手 sid=\(sid) 共\(rd)轮")
+                    break
+                }
+            }
+            if got >= 0 { lastBytes = got }
         }
     }
 
