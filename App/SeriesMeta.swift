@@ -30,6 +30,9 @@ struct SeriesMeta: Codable {
     var svrTitle = ""
     /// v1.10.90 人工钦定"这是一部独立剧"(认档弹窗勾选): 归册时谁也不进
     var solo = false
+    /// v1.10.110 自动验身复审戳: 验过不再占名额(真机案: 单剧 albumId 恒空致 need 名单死循环,
+    /// 老千2 与行道者永远排不上队)。Optional = 合成 Codable 对缺键走 decodeIfPresent, 老档案不炸
+    var reviewed: Bool?
     /// 红果侧查无同名(抖音版/下架)的结论标记: 归册见此标记不信 album, 且清掉假海报
     static let noMatch = "⊘无同名"
 }
@@ -145,6 +148,14 @@ enum SeriesMetaStore {
         progress("补齐完成：新验 \(ok) 部 · 卸错档案 \(cleared) 部 · 已带证跳过 \(skipped) 部")
     }
 
+    /// v1.10.110 复审盖章: 有档加戳, 无档立轻档(albumFetched+reviewed), 都不再占验身名额
+    private static func stamp(_ dir: URL) {
+        var m = SeriesMetaStore.load(dir) ?? SeriesMeta()
+        m.albumFetched = true
+        m.reviewed = true
+        if let j = try? JSONEncoder().encode(m) { try? j.write(to: file(dir)) }
+    }
+
     /// v1.10.105 剧墙开门自动验明正身: 老千/老千2 案——官方 related 金标准一直有,
     /// 只是档案没拉到头上就不合册。开门补没档的, 温和限速, 搜不到先跳过不写死(留给手动按钮)
     @MainActor
@@ -157,7 +168,8 @@ enum SeriesMetaStore {
             // v1.10.106 旧版 exact 误写的查无结论复审翻案
             if old.svrTitle == SeriesMeta.noMatch { return true }
             // v1.10.109 官方 related 会事后补(老千2 下当时空、今天复查已有) → 认证单剧也要复审
-            return old.albumId.isEmpty
+            // v1.10.110 但验过就打戳放行, 名额滚动给后来者(否则单剧空 albumId 无限占坑)
+            return old.albumId.isEmpty && old.reviewed != true
         }
         need = Array(need.prefix(15))
         var ok = 0
@@ -187,6 +199,8 @@ enum SeriesMetaStore {
                 let top = pg.items.prefix(3).map { $0.title }.joined(separator: " | ")
                 HGTrail.note("autocheck miss name=" + s.name + " rows=\(pg.items.count) top=[" + top + "]")
             }
+            // v1.10.110 无论命中与否, 验过即盖章; 无档 miss 的抖音独剧也立个轻档免年年白跑
+            stamp(s.url)
             try? await Task.sleep(nanoseconds: 900_000_000)
         }
         HGTrail.note("shelf autocheck done=\(ok)/\(need.count)")
