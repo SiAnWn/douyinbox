@@ -30,6 +30,9 @@ struct SeriesMeta: Codable {
     var svrTitle = ""
     /// v1.10.90 人工钦定"这是一部独立剧"(认档弹窗勾选): 归册时谁也不进
     var solo = false
+    /// v1.10.116 手动合册钦定章: 用户点名和谁一个系列(存目标册号); 优先级仅次于 solo,
+    /// 凌驾一切官方自动结论 — 拖了六个版本的终极兜底
+    var handAlbum = ""
     /// v1.10.110 自动验身复审戳: 验过不再占名额(真机案: 单剧 albumId 恒空致 need 名单死循环,
     /// 老千2 与行道者永远排不上队)。Optional = 合成 Codable 对缺键走 decodeIfPresent, 老档案不炸
     var reviewed: Bool?
@@ -68,8 +71,9 @@ enum SeriesMetaStore {
         }
         var m = SeriesMeta()
         m.title = title
-        // v1.10.90 重新认档/覆盖重拉时保住人工"钦定单剧"印章
+        // v1.10.90 重新认档/覆盖重拉时保住人工"钦定单剧"印章; v1.116 保住"手动合册"章
         m.solo = SeriesMetaStore.load(dir)?.solo ?? false
+        m.handAlbum = SeriesMetaStore.load(dir)?.handAlbum ?? ""
         m.total = s.episodeCount
         m.desc = s.description.trimmingCharacters(in: .whitespacesAndNewlines)
         m.heat = big(s.heat)
@@ -146,6 +150,27 @@ enum SeriesMetaStore {
             }
         }
         progress("补齐完成：新验 \(ok) 部 · 卸错档案 \(cleared) 部 · 已带证跳过 \(skipped) 部")
+    }
+
+    /// v1.10.116 手动并册落地: src 钦定与 other 同册; 册号优先沿用它俩已有的官方album,
+    /// 都没有就自造私号(H+文件夹名) — 只影响本地分组, 不碰任何官方数据
+    static func applyMerge(src: Series, into other: Series) {
+        let m2 = load(other.url)
+        let album: String = {
+            if let a = m2?.handAlbum, !a.isEmpty { return a }
+            if let a = m2?.albumId, !a.isEmpty { return a }
+            return "H" + other.url.lastPathComponent
+        }()
+        setHandAlbum(src.url, album)
+        if m2?.albumId != album { setHandAlbum(other.url, album) }
+        HGTrail.note("merge hand " + src.name + " into " + other.name + " A=" + album)
+    }
+
+    /// v1.10.116 手动合册盖章/拆章(album 传空=拆章回自动)
+    static func setHandAlbum(_ dir: URL, _ album: String) {
+        var m = SeriesMetaStore.load(dir) ?? SeriesMeta()
+        m.handAlbum = album
+        if let j = try? JSONEncoder().encode(m) { try? j.write(to: file(dir)) }
     }
 
     /// v1.10.110 复审盖章: 有档加戳, 无档立轻档(albumFetched+reviewed), 都不再占验身名额

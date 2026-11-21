@@ -141,6 +141,8 @@ enum DramaShelf {
             let key: String
             if let m, m.solo {
                 key = "S:" + s.id                                // v1.10.90 人工钦定单剧, 天王老子来了也不进册
+            } else if let m, !m.handAlbum.isEmpty {
+                key = "A:" + m.handAlbum                         // v1.10.116 人工钦定和谁一家, 凌驾自动结论
             } else if let m, !m.albumId.isEmpty, m.svrTitle != SeriesMeta.noMatch {
                 // v1.10.115 验身门拆掉(114 X光终审冤案): album 全局唯一且官方签发, 天然不会乱合;
                 // 老千2/剑二十四 album 明明在手却被 svrTitle剥号比对否决 — 113 库内零假合实证此门多余
@@ -205,6 +207,7 @@ struct ShelfGrid<Destination: View>: View {
     let destination: (Series) -> Destination
     @State private var openPack: ShelfGroup?
     @State private var rebind: Series?
+    @State private var mergeFor: Series?      // v1.10.116 手动并册对象
     @State private var bump = 0
     private let cols = [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())]
 
@@ -223,6 +226,8 @@ struct ShelfGrid<Destination: View>: View {
                             // v1.10.90 人工认档钥匙: 红果改名上架的剧(云渺→云渺第一季)自动认不到, 长按你来点名
                             .contextMenu {
                                 Button { rebind = s } label: { Label("重新认档", systemImage: "text.magnifyingglass") }
+                                // v1.10.116 手动并册: 官方通道全跑完还差临门一脚时, 你来盖章
+                                Button { mergeFor = s } label: { Label("手动并入别册…", systemImage: "square.stack.3d.up.badge.plus") }
                                 Button(role: .destructive) { clearMeta(s) } label: { Label("清空档案撤假海报", systemImage: "trash") }
                             }
                     }
@@ -263,6 +268,7 @@ struct ShelfGrid<Destination: View>: View {
                         // 云渺进了册就长按无反应=认档钥匙只焊在单册卡上)
                         .contextMenu {
                             Button { rebind = s } label: { Label("重新认档", systemImage: "text.magnifyingglass") }
+                            Button { mergeFor = s } label: { Label("手动并入别册…", systemImage: "square.stack.3d.up.badge.plus") }
                             Button(role: .destructive) { clearMeta(s) } label: { Label("清空档案撤假海报", systemImage: "trash") }
                         }
                     }
@@ -275,6 +281,14 @@ struct ShelfGrid<Destination: View>: View {
         }
         .sheet(item: $rebind) { s in
             RebindSheet(s: s) { bump += 1 }
+        }
+        // v1.10.116 手动并册选人册
+        .sheet(item: $mergeFor) { s in
+            MergeSheet(src: s, cands: source.filter { $0.id != s.id }) { o in
+                mergeFor = nil
+                SeriesMetaStore.applyMerge(src: s, into: o)
+                bump += 1
+            }
         }
         // v1.10.111 开门两连招: 先批量认亲大招(全库 sid 一把过), 再搜索兜底(无档/无 sid 的散户)
         .onAppear {
@@ -460,5 +474,47 @@ private struct RebindSheet: View {
         HGTrail.note("rebind ok \(s.name) -> \(mm.svrTitle) solo=\(solo)")
         busy = false
         note = "已认档：\(mm.svrTitle)"
+    }
+}
+
+// v1.10.116 手动并册选册弹窗: 搜索+点名, 选中即两本盖章同册(纯本地钦定)
+struct MergeSheet: View {
+    let src: Series
+    let cands: [Series]
+    let onPick: (Series) -> Void
+    @Environment(\.dismiss) private var dc
+    @State private var q = ""
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Button("先不合（关闭）") { dc() }
+                        .tint(.secondary)
+                }
+                Section("把「\(src.name)」并入哪一册？") {
+                    ForEach(filtered) { o in
+                        Button { onPick(o) } label: {
+                            HStack {
+                                Text(o.name).font(.body.weight(.medium))
+                                Spacer()
+                                Text("\(o.count)集").font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+            }
+            .searchable(text: $q, prompt: "搜剧名")
+            .navigationTitle("手动并入")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("取消") { dc() } }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private var filtered: [Series] {
+        q.isEmpty ? cands : cands.filter { $0.name.localizedCaseInsensitiveContains(q) }
     }
 }
