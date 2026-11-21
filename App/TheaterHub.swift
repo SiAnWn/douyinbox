@@ -1261,6 +1261,7 @@ private struct TheaterSearchTab: View {
 // 红果同款双列竖卡(一屏两部的命根子; 固定比例底座铁律 v1.9.50 遗产)
 private struct Grid2Cards: View {
     @EnvironmentObject private var nav: TheaterNav
+    @EnvironmentObject private var app: AppState      // v1.10.119 长按秒下要发车单
     let rows: [SeriesSummary]
     var rank0 = 0                                   // >0 则从 rank0 起挂奖牌徽章
     var nearEnd: (Int) -> Void = { _ in }           // 滚到尾部自动续页
@@ -1297,6 +1298,12 @@ private struct Grid2Cards: View {
                     }
                 }
                 .buttonStyle(.plain)
+                // v1.10.119 长按秒下: 试毒新剧不必先进详情, 一发第1集直接进库
+                .contextMenu {
+                    Button {
+                        app.hgWant = HgWant(sid: s.id, title: s.title, eps: [1])
+                    } label: { Label("秒下第 1 集", systemImage: "arrow.down.circle") }
+                }
                 .onAppear { nearEnd(i) }
             }
         }
@@ -1322,6 +1329,7 @@ func hgToday() -> String {
 // 双列竖卡的通用版(上新/演员作品等拿不到 SeriesSummary 的场合)
 struct Grid2Lite: View {
     @EnvironmentObject private var nav: TheaterNav
+    @EnvironmentObject private var app: AppState      // v1.10.119 长按秒下
     let items: [HRail.CardLike]
     var rank0 = 0
     var nearEnd: (Int) -> Void = { _ in }
@@ -1332,8 +1340,7 @@ struct Grid2Lite: View {
                 Button { nav.go(HgWant(sid: c.sid, title: c.title), "lite " + c.sid) } label: {
                     // v1.10.73 剧名搬家同款式(与 Grid2Cards 一个语言)
                     VStack(alignment: .leading, spacing: 5) {
-                        Color.clear.aspectRatio(0.7, contentMode: .fit)
-                            .overlay {
+                        Color.clear.aspectRatio(0.7, contentMode: .fit)                            .overlay {
                                 AsyncImage(url: URL(string: hgCoverUrl(sid: c.sid, c.cover))) {
                                     $0.resizable().scaledToFill()
                                 } placeholder: { Color.gray.opacity(0.16) }
@@ -1357,6 +1364,12 @@ struct Grid2Lite: View {
                     }
                 }
                 .buttonStyle(.plain)
+                // v1.10.119 长按秒下: 试毒新剧不必先进详情, 一发第1集直接进库
+                .contextMenu {
+                    Button {
+                        app.hgWant = HgWant(sid: c.sid, title: c.title, eps: [1])
+                    } label: { Label("秒下第 1 集", systemImage: "arrow.down.circle") }
+                }
                 .onAppear { nearEnd(i) }
             }
         }
