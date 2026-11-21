@@ -562,6 +562,13 @@ struct ParseView: View {
                 if reservations.isEmpty { reservations = await HGCurrent.reserve(vids: vids) }
                 HGTrail.note("hgrun reserve \(reservations.count)/\(n)")
             }
+            // v1.10.123 下载与弹幕/档案并行(用户金点子): 下载吃 CDN 带宽、取址吃接口、弹幕吃列表口,
+            // 三线互不抢道 → 收割提前发车, 下载多少分钟弹幕就白飘多少分钟, 收尾不再干等
+            HGTrail.note("hgrun early sid=\(sid) n=\(n)")
+            let earlyDir = SavePaths.docs.appendingPathComponent("短剧/\(seriesName)", isDirectory: true)
+            let earlyPairs = all.filter { $0.playable && $0.number > 0 }.map { (num: $0.number, id: $0.id) }
+            Task { await SeriesMetaStore.harvest(c, sid: sid, title: seriesName, dir: earlyDir) }
+            Task { await DanmakuStore.harvest(c, sid: sid, eps: earlyPairs, dir: earlyDir) }
             for (i, ep) in list.enumerated() {
                 if Task.isCancelled { break }
                 let num = ep.number > 0 ? ep.number : i + 1
@@ -683,18 +690,7 @@ struct ParseView: View {
                 status = failN > 0
                     ? "已保存：短剧/\(seriesName)（\(okN)/\(n) 集，缺 \(failN) 集）"
                     : "已保存：短剧/\(seriesName)（共 \(n) 集）"
-                // 顺手领一份剧档案(演员/评分/分类), 静默不挡道
-                Task {
-                    await SeriesMetaStore.harvest(c, sid: sid, title: seriesName,
-                                                  dir: SavePaths.docs.appendingPathComponent("短剧/\(seriesName)", isDirectory: true))
-                }
-                // 弹幕全量落盘(后台慢拉几分钟, 之后坊里离线飘)
-                Task {
-                    let pairs = all.filter { $0.playable && $0.number > 0 }
-                        .map { (num: $0.number, id: $0.id) }
-                    await DanmakuStore.harvest(c, sid: sid, eps: pairs,
-                                               dir: SavePaths.docs.appendingPathComponent("短剧/\(seriesName)", isDirectory: true))
-                }
+                // v1.10.123 档案+弹幕已在批量开跑前提前收割(与下载并行), 此处不再补拉
             } else if !status.hasPrefix("红果失败于") {
                 status = "红果下载失败：没有一集成功（可能接口风控，稍后再试）"
             }

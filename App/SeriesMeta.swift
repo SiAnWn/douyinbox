@@ -348,13 +348,32 @@ enum DanmakuStore {
 
     @MainActor
     static func harvest(_ c: OpenhongguoClient, sid: String,
-                        eps: [(num: Int, id: String)], dir: URL, rounds: Int = 2) async {
+                        eps: [(num: Int, id: String)], dir: URL, rounds: Int = 3) async {
         var all: [String: [DMEntry]] = [:]
         var keys: [String: Set<String>] = [:]   // v1.10.122 去重账本 "集号"→{t|x}
         var anyPageOK = false          // 至少有一页成功才算"这剧真没弹幕", 防限流空手立假档
         // v1.10.122 换设备拼全量(SDK 源码实锤: 服务端按设备下发精选子集, 每台看到的不同;
         // 一集全量8093条, 单台匿名只分到35~297) — 第二轮前 resetDevice 换马甲再扫一遍,
         // 两轮并集去重, 弹幕量约翻倍; 代价每剧多 ~1 分钟后台
+        // v1.10.123 每轮落一次盘: 并行收割中途被杀也保住已到手的部分, 不白干
+        func dump(_ tag: String) {
+            guard anyPageOK else {
+                HGTrail.note("dm fail-all sid=\(sid) 未立档待重试")
+                return
+            }
+            for k in all.keys where all[k]!.count > 1 { all[k] = all[k]!.sorted { $0.t < $1.t } }
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            if all.isEmpty {
+                // 页页成功却条条皆空 = 这剧服务器真没弹幕: 立空档当"查过了"记号
+                try? Data("{}".utf8).write(to: file(dir))
+                HGTrail.note("dm empty sid=\(sid) 立空档")
+                return
+            }
+            if let j = try? JSONEncoder().encode(all) {
+                try? j.write(to: file(dir))
+                HGTrail.note("dm ok(\(tag)) sid=\(sid) eps=\(all.count) bytes=\(j.count)")
+            }
+        }
         for rd in 1...max(1, rounds) {
             if rd > 1 { try? await c.resetDevice() }
             if rd > 1 { try? await Task.sleep(nanoseconds: 800_000_000) }   // 新号落地喘一口
@@ -400,23 +419,7 @@ enum DanmakuStore {
                     merge(r.0, r.1, &all, &keys)
                 }
             }
-        }
-        for k in all.keys where all[k]!.count > 1 { all[k] = all[k]!.sorted { $0.t < $1.t } }
-        guard anyPageOK else {
-            // 一页都没成功(注册口限流/网络抖动): 不立档不留假证据, 下次补档按钮会再战
-            HGTrail.note("dm fail-all sid=\(sid) 未立档待重试")
-            return
-        }
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        if all.isEmpty {
-            // 页页成功却条条皆空 = 这剧服务器真没弹幕: 立空档当"查过了"记号
-            try? Data("{}".utf8).write(to: file(dir))
-            HGTrail.note("dm empty sid=\(sid) 立空档")
-            return
-        }
-        if let j = try? JSONEncoder().encode(all) {
-            try? j.write(to: file(dir))
-            HGTrail.note("dm ok sid=\(sid) eps=\(all.count) bytes=\(j.count)")
+            dump("r\(rd)")
         }
     }
 
