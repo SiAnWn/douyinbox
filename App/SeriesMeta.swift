@@ -329,53 +329,79 @@ enum DanmakuStore {
         return out
     }
 
+    // v1.10.122 两轮马甲收割的去重合并: 同一条弹幕(t+x)只留一份
+    private static func merge(_ num: Int, _ bag: [DMEntry],
+                              _ all: inout [String: [DMEntry]], _ keys: inout [String: Set<String>]) {
+        guard !bag.isEmpty else { return }
+        let k = "\(num)"
+        var set = keys[k] ?? []
+        var add: [DMEntry] = []
+        for e in bag {
+            let key = "\(e.t)|\(e.x)"
+            if set.contains(key) { continue }
+            set.insert(key)
+            add.append(e)
+        }
+        keys[k] = set
+        if !add.isEmpty { all[k, default: []] += add }
+    }
+
     @MainActor
     static func harvest(_ c: OpenhongguoClient, sid: String,
-                        eps: [(num: Int, id: String)], dir: URL) async {
+                        eps: [(num: Int, id: String)], dir: URL, rounds: Int = 2) async {
         var all: [String: [DMEntry]] = [:]
+        var keys: [String: Set<String>] = [:]   // v1.10.122 去重账本 "集号"→{t|x}
         var anyPageOK = false          // 至少有一页成功才算"这剧真没弹幕", 防限流空手立假档
-        // 提速(用户投诉太慢): 每集页循环打包 3 集一组并发, 页间歇 250→120ms(PC 探针 40 连页 200ms 实测无风控)
-        await withTaskGroup(of: (Int, [DMEntry], Bool).self) { grp in
-            var i = 0
-            var inflight = 0
-            while i < eps.count {
-                if Task.isCancelled { break }
-                let ep = eps[i]
-                grp.addTask {
-                    var bag: [DMEntry] = []
-                    var ok = false
-                    var cursor: String?
-                    var hops = 0
-                    repeat {
-                        hops += 1
-                        guard hops < 30 else { break }                   // 单集最多 30 页保险丝
-                        let pg = try? await Hongguo.attempt(c, {
-                            try await c.listDanmaku(sid, episodeId: ep.id,
-                                                    options: DanmakuOptions(cursor: cursor))
-                        })
-                        guard let pg else { break }
-                        ok = true
-                        bag += pg.items.map { DMEntry(t: $0.offsetMs, x: $0.text) }
-                        cursor = pg.hasMore ? pg.cursor : nil
-                        try? await Task.sleep(nanoseconds: 60_000_000)
-                    } while cursor != nil
-                    return (ep.num, bag.sorted { $0.t < $1.t }, ok)
-                }
-                inflight += 1
-                i += 1
-                if inflight >= 6 {
-                    if let r = await grp.next() {
-                        inflight -= 1
-                        if r.2 { anyPageOK = true }
-                        if !r.1.isEmpty { all["\(r.0)"] = r.1 }
+        // v1.10.122 换设备拼全量(SDK 源码实锤: 服务端按设备下发精选子集, 每台看到的不同;
+        // 一集全量8093条, 单台匿名只分到35~297) — 第二轮前 resetDevice 换马甲再扫一遍,
+        // 两轮并集去重, 弹幕量约翻倍; 代价每剧多 ~1 分钟后台
+        for rd in 1...max(1, rounds) {
+            if rd > 1 { try? await c.resetDevice() }
+            if rd > 1 { try? await Task.sleep(nanoseconds: 800_000_000) }   // 新号落地喘一口
+            // 提速(用户投诉太慢): 每集页循环打包 6 集并发, 页间歇 60ms(PC 探针 40 连页无风控)
+            await withTaskGroup(of: (Int, [DMEntry], Bool).self) { grp in
+                var i = 0
+                var inflight = 0
+                while i < eps.count {
+                    if Task.isCancelled { break }
+                    let ep = eps[i]
+                    grp.addTask {
+                        var bag: [DMEntry] = []
+                        var ok = false
+                        var cursor: String?
+                        var hops = 0
+                        repeat {
+                            hops += 1
+                            guard hops < 30 else { break }                   // 单集最多 30 页保险丝
+                            let pg = try? await Hongguo.attempt(c, {
+                                try await c.listDanmaku(sid, episodeId: ep.id,
+                                                        options: DanmakuOptions(cursor: cursor))
+                            })
+                            guard let pg else { break }
+                            ok = true
+                            bag += pg.items.map { DMEntry(t: $0.offsetMs, x: $0.text) }
+                            cursor = pg.hasMore ? pg.cursor : nil
+                            try? await Task.sleep(nanoseconds: 60_000_000)
+                        } while cursor != nil
+                        return (ep.num, bag.sorted { $0.t < $1.t }, ok)
+                    }
+                    inflight += 1
+                    i += 1
+                    if inflight >= 6 {
+                        if let r = await grp.next() {
+                            inflight -= 1
+                            merge(r.0, r.1, &all, &keys)
+                            if r.2 { anyPageOK = true }
+                        }
                     }
                 }
-            }
-            for await r in grp {
-                if r.2 { anyPageOK = true }
-                if !r.1.isEmpty { all["\(r.0)"] = r.1 }
+                for await r in grp {
+                    if r.2 { anyPageOK = true }
+                    merge(r.0, r.1, &all, &keys)
+                }
             }
         }
+        for k in all.keys where all[k]!.count > 1 { all[k] = all[k]!.sorted { $0.t < $1.t } }
         guard anyPageOK else {
             // 一页都没成功(注册口限流/网络抖动): 不立档不留假证据, 下次补档按钮会再战
             HGTrail.note("dm fail-all sid=\(sid) 未立档待重试")
