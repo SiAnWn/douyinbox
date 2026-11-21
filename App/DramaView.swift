@@ -51,65 +51,7 @@ struct DramaView: View {
     }
 }
 
-struct SeriesGrid: View {
-    let list: [Series]
-    private let cols = [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())]
-    var body: some View {
-        ScrollView {
-            LazyVGrid(columns: cols, spacing: 10) {
-                ForEach(list) { s in
-                    NavigationLink(value: s) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            // 固定 2:3 底座: 横版/竖版/方图一律裁进同框, 网格永不变形
-                            Color.clear
-                                .frame(maxWidth: .infinity)
-                                .aspectRatio(0.667, contentMode: .fit)
-                                .overlay {
-                                    Group {
-                                        if let c = s.cover {
-                                            Thumb(url: c)
-                                        } else {
-                                            Color(white: 0.15)
-                                        }
-                                    }
-                                    .clipped()
-                                }
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
-                                .overlay(alignment: .bottomTrailing) {
-                                    Text("\(s.count)集")
-                                        .font(.caption2).foregroundStyle(.white)
-                                        .padding(4).background(.black.opacity(0.5), in: Capsule())
-                                        .padding(4)
-                                }
-                            Text(s.name).font(.caption).lineLimit(1).foregroundStyle(.primary)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding()
-        }
-    }
-}
 
-struct SeriesRow: View {
-    let series: Series
-    var body: some View {
-        HStack(spacing: 12) {
-            if let c = series.cover {
-                Thumb(url: c).frame(width: 60, height: 80).clipShape(RoundedRectangle(cornerRadius: 6))
-            } else {
-                Rectangle().fill(Color(white: 0.15)).frame(width: 60, height: 80)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-            }
-            VStack(alignment: .leading, spacing: 3) {
-                Text(series.name).font(.headline).lineLimit(2)
-                Text("\(series.count) 集").font(.caption).foregroundStyle(.secondary)
-            }
-        }
-        .padding(.vertical, 4)
-    }
-}
 
 struct DramaEpisodes: View {
     let series: Series

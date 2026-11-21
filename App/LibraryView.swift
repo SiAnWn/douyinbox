@@ -428,20 +428,6 @@ final class ResCache {
     }
 }
 
-struct ResTag: View {
-    let url: URL
-    @State private var s = ""
-    var body: some View {
-        Group {
-            if !s.isEmpty {
-                Text(s).font(.caption2).foregroundStyle(.secondary).fixedSize()
-            }
-        }
-        .task(id: url) {
-            if s.isEmpty { s = await ResCache.shared.tag(url) }
-        }
-    }
-}
 
 // 大小·分辨率合一行: 大小永远在, 分辨率读到即追加(单视图单 task, 无嵌套可疑结构)
 struct SizeLine: View {

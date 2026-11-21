@@ -320,7 +320,6 @@ final class BatchRunner: ObservableObject {
     private func showCur(_ ep: MixEpisode) { current = "第 \(ep.num) 集 · \(String(ep.title.prefix(24)))" }
     private func addGot() { got += 1 }
     private func addFail() { failed += 1 }
-    private func addJunk() { junk += 1 }
     private func markJunk(_ ep: MixEpisode) {
         junk += 1
         if !junkEps.contains(where: { $0.id == ep.id }) { junkEps.append(ep) }

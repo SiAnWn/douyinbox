@@ -37,25 +37,6 @@ struct StashHubView: View {
     }
 }
 
-// 画廊占位（P1：图叻引擎+图集媒体类型入驻）
-struct GalleryStubView: View {
-    var body: some View {
-        ContentUnavailableView {
-            Label("画廊 · 敬请期待", systemImage: "photo.stack")
-        } description: {
-            Text("图集媒体类型与「图叻」网页聚图引擎已在路上\n770+ 写真/福利站点规则整装待发")
-        } actions: {
-            NavigationLink {
-                GalleryAboutView()
-            } label: {
-                Text("了解图叻计划")
-                    .font(.callout)
-                    .padding(.horizontal, 18).padding(.vertical, 10)
-                    .background(Capsule().fill(.tint.opacity(0.15)))
-            }
-        }
-    }
-}
 
 struct GalleryAboutView: View {
     var body: some View {
@@ -78,40 +59,3 @@ struct GalleryAboutView: View {
 
 // MARK: - 匣（百宝匣）：内置浏览器柜（占位橱窗已清空）
 
-struct BoxView: View {
-    var body: some View {
-        NavigationStack {
-            List {
-                Section {
-                    NavigationLink {
-                        BoxBrowserView()
-                    } label: {
-                        Label {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("内置浏览器")
-                                Text("书签速达 · 长按存图 · 记住登录")
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
-                        } icon: {
-                            Image(systemName: "globe").foregroundStyle(.blue)
-                        }
-                    }
-                    NavigationLink {
-                        SniffView()
-                    } label: {
-                        Label {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("网页嗅探器")
-                                Text("抖音短剧 1080p · 任意网页 m3u8/mp4 抓取入库")
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
-                        } icon: {
-                            Image(systemName: "dot.radiowaves.right").foregroundStyle(.purple)
-                        }
-                    }
-                }
-            }
-            .navigationTitle("匣")
-        }
-    }
-}

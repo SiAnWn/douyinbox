@@ -1018,17 +1018,6 @@ struct TopBoards: View {
     }
 }
 
-// 热度黑胶囊(官方红果同款 白字黑55% 贴封面左下)
-private struct HeatTag: View {
-    let text: String
-    var body: some View {
-        Text(text)
-            .font(.system(size: 9, weight: .medium))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 5).padding(.vertical, 2)
-            .background(Capsule().fill(.black.opacity(0.55)))
-    }
-}
 
 private struct TopRankCardBig: View {
     @EnvironmentObject private var nav: TheaterNav
@@ -1389,37 +1378,6 @@ private struct ChipScroller: View {
     }
 }
 
-private struct ShowRow: View {
-    @EnvironmentObject private var nav: TheaterNav
-    let sid: String
-    let title: String
-    let sub: String
-    let cover: String
-    var badge: String? = nil
-
-    var body: some View {
-        Button { nav.go(HgWant(sid: sid, title: title), "show " + sid) } label: {
-            HStack(spacing: 10) {
-                if let b = badge {
-                    Text(b)
-                        .font(.system(size: 13, weight: .heavy, design: .rounded))
-                        .frame(width: 26, alignment: .center)
-                        .foregroundStyle(b.count <= 2 ? Color.orange : Color.secondary)
-                }
-                AsyncImage(url: URL(string: hgCoverUrl(sid: sid, cover))) { $0.resizable().scaledToFill() }
-                    placeholder: { Color.gray.opacity(0.15) }
-                    .frame(width: 52, height: 70)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(title).font(.subheadline).lineLimit(1)
-                    Text(sub).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(.vertical, 2)
-        }
-    }
-}
 
 // v1.10.82 二级榜切片降格: 小号纯文字段(选中加粗黑+橙下划线), 跟一级橙胶囊拉开层级
 private struct TextSegRow: View {
@@ -2095,116 +2053,9 @@ private struct SelectedBar: View {
 
 // MARK: - 上新段
 
-private struct NewTab: View {
-    @ObservedObject var vm: NewVM
-    var body: some View {
-        VStack(spacing: 8) {
-            if !vm.dates.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(vm.dates, id: \.self) { d in
-                            Button { vm.load(date: d) } label: {
-                                Text(hgDay(d, today: hgToday()))
-                                    .font(.footnote.weight(d == vm.date ? .bold : .regular))
-                                    .padding(.horizontal, 13).padding(.vertical, 7)
-                                    .background(Capsule().fill(d == vm.date ? Color.orange : Color.gray.opacity(0.15)))
-                                    .foregroundStyle(d == vm.date ? .white : .primary)
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 12)
-                }
-                .padding(.top, 6)
-            }
-            List {
-                if !vm.note.isEmpty { Section { Text(vm.note).font(.caption).foregroundStyle(.secondary) } }
-                let online = vm.items.filter(\.online)
-                let later = vm.items.filter { !$0.online }
-                if !later.isEmpty {
-                    Section {
-                        HRail(title: "🗓 即将上线", sub: "先囤预告, 到点开抢",
-                              items: later.map {
-                                  HRail.CardLike(sid: $0.seriesId, title: $0.title,
-                                                 sub: $0.note.isEmpty ? $0.publishAt : $0.note,
-                                                 cover: $0.coverUrl, rank: 0)
-                              })
-                            .listRowInsets(EdgeInsets())
-                            .listRowBackground(Color.clear)
-                            .listRowSeparator(.hidden)
-                    }
-                }
-                if vm.items.isEmpty && vm.busy {
-                    Section {
-                        GridSkeleton().listRowInsets(EdgeInsets())
-                            .listRowBackground(Color.clear).listRowSeparator(.hidden)
-                    }
-                }
-                if !online.isEmpty {
-                    Section {
-                        Grid2Lite(items: online.map {
-                            var sub = "全\($0.episodeCount)集"
-                            if !$0.categories.isEmpty { sub += " · " + $0.categories.joined(separator: "·") }
-                            if !$0.heat.isEmpty { sub = $0.heat + " · " + sub }
-                            return HRail.CardLike(sid: $0.seriesId, title: $0.title,
-                                                  sub: sub, cover: $0.coverUrl, rank: 0)
-                        }, nearEnd: { i in
-                            if i >= online.count - 9 { vm.more() }
-                        })
-                        .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
-                        MoreButton(busy: vm.busy, more: { vm.more() })
-                    } header: {
-                        Text("已上线 · 点卡整剧下载").font(.system(size: 16, weight: .heavy))
-                    }
-                }
-            }
-            .listStyle(.plain)
-            .refreshable { vm.load() }
-        }
-    }
-}
 
 // MARK: - 分类段
 
-private struct CatTab: View {
-    @ObservedObject var vm: CatVM
-    var body: some View {
-        VStack(spacing: 6) {
-            ForEach(vm.panel, id: \.key) { row in
-                if !row.options.isEmpty {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(row.name)
-                            .font(.footnote.weight(.bold))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 14)
-                        ChipScroller(labels: row.options.map { ($0.name, vm.picks[row.key] == $0.value) },
-                                     onPick: { vm.pick(key: row.key, value: row.options[$0].value) })
-                    }
-                    .padding(.top, 2)
-                }
-            }
-            List {
-                if !vm.note.isEmpty { Section { Text(vm.note).font(.caption).foregroundStyle(.secondary) } }
-                if vm.rows.isEmpty && vm.busy {
-                    Section {
-                        GridSkeleton().listRowInsets(EdgeInsets())
-                            .listRowBackground(Color.clear).listRowSeparator(.hidden)
-                    }
-                }
-                Section {
-                    Grid2Cards(rows: vm.rows, nearEnd: { i in
-                        if i >= vm.rows.count - 3 { vm.more() }
-                    })
-                        .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
-                    MoreButton(busy: vm.busy, more: { vm.more() })
-                } header: {
-                    Text("筛选结果 · 条件随便松紧").font(.system(size: 16, weight: .heavy))
-                }
-            }
-            .listStyle(.plain)
-            .overlay { if vm.busy && vm.rows.isEmpty { ProgressView().controlSize(.large) } }
-        }
-    }
-}
 
 // MARK: - 演员段
 
@@ -2240,55 +2091,6 @@ func podRing(_ place: Int) -> Color {
     }
 }
 
-private struct CastTab: View {
-    @EnvironmentObject private var nav: TheaterNav
-    @ObservedObject var vm: CastVM
-    var body: some View {
-        List {
-            if !vm.note.isEmpty { Section { Text(vm.note).font(.caption).foregroundStyle(.secondary) } }
-            let top = Array(vm.items.prefix(3))
-            let rest = Array(vm.items.dropFirst(3))
-            if !top.isEmpty {
-                Section {
-                    HStack(spacing: 0) {
-                        ForEach(Array(top.enumerated()), id: \.offset) { i, it in
-                            Button { nav.go(HgActorGo(uid: it.userId, name: it.actor), "podium " + it.actor) } label: {
-                                CastPodium(it: it, place: i + 1)
-                            }
-                            .buttonStyle(.plain)
-                            .frame(maxWidth: .infinity)
-                        }
-                    }
-                    .padding(.vertical, 10)
-                    .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-                }
-            }
-            if !rest.isEmpty {
-                Section {
-                    ForEach(Array(rest.enumerated()), id: \.offset) { i, it in
-                        if it.userId.isEmpty {
-                            CastRowView(it: it)
-                        } else {
-                            Button { nav.go(HgActorGo(uid: it.userId, name: it.actor), "castrow " + it.actor) } label: {
-                                CastRowView(it: it)
-                            }
-                            .buttonStyle(.plain)
-                            .onAppear { if i >= rest.count - 6 { vm.more() } }
-                        }
-                    }
-                    MoreButton(busy: vm.busy, more: { vm.more() })
-                } header: {
-                    Text("人气榜 · 点进去看 TA 演过啥").font(.system(size: 16, weight: .heavy))
-                }
-            }
-        }
-        .listStyle(.plain)
-        .overlay { if vm.busy && vm.items.isEmpty { ProgressView().controlSize(.large) } }
-        .refreshable { vm.load() }
-    }
-}
 
 // 前三名领奖台(金银铜描边圆头像)
 private struct CastPodium: View {
@@ -2383,11 +2185,6 @@ struct ActorPage: View {
     }
     private func wan(_ n: Int) -> String {
         n >= 10_000 ? "\((n + 5_000) / 10_000)万" : "\(n)"
-    }
-    private func workSub(_ w: Work) -> String {
-        var sub = w.tags.joined(separator: "·")
-        if w.heat > 0 { sub += (sub.isEmpty ? "" : " · ") + wan(w.heat) + "热度" }
-        return sub
     }
 }
 
