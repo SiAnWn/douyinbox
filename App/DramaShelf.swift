@@ -266,10 +266,12 @@ struct ShelfGrid<Destination: View>: View {
         .sheet(item: $rebind) { s in
             RebindSheet(s: s) { bump += 1 }
         }
-        // v1.10.105 开门自动补档案: 补到几条就重踢分组, 老千+老千2 这类真系列进门即合册
+        // v1.10.111 开门两连招: 先批量认亲大招(全库 sid 一把过), 再搜索兜底(无档/无 sid 的散户)
         .onAppear {
             Task { @MainActor in
-                if await SeriesMetaStore.autoCheck(source) > 0 { bump += 1 }
+                var n = await SeriesMetaStore.reunion(source)
+                n += await SeriesMetaStore.autoCheck(source)
+                if n > 0 { bump += 1 }
             }
         }
     }

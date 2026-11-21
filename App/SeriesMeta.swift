@@ -156,6 +156,52 @@ enum SeriesMetaStore {
         if let j = try? JSONEncoder().encode(m) { try? j.write(to: file(dir)) }
     }
 
+    /// v1.10.111 合册大招: 官方认亲批量口 getSeriesBatch — 全库已建档 sid 一把集中核验,
+    /// related 会事后补(老千2/剑二十四都是马后炮), 名字规则走不通的搜索通道从此双保险
+    @MainActor
+    static func reunion(_ list: [Series]) async -> Int {
+        guard let c = Hongguo.client else { return 0 }
+        var pairs: [(sid: String, dir: URL)] = []
+        for s in list {
+            guard let m = SeriesMetaStore.load(s.url), !m.sid.isEmpty, !m.solo else { continue }
+            pairs.append((m.sid, s.url))
+        }
+        guard !pairs.isEmpty else { return 0 }
+        var updated = 0, pos = 0
+        while pos < pairs.count {
+            if Task.isCancelled { break }
+            let end = Swift.min(pos + 20, pairs.count)
+            let chunk = Array(pairs[pos..<end])
+            pos = end
+            let r = try? await Hongguo.attempt(c, { try await c.getSeriesBatch(chunk.map { $0.sid }) })
+            guard let ds = r else {
+                HGTrail.note("reunion batch fail n=" + String(chunk.count))
+                try? await Task.sleep(nanoseconds: 1_200_000_000)
+                continue
+            }
+            for d in ds {
+                guard let sd = d.series, !sd.id.isEmpty else { continue }
+                for hit in chunk where hit.sid == sd.id {
+                    guard var m = SeriesMetaStore.load(hit.dir) else { continue }
+                    let before = m.albumId
+                    // 只更新认亲三件套, 海报简介演员等存量不动
+                    m.albumId = sd.relatedAlbumId
+                    m.svrTitle = sd.title
+                    m.albumFetched = true
+                    m.reviewed = true
+                    if let j = try? JSONEncoder().encode(m) { try? j.write(to: file(hit.dir)) }
+                    if m.albumId != before {
+                        updated += 1
+                        HGTrail.note("reunion album sid=" + sd.id + " title=" + sd.title + " A=" + (m.albumId.isEmpty ? "单" : m.albumId))
+                    }
+                }
+            }
+            try? await Task.sleep(nanoseconds: 500_000_000)
+        }
+        HGTrail.note("reunion done n=" + String(pairs.count) + " changed=" + String(updated))
+        return updated
+    }
+
     /// v1.10.105 剧墙开门自动验明正身: 老千/老千2 案——官方 related 金标准一直有,
     /// 只是档案没拉到头上就不合册。开门补没档的, 温和限速, 搜不到先跳过不写死(留给手动按钮)
     @MainActor
@@ -189,7 +235,10 @@ enum SeriesMetaStore {
             var baseHit: Openhongguo.SeriesSummary?
             for it in pg.items where !it.id.isEmpty {
                 if DramaShelf.norm(it.title) == nm { exact = it; break }
-                if baseHit == nil, DramaShelf.norm(DramaShelf.base(it.title)) == bm { baseHit = it }
+                // v1.10.111 base 攀队加季号闸门: 只有名字带季号的才是续集宣言(老千2/娘子第一季),
+                // 光杆"云渺"不许攀云渺家族(110 真机冤案: 官方 post-hoc related 把单剧拽进别人家册)
+                if baseHit == nil, DramaShelf.seasonNo(s.name) > 0,
+                   DramaShelf.norm(DramaShelf.base(it.title)) == bm { baseHit = it }
             }
             if let hit = exact ?? baseHit {
                 HGTrail.note("autocheck hit name=" + s.name + " sid=" + hit.id + " mode=" + (exact == nil ? "base" : "exact"))
