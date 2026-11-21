@@ -134,6 +134,15 @@ enum DramaShelf {
 
     static func group(_ list: [Series]) -> [ShelfGroup] {
         memo = [:]
+        // v1.10.121 私号牌=指针不是终态: H+文件夹名 指向的那部剧若后来领到官方册号
+        // (太奶奶真机案: 手动并的一/二部带私号 三/五部带官方7532 一家分两桌永不团聚),
+        // 全桌自动升级换官方号同桌。官方号在手一律让位, H私号仅在目标无官方号时兜底
+        var handTarget: [String: String] = [:]
+        for s in list {
+            if let a = meta(s)?.albumId, !a.isEmpty {
+                handTarget["H" + s.url.lastPathComponent] = a
+            }
+        }
         var dict: [String: [Series]] = [:]
         var titles: [String: String] = [:]
         for s in list {
@@ -142,7 +151,8 @@ enum DramaShelf {
             if let m, m.solo {
                 key = "S:" + s.id                                // v1.10.90 人工钦定单剧, 天王老子来了也不进册
             } else if let m, let ha = m.handAlbum, !ha.isEmpty {
-                key = "A:" + ha                                  // v1.10.116 人工钦定和谁一家, 凌驾自动结论
+                // v1.10.116 人工钦定和谁一家, 凌驾自动结论; v1.10.121 目标有官方号则升牌
+                key = "A:" + (ha.hasPrefix("H") ? (handTarget[ha] ?? ha) : ha)
             } else if let m, !m.albumId.isEmpty, m.svrTitle != SeriesMeta.noMatch {
                 // v1.10.115 验身门拆掉(114 X光终审冤案): album 全局唯一且官方签发, 天然不会乱合;
                 // 老千2/剑二十四 album 明明在手却被 svrTitle剥号比对否决 — 113 库内零假合实证此门多余
