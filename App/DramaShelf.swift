@@ -141,8 +141,8 @@ enum DramaShelf {
             let key: String
             if let m, m.solo {
                 key = "S:" + s.id                                // v1.10.90 人工钦定单剧, 天王老子来了也不进册
-            } else if let m, !m.handAlbum.isEmpty {
-                key = "A:" + m.handAlbum                         // v1.10.116 人工钦定和谁一家, 凌驾自动结论
+            } else if let m, let ha = m.handAlbum, !ha.isEmpty {
+                key = "A:" + ha                                  // v1.10.116 人工钦定和谁一家, 凌驾自动结论
             } else if let m, !m.albumId.isEmpty, m.svrTitle != SeriesMeta.noMatch {
                 // v1.10.115 验身门拆掉(114 X光终审冤案): album 全局唯一且官方签发, 天然不会乱合;
                 // 老千2/剑二十四 album 明明在手却被 svrTitle剥号比对否决 — 113 库内零假合实证此门多余

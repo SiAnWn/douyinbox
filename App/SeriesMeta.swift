@@ -31,8 +31,9 @@ struct SeriesMeta: Codable {
     /// v1.10.90 人工钦定"这是一部独立剧"(认档弹窗勾选): 归册时谁也不进
     var solo = false
     /// v1.10.116 手动合册钦定章: 用户点名和谁一个系列(存目标册号); 优先级仅次于 solo,
-    /// 凌驾一切官方自动结论 — 拖了六个版本的终极兜底
-    var handAlbum = ""
+    /// 凌驾一切官方自动结论。117 教训重申=必须 Optional — 116 非可选默认值直接炸光全部旧档
+    /// (synthesized Decodable 不为带初值的非可选属性合成缺键容错 110饿死案原样复发)
+    var handAlbum: String?
     /// v1.10.110 自动验身复审戳: 验过不再占名额(真机案: 单剧 albumId 恒空致 need 名单死循环,
     /// 老千2 与行道者永远排不上队)。Optional = 合成 Codable 对缺键走 decodeIfPresent, 老档案不炸
     var reviewed: Bool?
@@ -73,7 +74,7 @@ enum SeriesMetaStore {
         m.title = title
         // v1.10.90 重新认档/覆盖重拉时保住人工"钦定单剧"印章; v1.116 保住"手动合册"章
         m.solo = SeriesMetaStore.load(dir)?.solo ?? false
-        m.handAlbum = SeriesMetaStore.load(dir)?.handAlbum ?? ""
+        m.handAlbum = SeriesMetaStore.load(dir)?.handAlbum
         m.total = s.episodeCount
         m.desc = s.description.trimmingCharacters(in: .whitespacesAndNewlines)
         m.heat = big(s.heat)
@@ -156,8 +157,9 @@ enum SeriesMetaStore {
     /// 都没有就自造私号(H+文件夹名) — 只影响本地分组, 不碰任何官方数据
     static func applyMerge(src: Series, into other: Series) {
         let m2 = load(other.url)
+        let ha = m2?.handAlbum ?? ""
         let album: String = {
-            if let a = m2?.handAlbum, !a.isEmpty { return a }
+            if !ha.isEmpty { return ha }
             if let a = m2?.albumId, !a.isEmpty { return a }
             return "H" + other.url.lastPathComponent
         }()
@@ -169,7 +171,7 @@ enum SeriesMetaStore {
     /// v1.10.116 手动合册盖章/拆章(album 传空=拆章回自动)
     static func setHandAlbum(_ dir: URL, _ album: String) {
         var m = SeriesMetaStore.load(dir) ?? SeriesMeta()
-        m.handAlbum = album
+        m.handAlbum = album.isEmpty ? nil : album
         if let j = try? JSONEncoder().encode(m) { try? j.write(to: file(dir)) }
     }
 
