@@ -168,6 +168,7 @@ enum SeriesMetaStore {
         }
         guard !pairs.isEmpty else { return 0 }
         var updated = 0, pos = 0
+        var retry: [(sid: String, dir: URL)] = []
         while pos < pairs.count {
             if Task.isCancelled { break }
             let end = Swift.min(pos + 20, pairs.count)
@@ -193,12 +194,31 @@ enum SeriesMetaStore {
                     if m.albumId != before {
                         updated += 1
                         HGTrail.note("reunion album sid=" + sd.id + " title=" + sd.title + " A=" + (m.albumId.isEmpty ? "单" : m.albumId))
+                    } else if m.albumId.isEmpty {
+                        // v1.10.112 批量口=缓存层, 官方新补的 related 会晚刷(111 真机实锤
+                        // 老千2/剑二十四手机批量回空而 PC 单部口实时有) → 空户逐部单查补验
+                        retry.append(hit)
                     }
                 }
             }
             try? await Task.sleep(nanoseconds: 500_000_000)
         }
-        HGTrail.note("reunion done n=" + String(pairs.count) + " changed=" + String(updated))
+        // v1.10.112 空户逐部走单部实时口补验(批量口是缓存层, 新补 related 会晚刷)
+        for hit in retry {
+            if Task.isCancelled { break }
+            let one = try? await Hongguo.attempt(c, { try await c.getSeries(hit.sid) })
+            if let one, !one.relatedAlbumId.isEmpty, var m = SeriesMetaStore.load(hit.dir) {
+                m.albumId = one.relatedAlbumId
+                m.svrTitle = one.title
+                if let j = try? JSONEncoder().encode(m) { try? j.write(to: file(hit.dir)) }
+                updated += 1
+                HGTrail.note("reunion solo album sid=" + hit.sid + " title=" + one.title + " A=" + m.albumId)
+            } else {
+                HGTrail.note("reunion solo empty sid=" + hit.sid)
+            }
+            try? await Task.sleep(nanoseconds: 550_000_000)
+        }
+        HGTrail.note("reunion done n=" + String(pairs.count) + " retry=" + String(retry.count) + " changed=" + String(updated))
         return updated
     }
 

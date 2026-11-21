@@ -255,6 +255,12 @@ struct ShelfGrid<Destination: View>: View {
                                 }
                             }
                         }
+                        // v1.10.112 册内也能断案: 每季长按可重新认档/钦定独立(111 真机报
+                        // 云渺进了册就长按无反应=认档钥匙只焊在单册卡上)
+                        .contextMenu {
+                            Button { rebind = s } label: { Label("重新认档", systemImage: "text.magnifyingglass") }
+                            Button(role: .destructive) { clearMeta(s) } label: { Label("清空档案撤假海报", systemImage: "trash") }
+                        }
                     }
                 }
                 .navigationTitle(g.title)
