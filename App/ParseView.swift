@@ -469,6 +469,16 @@ struct ParseView: View {
         }
     }
 
+    // v1.10.118 快捷线感速: 预订单/lift 直取没有逐字节回调, 下完拿落盘体积÷用时补一报,
+    // 场页发车批量与分享链批量从此同权显示速度
+    private func epSpeed(_ rel: String, _ t0: Date) {
+        let p = SavePaths.docs.appendingPathComponent(rel).path
+        guard let sz = try? FileManager.default.attributesOfItem(atPath: p)[.size] as? Int64,
+              sz > 0 else { return }
+        let sps = Double(sz) / max(0.15, Date().timeIntervalSince(t0))
+        speedText = Naming.fmtSpeed(sps)
+    }
+
     // 剧场页发车单(v1.10.15): 场→详情→整剧下载 送回本页合成 hg:// 单直接批量
     private func consumeHgWant() {
         guard let w = app.hgWant else { return }
@@ -486,6 +496,8 @@ struct ParseView: View {
             }
         }
         status = "剧场发车：\(w.title)"
+        // v1.10.118 场页批量补挂进度条(分享链批量早就有 这边一直光显字)
+        showProgress = true; progress = 0; speedText = ""
         Task { await hongguoRun(res, opt) }
     }
 
@@ -562,10 +574,13 @@ struct ParseView: View {
                 // 预订单命中: 流地址早已批发到手, 直接下载不再碰取流口(免限流)
                 if let lf0 = reservations[ep.id] {
                     status = String(format: "红果 %d/%d · 预订单直取 %@", i + 1, n, lf0.definition)
+                    let t0 = Date()
                     let (done, why) = await saveLift(lf0, rel: rel)
                     if done {
                         okN += 1
                         progress = Double(i + 1) / Double(n)
+                        // v1.10.118 事后感速: 快捷线(download 闭包无回调)下完拿文件体积÷用时补报
+                        epSpeed(rel, t0)
                         continue
                     }
                     HGTrail.note("reserve miss ep\(num) \(why.prefix(60)) → 走单车道")
@@ -598,7 +613,9 @@ struct ParseView: View {
                             }
                             let lf = try await HongguoLift.resolve(vid: ep.id)
                             status = "lift 注册设备取流 \(lf.definition)，下载中…"
+                            let t1 = Date()
                             (liftOK, liftWhy) = await saveLift(lf, rel: rel)
+                            if liftOK { epSpeed(rel, t1) }   // v1.10.118 同补事后感速
                         } catch let e { liftWhy = "lift " + e.localizedDescription }
                         if liftOK {
                             lastWhy = ""
