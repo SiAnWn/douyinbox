@@ -144,6 +144,10 @@ enum DramaShelf {
             } else if let m, !m.albumId.isEmpty, albumTrust(m, s) {
                 key = "A:" + m.albumId                          // v89 只信验明正身的官方合集
             } else if let m, m.albumFetched {
+                // v1.10.114 X光: 有官方album却被身份证验身否决的 是头号悬案嫌疑人 单独留名
+                if !m.albumId.isEmpty, m.svrTitle != SeriesMeta.noMatch {
+                    HGTrail.note("shelf veto " + s.name + " album=" + m.albumId + " svr=" + m.svrTitle)
+                }
                 if m.svrTitle == SeriesMeta.noMatch {
                     // 红果查无此剧(多半抖音版): 回名字规则, 有季号才攀队
                     let n = seasonNo(s.name)
@@ -158,10 +162,8 @@ enum DramaShelf {
                 key = n > 0 ? "N:" + norm(base(s.name)) : "B:" + s.id
             }
             dict[key, default: []].append(s)
-            // v1.10.108 户籍判决留痕: 只记入了册通道(A:/N:)的, 孤本不刷屏 — 老千悬案等查户口专用
-            if key.hasPrefix("A:") || key.hasPrefix("N:") {
-                HGTrail.note("shelf key " + s.name + " → " + key)
-            }
+            // v1.10.114 X光全量: 每部都报钥匙(A/N/S/B 一网打尽) 悬案不用再猜
+            HGTrail.note("shelf key " + s.name + " → " + key)
             let b = base(s.name)
             let cur = titles[key]
             if cur == nil || (b.count < (cur ?? "zzzz").count && b.count >= 2) { titles[key] = b }
