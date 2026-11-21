@@ -201,6 +201,13 @@ enum SeriesMetaStore {
                     }
                 }
             }
+            // v1.10.113 批量口还会整行失踪(112 遗嘱实锤: 老千2/剑二十四的 sid 请求了却没回行,
+            // 连补验名单都进不去) → 没回行的也全部补进单查实检
+            let got = Set(ds.compactMap { $0.series?.id })
+            for hit in chunk where !got.contains(hit.sid) {
+                HGTrail.note("reunion lost sid=" + hit.sid)
+                retry.append(hit)
+            }
             try? await Task.sleep(nanoseconds: 500_000_000)
         }
         // v1.10.112 空户逐部走单部实时口补验(批量口是缓存层, 新补 related 会晚刷)
