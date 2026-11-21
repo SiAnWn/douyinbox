@@ -152,9 +152,12 @@ enum SeriesMetaStore {
         guard let c = Hongguo.client else { return 0 }
         var need = list.filter { s in
             guard let old = SeriesMetaStore.load(s.url) else { return true }
-            // v1.10.106 旧版 exact 比对会把"老千 2"这类带空格文件夹误写成查无结论 → noMatch 也复审
-            if old.albumFetched && old.svrTitle != SeriesMeta.noMatch { return false }
-            return true
+            if old.solo { return false }
+            if !old.albumFetched { return true }
+            // v1.10.106 旧版 exact 误写的查无结论复审翻案
+            if old.svrTitle == SeriesMeta.noMatch { return true }
+            // v1.10.109 官方 related 会事后补(老千2 下当时空、今天复查已有) → 认证单剧也要复审
+            return old.albumId.isEmpty
         }
         need = Array(need.prefix(15))
         var ok = 0
@@ -166,8 +169,18 @@ enum SeriesMetaStore {
                 try? await Task.sleep(nanoseconds: 1_200_000_000)
                 continue
             }
-            if let hit = pg.items.first(where: { DramaShelf.norm($0.title) == DramaShelf.norm(s.name) }), !hit.id.isEmpty {
-                HGTrail.note("autocheck hit name=" + s.name + " sid=" + hit.id)
+            // v1.10.109 命中两阶梯: 先归一化全等; 再退"剥季号同基名"第一行
+            // (真机病历: 文件夹"我家娘子不对劲第一季" 官方真名"我家娘子，不对劲" 一字之差永合不上)
+            let nm = DramaShelf.norm(s.name)
+            let bm = DramaShelf.norm(DramaShelf.base(s.name))
+            var exact: Openhongguo.SeriesSummary?
+            var baseHit: Openhongguo.SeriesSummary?
+            for it in pg.items where !it.id.isEmpty {
+                if DramaShelf.norm(it.title) == nm { exact = it; break }
+                if baseHit == nil, DramaShelf.norm(DramaShelf.base(it.title)) == bm { baseHit = it }
+            }
+            if let hit = exact ?? baseHit {
+                HGTrail.note("autocheck hit name=" + s.name + " sid=" + hit.id + " mode=" + (exact == nil ? "base" : "exact"))
                 await harvest(c, sid: hit.id, title: s.name, dir: s.url)
                 if FileManager.default.fileExists(atPath: file(s.url).path) { ok += 1 }
             } else {
