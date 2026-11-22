@@ -405,6 +405,13 @@ struct InlinePlayer: View {
                         start = es[eIdx]
                     }
                     if let d = dmDir { dmAll = DanmakuStore.loadEps(d) ?? [:] }
+                    else {
+                        // v1.10.125 弹幕目录自检: 视频躺在带 弹幕.json 的剧文件夹里就自动挂弹幕
+                        let dir = start.url.deletingLastPathComponent()
+                        if (try? FileManager.default.contentsOfDirectory(atPath: dir.path))?.contains("弹幕.json") == true {
+                            dmAll = DanmakuStore.loadEps(dir) ?? [:]
+                        }
+                    }
                     syncDm()
                     curVid = start
                     pc.load(start.url, id: start.id)
@@ -552,6 +559,9 @@ struct EpisodePlayer: View {
     @State private var index: Int
     @State private var showUI = false
     @State private var fill = true
+    // v1.10.125 短剧点集页补弹幕(用户报障: 只有坊入口有弹幕) — 与映/InlinePlayer 同款离线飘屏
+    @State private var dmAll: [Int: [DMItem]] = [:]
+    @State private var dmItems: [DMItem] = []
 
     init(items: [VideoItem], start: Int) {
         self.items = items
@@ -563,6 +573,9 @@ struct EpisodePlayer: View {
             Color.black.ignoresSafeArea()
             if index < items.count {
                 PlayerSurface(player: pc.player, fill: fill)
+                    .ignoresSafeArea()
+
+                DanmakuLayer(pc: pc, items: dmItems)
                     .ignoresSafeArea()
 
                 Color.clear.contentShape(Rectangle())
@@ -604,7 +617,14 @@ struct EpisodePlayer: View {
         }
         .statusBarHidden(!showUI)
         .onAppear {
-            if index < items.count { pc.load(items[index].url, id: items[index].id) }
+            if index < items.count {
+                let dir = items[index].url.deletingLastPathComponent()
+                if (try? FileManager.default.contentsOfDirectory(atPath: dir.path))?.contains("弹幕.json") == true {
+                    dmAll = DanmakuStore.loadEps(dir) ?? [:]
+                }
+                dmItems = dmAll[index + 1] ?? []
+                pc.load(items[index].url, id: items[index].id)
+            }
             pc.observeEnd { next() }
         }
         .onDisappear { pc.stop(); pc.removeObs() }
@@ -625,6 +645,7 @@ struct EpisodePlayer: View {
     private func next() {
         if index + 1 < items.count {
             index += 1
+            dmItems = dmAll[index + 1] ?? []
             pc.load(items[index].url, id: items[index].id)
         } else {
             pc.pause()
