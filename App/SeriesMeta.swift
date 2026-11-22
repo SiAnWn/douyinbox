@@ -348,10 +348,15 @@ enum DanmakuStore {
 
     @MainActor
     static func harvest(_ c: OpenhongguoClient, sid: String,
-                        eps: [(num: Int, id: String)], dir: URL, maxRounds: Int = 8) async {
+                        eps: [(num: Int, id: String)], dir: URL,
+                        maxRounds: Int = 8, mergeExisting: Bool = false) async {
         var all: [String: [DMEntry]] = [:]
         var keys: [String: Set<String>] = [:]   // v1.10.122 去重账本 "集号"→{t|x}
         var anyPageOK = false          // 至少有一页成功才算"这剧真没弹幕", 防限流空手立假档
+        // v1.10.126 mergeExisting: 旧档案当种子打底, 本轮只增不减(换马甲重采用)
+        if mergeExisting, let old = loadEps(dir) {
+            for (n, arr) in old { merge(n, arr.map { DMEntry(t: $0.t, x: $0.x) }, &all, &keys) }
+        }
         // v1.10.122 换设备拼全量(SDK 源码实锤: 服务端按设备下发精选子集, 每台看到的不同;
         // 一集全量8093条, 单台匿名只分到35~297) — 第二轮前 resetDevice 换马甲再扫一遍,
         // 两轮并集去重, 弹幕量约翻倍; 代价每剧多 ~1 分钟后台
@@ -462,6 +467,34 @@ enum DanmakuStore {
             try? await Task.sleep(nanoseconds: 200_000_000)
         }
         progress("弹幕补齐：\(ok)/\(list.count) 部（后台继续加载坊即生效）")
+    }
+
+    /// v1.10.126 换马甲重采(用户几十部存量剧加餐): 已有 弹幕.json 的剧逐部再榨干扫一轮,
+    /// 结果与旧档案并集去重只增不减; sid 优先用档案存根免耗搜索
+    @MainActor
+    static func reharvest(_ app: AppState, progress: @escaping (String) -> Void) async {
+        guard let c = Hongguo.client else { progress("红果引擎未就绪"); return }
+        let list = app.dramaSeries.filter { FileManager.default.fileExists(atPath: file($0.url).path) }
+        guard !list.isEmpty else { progress("没有已有弹幕档案的剧可重采"); return }
+        var ok = 0
+        for (i, s) in list.enumerated() {
+            progress("重采 \(i + 1)/\(list.count)：\(s.name)")
+            var sid = SeriesMetaStore.load(s.url)?.sid ?? ""
+            if sid.isEmpty {
+                guard let pg = try? await Hongguo.attempt(c, { try await c.search(s.name) }),
+                      let hit = pg.items.first(where: { $0.title == s.name }),
+                      !hit.id.isEmpty else { continue }
+                sid = hit.id
+            }
+            guard let page = try? await Hongguo.attempt(c, { try await c.listEpisodes(sid) }) else { continue }
+            let pairs = page.items.filter { $0.playable }
+                .map { (num: $0.number > 0 ? $0.number : 0, id: $0.id) }
+                .filter { $0.num > 0 }
+            await harvest(c, sid: sid, eps: pairs, dir: s.url, mergeExisting: true)
+            ok += 1
+            try? await Task.sleep(nanoseconds: 300_000_000)
+        }
+        progress("重采完成：\(ok)/\(list.count) 部（增量并入各剧弹幕，只增不减）")
     }
 }
 
