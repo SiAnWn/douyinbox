@@ -322,12 +322,12 @@ enum HongguoLift {
     // 设备参数（顺序严格照抓包样本：签名对 query 字节级敏感）
     private static let deviceParams: [(String, String)] = [
         ("ac", "wifi"), ("channel", "update_64"), ("aid", "8662"), ("app_name", "novelread"),
-        ("version_code", "73532"), ("version_name", "7.3.5.32"),
+        ("version_code", "74532"), ("version_name", "7.4.5.32"),
         ("device_platform", "android"), ("os", "android"), ("ssmix", "a"),
         ("device_type", "25053RT47C"), ("device_brand", "Redmi"), ("language", "zh"),
-        ("os_api", "36"), ("os_version", "16"), ("manifest_version_code", "73532"),
-        ("resolution", "1280*2772"), ("dpi", "520"), ("update_version_code", "73532"),
-        ("host_abi", "arm64-v8a"), ("dragon_device_type", "phone"), ("pv_player", "73532"),
+        ("os_api", "36"), ("os_version", "16"), ("manifest_version_code", "74532"),
+        ("resolution", "1280*2772"), ("dpi", "520"), ("update_version_code", "74532"),
+        ("host_abi", "arm64-v8a"), ("dragon_device_type", "phone"), ("pv_player", "74532"),
         ("compliance_status", "0"), ("need_personal_recommend", "1"),
         ("player_so_load", "1"), ("is_android_pad_screen", "0"),
     ]
@@ -497,7 +497,7 @@ enum HongguoLift {
         bean += protoBytes(4, Data("8662".utf8))
         bean += protoBytes(5, Data(deviceId.utf8))
         bean += protoBytes(6, Data("1611921764".utf8))
-        bean += protoBytes(7, Data("7.3.5.32".utf8))
+        bean += protoBytes(7, Data("7.4.5.32".utf8))
         bean += protoBytes(8, Data("v04.07.01-ml-android".utf8))
         bean += protoVar(9, 135_135_744)
         bean += protoBytes(10, Data(repeating: 0, count: 8))

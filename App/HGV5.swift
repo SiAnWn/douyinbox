@@ -13,7 +13,9 @@ enum HGV5 {
     // 新门优先, 旧门留备胎 (服务端若回撤还能活)
     static let pathNew = "/novel/player/multi_video_model/v1/"
     static let path = "/novel/player/multi_video_model/player/v1"
-    static let v5UA = "com.phoenix.read/73932 (Linux; U; Android 12; zh_CN_#Hans; PGT-AN10; Build/V417IR;tt-ok/3.12.13.20)"
+    // 6.28 实证: 2026-11-24 起红果拒 74332 画像, preload/v1 + 74532 + medusa field21=312 三件套同时满足才发货
+    static let pathPre = "/novel/player/multi_video_model/preload/v1"
+    static let v5UA = "com.phoenix.read/74532 (Linux; U; Android 16; zh_CN; 25053RT47C; Build/BP2A.250605.031.A3)"
     static let magic = HGBase.fromHex("2d4b4fca49750d433fb5ae2c226dcc56")
     static let signKey = HGBase.fromHex("b23c2a470a20d105dc3f8c4438f8272ed46d6c89ffdcdedd5108698d26e9489d")
     static let v5Sbox = HGBase.fromHex(
@@ -64,16 +66,16 @@ enum HGV5 {
 
     static func v5Pairs(_ dev: HongguoLift.Device) -> [(String, String)] {
         [("aid", "8662"), ("app_name", "novelread"),
-         ("version_code", "74332"), ("version_name", "7.4.3.32"),
-         ("channel", "vivo_8662_64"), ("device_platform", "android"),
-         ("device_type", "PGT-AN10"), ("os_version", "12"), ("update_version_code", "74332"),
+         ("version_code", "74532"), ("version_name", "7.4.5.32"),
+         ("channel", "update_64"), ("device_brand", "Redmi"), ("device_platform", "android"),
+         ("device_type", "25053RT47C"), ("os_version", "16"), ("os_api", "36"), ("update_version_code", "74532"),
          ("iid", dev.iid), ("cdid", dev.cdid), ("device_id", dev.deviceId)]
     }
 
     static func v5Body(vid: String) -> Data? {   // Go map 序列化=键名字典序；gzip 一次、签名与发送同字节
-        let json = "{\"biz_param\":{\"detail_page_version\":0,\"device_level\":1,\"disable_digg_stat\":false," +
+        let json = "{\"biz_param\":{\"detail_page_version\":0,\"device_level\":2,\"disable_digg_stat\":false," +
             "\"disable_video_relate_book\":false,\"need_all_video_definition\":true,\"need_mp4_align\":false," +
-            "\"use_os_player\":false,\"use_server_dns\":false,\"video_platform\":1024},\"dr_scene\":\"player\"," +
+            "\"use_os_player\":false,\"use_server_dns\":false,\"video_platform\":1024},\"dr_scene\":\"preload\"," +
             "\"mixed_video_id_map\":{\"1004\":[\"\(vid)\"]}}"
         return try? HongguoLift.hgGzip(Data(json.utf8))
     }
@@ -81,9 +83,9 @@ enum HGV5 {
     // v1.10.101 批发预订单 V5 方言版 (PC 16:5x 实测新门 mixed 形态 = 5 流+密钥 23690B)
     static func v5BodyBatch(vids: [String]) -> Data? {
         let arr = vids.map { "\"\($0)\"" }.joined(separator: ",")
-        let json = "{\"biz_param\":{\"detail_page_version\":0,\"device_level\":1,\"disable_digg_stat\":false," +
+        let json = "{\"biz_param\":{\"detail_page_version\":0,\"device_level\":2,\"disable_digg_stat\":false," +
             "\"disable_video_relate_book\":false,\"need_all_video_definition\":true,\"need_mp4_align\":false," +
-            "\"use_os_player\":false,\"use_server_dns\":false,\"video_platform\":1024},\"dr_scene\":\"player\"," +
+            "\"use_os_player\":false,\"use_server_dns\":false,\"video_platform\":1024},\"dr_scene\":\"preload\"," +
             "\"mixed_video_id_map\":{\"1004\":[\(arr)]}}"
         return try? HongguoLift.hgGzip(Data(json.utf8))
     }
@@ -93,7 +95,7 @@ enum HGV5 {
         guard let body = v5BodyBatch(vids: vids),
               let signed = sign(pairs: v5Pairs(dev), nowMs: Int64(Date().timeIntervalSince1970 * 1000), body: body) else { return out }
         for host in v5Hosts {
-          for p in [pathNew, path] {
+          for p in [pathPre, pathNew, path] {
             guard let u = URL(string: host + p + "?" + signed.query) else { continue }
             var req = URLRequest(url: u)
             req.httpMethod = "POST"
@@ -341,7 +343,7 @@ enum HGV5 {
             pStr(7, version) + pStr(8, "v04.10.03-ml-android") + pSInt(9, 0x040a0300) +
             pBytes(10, flags) + pSInt(12, Int64(ts)) + pBytes(13, Array(digest)) + pBytes(14, Array(queryHash[0..<6])) +
             pBytes(15, pSInt(1, 1) + pSInt(2, 1) + pSInt(3, 1) + pSInt(5, 1)) +
-            pSInt(17, Int64(ts)) + pStr(20, "none") + pSInt(21, 377) + pBytes(23, env) +
+            pSInt(17, Int64(ts)) + pStr(20, "none") + pSInt(21, 312) + pBytes(23, env) +
             pStr(24, "{\"cmr\":16777216,\"cmr2\":16777216,\"un_h\":11,\"vpn\":0,\"kd\":0,\"dyn\":\"\",\"do\":1,\"tk\":true}")
         let (hash, mask) = keyHash(ent.random)
         var transformed = flags + xmxor(message, Array(hash))
@@ -497,9 +499,9 @@ enum HGV5 {
     }
 
     static let v5Hosts = [
-        "https://api5-normal-sinfonlinea.fqnovel.com",
-        "https://api5-normal-sinfonlineb.fqnovel.com",
         "https://reading.snssdk.com",
+        "https://api5-normal-sinfonlineb.fqnovel.com",
+        "https://api5-normal-sinfonlinea.fqnovel.com",
     ]
 
     static func attempt(vid: String, dev: HongguoLift.Device) async -> HongguoLift.Lift? {
@@ -510,7 +512,7 @@ enum HGV5 {
         }
         HGTrail.note("v5 signed q=\(signed.query.count) stub=\(signed.headers["x-ss-stub"]?.prefix(8) ?? "-")")
         for host in v5Hosts {
-          for p in [pathNew, path] {   // 新门(player搬走后)优先, 旧门兜底
+          for p in [pathPre, pathNew, path] {   // 新门(player搬走后)优先, 旧门兜底
             guard let u = URL(string: host + p + "?" + signed.query) else { continue }
             var req = URLRequest(url: u)
             req.httpMethod = "POST"
