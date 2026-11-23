@@ -64,12 +64,11 @@ enum HGWater {
         if code == 400, ticket, retry, await !freshTtwid().isEmpty {
             return try await post(path, body: body, ticket: ticket, retry: false)
         }
-        guard code == 200,
-              let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              ((j["base_resp"] as? [String: Any])?["StatusCode"] as? Int ?? -1) == 0
-        else {
-            let ec = ((j?["base_resp"] as? [String: Any])?["StatusCode"] as? Int).map(String.init) ?? "\(code)"
-            throw E(m: "r\(ec) \(String(data: data ?? Data(), encoding: .utf8)?.prefix(50) ?? "")")
+        let obj = try? JSONSerialization.jsonObject(with: data)
+        let rc = ((obj as? [String: Any])?["base_resp"] as? [String: Any])?["StatusCode"] as? Int ?? -1
+        guard code == 200, let j = obj as? [String: Any], rc == 0 else {
+            let snip = String(data: data, encoding: .utf8) ?? ""
+            throw E(m: "r\(code)/\(rc) " + snip.prefix(60))
         }
         return j
     }
