@@ -488,8 +488,8 @@ enum HongguoLift {
         let bodyHash = HGBase.sm3Data(Data(repeating: 0, count: 16))
         let queryHash = HGBase.sm3Data(Data(query.utf8))
         var counters = protoVar(1, 1) + protoVar(2, 1) + protoVar(3, 1) + protoVar(7, 3_348_294_860)
-        var env = protoBytes(1, Data("25053RT47C".utf8)) + protoBytes(2, Data("16".utf8))
-        env += protoBytes(3, Data("update_64".utf8)) + protoVar(4, 2_147_483_648)
+        var env = protoBytes(1, Data("NX551J".utf8)) + protoVar(2, 8_196)
+        env += protoVar(4, 2_162_227_200)   // 0x80e0d800 参考6.28活体形态
         var bean = Data()
         bean += protoVar(1, UInt64(0x2020_0929) &* 2)
         bean += protoVar(2, 2)
@@ -497,9 +497,9 @@ enum HongguoLift {
         bean += protoBytes(4, Data("8662".utf8))
         bean += protoBytes(5, Data(deviceId.utf8))
         bean += protoBytes(6, Data("1611921764".utf8))
-        bean += protoBytes(7, Data("7.4.5.32".utf8))
-        bean += protoBytes(8, Data("v04.07.01-ml-android".utf8))
-        bean += protoVar(9, 135_135_744)
+        bean += protoBytes(7, Data(HGV5.queryValue(query, "version_name").utf8))
+        bean += protoBytes(8, Data("v04.04.05-ov-android".utf8))
+        bean += protoVar(9, 134_744_640)
         bean += protoBytes(10, Data(repeating: 0, count: 8))
         bean += protoVar(11, 0)
         bean += protoVar(12, UInt64(khronos) &* 2)
@@ -579,6 +579,7 @@ enum HongguoLift {
         HGTrail.note("lift start vid=\(vid)")
         // v1.10.99 软拒熔断期: 熄火装死, 别再往黑名单上撞枪口
         if HGCurrent.softBlocked {
+            HGTrail.note("lift softblock left=\(HGCurrent.softBlockLeft)s")
             let mins = max(1, (HGCurrent.softBlockLeft + 59) / 60)
             throw GError.failed("红果网关正在冷却咱这条出口线（约还需 \(mins) 分钟）。开关一次飞行模式换条线基本立刻就好；或等冷却后重投。设置里“重置红果匿名设备”可立刻解除熔断")
         }
@@ -622,6 +623,8 @@ enum HongguoLift {
                 req.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
                 req.setValue(String(nowMs), forHTTPHeaderField: "x-ss-req-ticket")
                 req.setValue(String(khronos), forHTTPHeaderField: "x-khronos")
+                req.setValue(HGBase.hexU(HGBase.md5(Data())), forHTTPHeaderField: "x-ss-stub")
+                HGTrail.note("tab send \(u.host ?? "?") q=\(query.count) dev=\(dev.deviceId)")
                 req.setValue("0", forHTTPHeaderField: "x-xs-from-web")
                 req.setValue("2", forHTTPHeaderField: "sdk-version")
                 req.setValue(gorgon(query: query, khronos: khronos), forHTTPHeaderField: "x-gorgon")
@@ -832,15 +835,15 @@ enum HongguoLift {
         let k: UInt32 = 1_794_895_810
         let did = "1360575828634539"
         let g = gorgon(query: sampleQuery, khronos: k)
-        out.append("gor" + (g == "8404401c0000a3cdf96bcc232d3d7022103fad22c9296abeba05" ? "✓" : "✗" + g.prefix(28)))
+        out.append("gor" + (g == "8404401c0000c4c7b54fcc232d3d7022103fad22c9296abebae3" ? "✓" : "✗" + g.prefix(28)))
         HGTrail.note("sc2 gor done")
         let a = argus(query: sampleQuery, khronos: k, deviceId: did, nonce: nonce)
-        out.append("arg" + (a == "PMxgwBGTyTyTyVyMS+7eO8hBy5PXoolAytHgfVVPain2x9rgLXbTqnriP/5EAx7ujoENJuPliBVKG6mnoDiRELL1KS3wvfmgNuIUCBYcVzcp9jynFJKVC3F0TbnaFi6E9qZdiy0c9P/t9RvHbVVMzy4h/CxLRVvYlVTl2hLsqY8UdcMx8sj+VhNqqVnV1VtESyTnu7B9Y4q/lvYdO4EVDn9/8aBuHG/5dpWwVB1QCq7pXIG7YqM3BfNRECJgCcFxbiHw7yx4fN4rmy59NSxFFjlrqsJN2k8phaIIJtWObwGfhg==" ? "✓" : "✗" + a.prefix(40)))
+        out.append("arg" + (a == "8oGwZRLe2V38m+1gfqIeLa2MoV9ZBWosW5Y0NXKHAB2aEcxhwzKbdvaCLJJSxhr6ljOnA3wwt8ZlqleoPbcAySBTbZozBGYl84Hj7sC3rixtvZwcWfsom2+YXLQB5Fc52xpyMGHzOsm3+fUExh4Qf4KMU6bEbVIaK9TJ1yeZOpcvQqL9s5xVV4sMutD9Iv0XIR30Z9MWuFaxqkb69IHVHOEmjNAHsJNPqlJNOxtmJBJAq/vlOTsG+49qYFsVC8Q8JIn4rmvuAXxO9qNJRKkUGiNEjlQQPuOInW+qKlcPleMgIw==" ? "✓" : "✗" + a.prefix(40)))
         HGTrail.note("sc3 arg done")
         let l = ladon(aid: "8662", khronos: k, prefix: nonce.subdata(in: 2..<6))
         out.append("lad" + (l == "AgMEBcVLCboS0D7C+jrWMY3g/LHJpdxRfjTl94yWLoz6K/SQ" ? "✓" : "✗" + l.prefix(28)))
         HGTrail.note("sc4 lad done")
         return out.joined(separator: " ")
     }
-    private static let sampleQuery = "ac=wifi&channel=update_64&aid=8662&app_name=novelread&version_code=73532&version_name=7.3.5.32&device_platform=android&os=android&ssmix=a&device_type=25053RT47C&device_brand=Redmi&language=zh&os_api=36&os_version=16&manifest_version_code=73532&resolution=1280*2772&dpi=520&update_version_code=73532&host_abi=arm64-v8a&dragon_device_type=phone&pv_player=73532&compliance_status=0&need_personal_recommend=1&player_so_load=1&is_android_pad_screen=0&device_id=1360575828634539&iid=1360575828638635&cdid=f47ac10b-58cc-4372-a567-0e02b2c3d479&video_id=7705624880623914046&video_id_type=0&device_level=1&need_all_video_definition=1&need_mp4_align=0&use_os_player=0&video_platform=1024&source=0&from_video_id=&_rticket=1794895810123"
+    private static let sampleQuery = "ac=wifi&channel=update_64&aid=8662&app_name=novelread&version_code=74532&version_name=7.4.5.32&device_platform=android&os=android&ssmix=a&device_type=25053RT47C&device_brand=Redmi&language=zh&os_api=36&os_version=16&manifest_version_code=74532&resolution=1280*2772&dpi=520&update_version_code=74532&host_abi=arm64-v8a&dragon_device_type=phone&pv_player=74532&compliance_status=0&need_personal_recommend=1&player_so_load=1&is_android_pad_screen=0&device_id=1360575828634539&iid=1360575828638635&cdid=f47ac10b-58cc-4372-a567-0e02b2c3d479&video_id=7705624880623914046&video_id_type=0&device_level=1&need_all_video_definition=1&need_mp4_align=0&use_os_player=0&video_platform=1024&source=0&from_video_id=&_rticket=1794895810123"
 }
