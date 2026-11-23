@@ -123,7 +123,7 @@ enum HGWater {
             exp.outputURL = out
             exp.outputFileType = .mp4
             exp.exportAsynchronously {
-                let why = exp.status == .completed ? "" : (exp.status.rawValue + " " + (exp.error?.localizedDescription ?? "-"))
+                let why = exp.status == .completed ? "" : (String(reflecting: exp.status) + " " + (exp.error?.localizedDescription ?? "-"))
                 if !why.isEmpty { HGTrail.note("hgwater mux exp " + String(why.prefix(70))) }
                 k.resume(returning: exp.status == .completed)
             }
