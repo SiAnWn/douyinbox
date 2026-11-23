@@ -629,7 +629,20 @@ struct ParseView: View {
                             savedOK = true
                             continue
                         }
-                        lastWhy = (resolveErr.isEmpty ? "no stream" : resolveErr) + " | " + liftWhy
+                        // v1.10.127 网页水闸: SDK/lift 三层皆空 → 官网 720P 两轨合体, 再退 360P 单文件
+                        do {
+                            status = "网页水闸取 \(i + 1) 集(720P)…"
+                            let t2 = Date()
+                            let (wOK, wWhy) = await HGWater.save(sid: sid, vid: ep.id, rel: rel)
+                            if wOK {
+                                HGTrail.note("hgrun water ep\(num) \(wWhy.prefix(40))")
+                                lastWhy = ""
+                                savedOK = true
+                                epSpeed(rel, t2)
+                                continue
+                            }
+                            lastWhy = (resolveErr.isEmpty ? "no stream" : resolveErr) + " | " + liftWhy + " | " + wWhy
+                        }
                         // v1.10.100 熔断已拉 = 别再一集一集顶枪口, 整串熄火保平安
                         if HGCurrent.softBlocked { break }
                         continue
