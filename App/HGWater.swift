@@ -48,6 +48,7 @@ enum HGWater {
     }
 
     static func post(_ path: String, body: [String: String], ticket: Bool, retry: Bool = true) async throws -> [String: Any] {
+        await throttle()
         guard let url = URL(string: site + path + "?aid=8662") else { throw E(m: "url?") }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
@@ -75,6 +76,14 @@ enum HGWater {
 
     static func e_short(_ e: Error) -> String { String(e.localizedDescription.prefix(40)) }
 
+    // 节流闸: 官网两条口都是给真人播放器用的, 机器连发必讨 403, 每枪之间垫 1.5s
+    private static var lastShot = Date.distantPast
+    static func throttle() async {
+        let wait = 1.5 - Date().timeIntervalSince(lastShot)
+        if wait > 0 { try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000)) }
+        lastShot = Date()
+    }
+
     // ---- 下载与合体 ----
     static func dl(_ us: String, _ dst: URL) async -> URL? {
         guard let u = URL(string: us) else { return nil }
@@ -91,24 +100,33 @@ enum HGWater {
 
     static func mux(_ v: URL, _ a: URL, _ out: URL) async -> Bool {
         await withCheckedContinuation { (k: CheckedContinuation<Bool, Never>) in
-            let av = AVURLAsset(url: v), aa = AVURLAsset(url: a)
+            // 官网分轨是 DASH 分段 fMP4: 不给这张通行证 AVFoundation 装看不见时长 → insert 必炸(127 真机遗嘱"合体失败"案)
+            let opts = ["AVURLAssetMovieFragmentIntervalKey": CMTime.invalid]
+            let av = AVURLAsset(url: v, options: opts), aa = AVURLAsset(url: a, options: opts)
             let comp = AVMutableComposition()
             guard let vt = av.tracks(withMediaType: .video).first,
                   let at = aa.tracks(withMediaType: .audio).first,
                   let cvt = comp.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid),
                   let cat = comp.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
-            else { k.resume(returning: false); return }
+            else { HGTrail.note("hgwater mux notrack v=\(av.tracks(withMediaType: .video).count) a=\(aa.tracks(withMediaType: .audio).count) vdur=\(CMTimeGetSeconds(av.duration))"); k.resume(returning: false); return }
             let span = CMTimeRange(start: .zero, duration: av.duration < aa.duration ? av.duration : aa.duration)
             do {
                 try cvt.insertTimeRange(span, of: vt, at: .zero)
                 try cat.insertTimeRange(span, of: at, at: .zero)
-            } catch { k.resume(returning: false); return }
+            } catch {
+                HGTrail.note("hgwater mux insert " + String(reflecting: type(of: error)) + " span=\(CMTimeGetSeconds(span.duration))")
+                k.resume(returning: false); return
+            }
             guard let exp = AVAssetExportSession(asset: comp, presetName: AVAssetExportPresetPassthrough)
-            else { k.resume(returning: false); return }
+            else { HGTrail.note("hgwater mux noexporter"); k.resume(returning: false); return }
             try? FileManager.default.removeItem(at: out)
             exp.outputURL = out
             exp.outputFileType = .mp4
-            exp.exportAsynchronously { k.resume(returning: exp.status == .completed) }
+            exp.exportAsynchronously {
+                let why = exp.status == .completed ? "" : (exp.status.rawValue + " " + (exp.error?.localizedDescription ?? "-"))
+                if !why.isEmpty { HGTrail.note("hgwater mux exp " + String(why.prefix(70))) }
+                k.resume(returning: exp.status == .completed)
+            }
         }
     }
 
