@@ -590,10 +590,12 @@ enum HongguoLift {
     static func resolve(vid: String) async throws -> Lift {
         HGTrail.note("lift start vid=\(vid)")
         // v1.10.99 软拒熔断期: 熄火装死, 别再往黑名单上撞枪口
-        if HGCurrent.softBlocked {
-            HGTrail.note("lift softblock left=\(HGCurrent.softBlockLeft)s")
-            let mins = max(1, (HGCurrent.softBlockLeft + 59) / 60)
-            throw GError.failed("红果网关正在冷却咱这条出口线（约还需 \(mins) 分钟）。开关一次飞行模式换条线基本立刻就好；或等冷却后重投。设置里“重置红果匿名设备”可立刻解除熔断")
+        // v1.10.136 熔断降格: 分桶轮盘时代"全空"多是号码/线路问题而非网关软拒,
+        // 五分钟的旧熔断会把鲜号+双线路的自救机会整个拦死(19:27真机遗嘱实锤 left=249s 连拒两轮)
+        // 新规: 只惩罚触发后头 60 秒的连珠炮, 之后放行让轮盘自己转
+        if HGCurrent.softBlockLeft > 240 {
+            HGTrail.note("lift softblock cold left=\(HGCurrent.softBlockLeft)s")
+            throw GError.failed("红果网关刚回了个软钉子，等一分钟再投就放行（急着要就在设置里点「红果线路急救包」）")
         }
         var lastErr = "空响应"
         for round in 0..<2 {
