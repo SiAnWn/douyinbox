@@ -102,7 +102,8 @@ struct SettingsView: View {
                     } label: {
                         Label("红果线路急救包（解除熔断+丢设备+换门票）", systemImage: "cross.case.fill")
                     }
-                    .disabled(metaBusy)                    if !metaMsg.isEmpty { Text(metaMsg).font(.caption).foregroundStyle(.secondary) }
+                    .disabled(metaBusy)
+                    if !metaMsg.isEmpty { Text(metaMsg).font(.caption).foregroundStyle(.secondary) }
                     Button {
                         metaBusy = true
                         Task {
