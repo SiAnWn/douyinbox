@@ -302,7 +302,9 @@ enum HongguoLift {
     static func loadStoredDevice() -> Device? {
         guard let d = UserDefaults.standard.dictionary(forKey: "hgLiftDevice"),
               let dev = d["dev"] as? String, let iid = d["iid"] as? String, let cdid = d["cdid"] as? String,
-              let at = d["at"] as? TimeInterval, Date().timeIntervalSince1970 - at < 6 * 3600 else { return nil }
+              let at = d["at"] as? TimeInterval, Date().timeIntervalSince1970 - at < 600 else { return nil }
+        // v133 真凶落网: 播放口只认注册后~10分钟内的鲜号(参考文档明文) — 旧 6h 池让手机永远端着回锅老号必全空;
+        // PC 版每次现注册每发必胜 vs 手机 reuse 老号 9 枪全空的同 vid 同省直连对照 = 铁证
         return Device(deviceId: dev, iid: iid, cdid: cdid)
     }
     static func device(renew: Bool = false) async throws -> Device {
