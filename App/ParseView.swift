@@ -235,7 +235,12 @@ struct ParseView: View {
     }
 
     @MainActor
+    // v1.10.135b: pick() 作用域看不见 doParse 的 link 参数, 裸 link 会撞 Darwin.link(2) C 函数=编译炸
+    // 属性缓存当次解析链接, 供完工跳回判断
+    private var parsedLink = ""
+
     private func doParse(link: String) async {
+        parsedLink = link
         if engine.isIfphp && KeyStore.value(for: engine).isEmpty {
             status = "当前引擎需要 Key，请在 ⚙ 设置填写"
             showSettings = true
@@ -462,7 +467,7 @@ struct ParseView: View {
                 status = "已保存：\(rel)"
                 // v1.10.135 完工跳回全路径: 用户连下多条要挨个查验, 存好即弹回抖音继续抄下一条
                 // (仅抖音系链接跳, 红果/小站链接不瞎弹; 开关 autoReturnV1 统管)
-                if app.autoReturn, link.contains("douyin") {
+                if app.autoReturn, parsedLink.contains("douyin") {
                     Task { @MainActor in
                         try? await Task.sleep(nanoseconds: 1_200_000_000)
                         Self.launchDouyin()
