@@ -234,11 +234,11 @@ struct ParseView: View {
         app.refresh()
     }
 
-    @MainActor
     // v1.10.135b: pick() 作用域看不见 doParse 的 link 参数, 裸 link 会撞 Darwin.link(2) C 函数=编译炸
-    // 属性缓存当次解析链接, 供完工跳回判断
+    // 属性缓存当次解析链接, 供完工跳回判断 (须居 @MainActor 之前, 抢插演员席会拆台)
     private var parsedLink = ""
 
+    @MainActor
     private func doParse(link: String) async {
         parsedLink = link
         if engine.isIfphp && KeyStore.value(for: engine).isEmpty {
