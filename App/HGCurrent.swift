@@ -561,7 +561,7 @@ enum HGCurrent {
                 req.setValue("\(ticket)-\(Int64(Date().timeIntervalSince1970 * 1_000_000_000) & 0x7fff_ffff)",
                              forHTTPHeaderField: "x-reading-request")
                 do {
-                    let (data, resp) = try await HongguoLift.direct.data(for: req)
+                    let (data, resp) = try await HongguoLift.shot.data(for: req)
                     let hr = resp as? HTTPURLResponse
                     let code = hr?.statusCode ?? -1
                     HGTrail.note("curl r\(shot) \(hr?.url?.host ?? "?") http=\(code) len=\(data.count) n=\(vids.count) did=\(dev.did)")
@@ -622,7 +622,7 @@ enum HGCurrent {
                 req.setValue("\(ticket)-\(Int64(Date().timeIntervalSince1970 * 1_000_000_000) & 0x7fff_ffff)",
                              forHTTPHeaderField: "x-reading-request")
                 do {
-                    let (data, resp) = try await HongguoLift.direct.data(for: req)
+                    let (data, resp) = try await HongguoLift.shot.data(for: req)
                     let hr = resp as? HTTPURLResponse
                     let code = hr?.statusCode ?? -1
                     let logid = hr?.value(forHTTPHeaderField: "x-tt-logid") ?? "-"

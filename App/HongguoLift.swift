@@ -284,6 +284,16 @@ enum HongguoLift {
         cfg.waitsForConnectivity = false
         return URLSession(configuration: cfg)
     }()
+    // v1.10.132 线路轮盘: 2026-11 画像战争时代 红果按出口分桶放行, 海外节点桶常开而国内直连常关
+    // (GuoDuo 跟着系统代理就能 1080 的对照实锤) — direct 保留做第二枪
+    static let viaProxy: URLSession = {
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.timeoutIntervalForRequest = 15
+        cfg.timeoutIntervalForResource = 120
+        return URLSession(configuration: cfg)   // 默认姿势 = 尊重系统代理(Clash 节点)
+    }()
+    // resolve 每轮换枪口: round0=viaProxy(先蹭用户节点桶) round1=direct(国内直连兜底)
+    static var shot: URLSession = direct
 
     static var didSelfCheck = false
 
@@ -586,6 +596,8 @@ enum HongguoLift {
         var lastErr = "空响应"
         for round in 0..<2 {
             // v1.10.101 顺序重整: V5(带11-20新门)先行 — 它是当下活口; 新方言(免注册mint号)第二把交椅
+            HongguoLift.shot = (round == 0) ? viaProxy : direct
+            HGTrail.note("resolve round\(round) line=\(round == 0 ? "viaProxy" : "direct")")
             let dev = try await device(renew: round > 0)
             if let lift = await HGV5.attempt(vid: vid, dev: dev) {
                 HGTrail.note("lift ok v5 def=\(lift.definition) \(lift.width)x\(lift.height) key=\(lift.keyHex.isEmpty ? "none" : String(lift.keyHex.prefix(8))) url=" + String(lift.url.absoluteString.prefix(90)))
@@ -633,7 +645,7 @@ enum HongguoLift {
                 req.setValue(ladon(aid: "8662", khronos: khronos, prefix: nonce.subdata(in: 2..<6)),
                              forHTTPHeaderField: "x-ladon")
                 do {
-                    let (data, resp) = try await direct.data(for: req)
+                    let (data, resp) = try await shot.data(for: req)
                     let hr = resp as? HTTPURLResponse
                     let code = hr?.statusCode ?? -1
                     let logid = hr?.value(forHTTPHeaderField: "x-tt-logid") ?? "-"

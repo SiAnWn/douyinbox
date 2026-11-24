@@ -106,7 +106,7 @@ enum HGV5 {
             req.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
             for (k, v) in signed.headers { req.setValue(v, forHTTPHeaderField: k) }
             do {
-                let (data, resp) = try await HongguoLift.direct.data(for: req)
+                let (data, resp) = try await HongguoLift.shot.data(for: req)
                 let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
                 HGTrail.note("v5res \(host) p=\(p.hasSuffix("/v1/") ? "new" : "old") http=\(code) len=\(data.count) n=\(vids.count)")
                 guard code == 200, data.count > 20,
@@ -523,7 +523,7 @@ enum HGV5 {
             req.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
             for (k, v) in signed.headers { req.setValue(v, forHTTPHeaderField: k) }
             do {
-                let (data, resp) = try await HongguoLift.direct.data(for: req)
+                let (data, resp) = try await HongguoLift.shot.data(for: req)
                 let hr = resp as? HTTPURLResponse
                 let code = hr?.statusCode ?? -1
                 let logid = hr?.value(forHTTPHeaderField: "x-tt-logid") ?? "-"
