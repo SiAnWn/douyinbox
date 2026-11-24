@@ -141,7 +141,7 @@ struct SettingsView: View {
                 }
                 Section("灵动岛") {
                     Toggle("切到后台时常驻待命", isOn: $app.islandOn)
-                    Toggle("一键下载后自动跳回抖音", isOn: $app.autoReturn)
+                    Toggle("下载完工自动跳回抖音（单条/合集批量都算完工）", isOn: $app.autoReturn)
                     Toggle("下载完成发横幅通知", isOn: Binding(
                         get: { UserDefaults.standard.object(forKey: "doneNotify") as? Bool ?? true },
                         set: { v in

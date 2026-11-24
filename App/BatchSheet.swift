@@ -76,7 +76,16 @@ struct BatchSheet: View {
                                 useEngine: (mode == 1 || mode == 2) && !isWebEngine,
                                 folderName: mix.name,
                                 apiEngine: mode == 1 ? .svparse : (mode == 2 ? .dyjx : nil),
-                                onFinish: { app.refreshDramaSeries(); app.refreshPrivateSeries(); app.refresh() }) }
+                                onFinish: {
+                                    app.refreshDramaSeries(); app.refreshPrivateSeries(); app.refresh()
+                                    // v1.10.135 批量完工弹回抖音继续下一条(开关统管)
+                                    if app.autoReturn {
+                                        Task { @MainActor in
+                                            try? await Task.sleep(nanoseconds: 1_500_000_000)
+                                            ParseView.launchDouyin()
+                                        }
+                                    }
+                                }) }
                         }
                         NavigationLink {
                             SniffAutoView(eps: mix.eps, base: base, mixID: mix.id, folder: mix.name)

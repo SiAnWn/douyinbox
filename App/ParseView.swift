@@ -460,6 +460,14 @@ struct ParseView: View {
                 if base == "私密" { app.refreshPrivateSeries() }
                 if base == "短剧" { app.refreshDramaSeries() }
                 status = "已保存：\(rel)"
+                // v1.10.135 完工跳回全路径: 用户连下多条要挨个查验, 存好即弹回抖音继续抄下一条
+                // (仅抖音系链接跳, 红果/小站链接不瞎弹; 开关 autoReturnV1 统管)
+                if app.autoReturn, link.contains("douyin") {
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 1_200_000_000)
+                        Self.launchDouyin()
+                    }
+                }
             } else {
                 status = "保存失败：无法写入目录"
             }
