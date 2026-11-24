@@ -148,9 +148,12 @@ enum Naming {
         while t.contains("  ") { t = t.replacingOccurrences(of: "  ", with: " ") }
         return t.trimmingCharacters(in: .whitespacesAndNewlines)
     }
-    static func fileName(_ author: String, _ title: String, _ opt: QualityOption) -> String {
+    static func fileName(_ author: String, _ title: String, _ opt: QualityOption, vid: String = "") -> String {
         let a = sanitize(author), c = sanitize(title)
         var base = [a, c].filter { !$0.isEmpty }.joined(separator: " ")
+        // 1.10.134 无标题防覆盖: 同作者多条无题视频 base 全同 → 后者静默覆盖前者(用户实锤"当前视频被下一个无标题替换")
+        // title 缺失即把抖音 ID 尾巴烧进名字保唯一; vid 自带唯一性且顺带方便日后对账
+        if c.isEmpty, !vid.isEmpty { base = (base.isEmpty ? "douyin" : base) + "_" + String(vid.suffix(12)) }
         let tag = sanitize(opt.label).replacingOccurrences(of: "（最高画质）", with: "")
         if !tag.isEmpty { base += "_" + tag }
         if base.count > 60 { base = String(base.prefix(60)) }

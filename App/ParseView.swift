@@ -399,7 +399,7 @@ struct ParseView: View {
                     let st = try await BoatSite.streams(pageURL: savedLink)
                     if idx < st.count { m3u8 = st[idx].m3u8 }
                 }
-                let name0 = Naming.fileName(res.author, res.title, opt)
+                let name0 = Naming.fileName(res.author, res.title, opt, vid: res.videoID)
                 let baseName = name0.hasSuffix(".mp4") ? String(name0.dropLast(4)) : name0
                 let (baseDir, sub) = relDirFor(res.author)
                 let nameNoExt = baseName
@@ -451,7 +451,7 @@ struct ParseView: View {
                 status = "文件过小(\(sz / 1024)KB)：直链可能已失效，重试或换清晰度"
                 return
             }
-            let name = Naming.fileName(res.author, res.title, opt)
+            let name = Naming.fileName(res.author, res.title, opt, vid: res.videoID)
             let (base, sub) = relDirFor(res.author)
             let rel = base.isEmpty ? name : "\(base)/\(sub)/\(name)"
             if SavePaths.write(file, rel: rel) {
