@@ -236,7 +236,7 @@ struct ParseView: View {
 
     // v1.10.135b: pick() 作用域看不见 doParse 的 link 参数, 裸 link 会撞 Darwin.link(2) C 函数=编译炸
     // 属性缓存当次解析链接, 供完工跳回判断 (须居 @MainActor 之前, 抢插演员席会拆台)
-    private var parsedLink = ""
+    @State private var parsedLink = ""   // v135d: View 里裸 var 赋值=self is immutable 真凶(135b/c 三连红的本尊), @State 盒与 status 同款免死
 
     @MainActor
     private func doParse(link: String) async {
