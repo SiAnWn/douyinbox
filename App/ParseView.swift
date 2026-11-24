@@ -236,7 +236,8 @@ struct ParseView: View {
 
     // v1.10.135b: pick() 作用域看不见 doParse 的 link 参数, 裸 link 会撞 Darwin.link(2) C 函数=编译炸
     // 属性缓存当次解析链接, 供完工跳回判断 (须居 @MainActor 之前, 抢插演员席会拆台)
-    @State private var parsedLink = ""   // v135d: View 里裸 var 赋值=self is immutable 真凶(135b/c 三连红的本尊), @State 盒与 status 同款免死
+    @State private var parsedLink = ""
+    @State private var hgWaterFailRun = 0   // v1.10.137 水闸连败计数(App端塌方期间水闸是唯一海, 连败2次才熄灯)   // v135d: View 里裸 var 赋值=self is immutable 真凶(135b/c 三连红的本尊), @State 盒与 status 同款免死
 
     @MainActor
     private func doParse(link: String) async {
@@ -649,6 +650,7 @@ struct ParseView: View {
                             let (wOK, wWhy) = await HGWater.save(sid: sid, vid: ep.id, rel: rel)
                             if wOK {
                                 HGTrail.note("hgrun water ep\(num) \(wWhy.prefix(40))")
+                                hgWaterFailRun = 0
                                 lastWhy = ""
                                 savedOK = true
                                 epSpeed(rel, t2)
@@ -656,8 +658,15 @@ struct ParseView: View {
                             }
                             lastWhy = (resolveErr.isEmpty ? "no stream" : resolveErr) + " | " + liftWhy + " | " + wWhy
                         }
-                        // v1.10.100 熔断已拉 = 别再一集一集顶枪口, 整串熄火保平安
-                        if HGCurrent.softBlocked { break }
+                        // v1.10.137 熔断不再熄火整串: App端有60s冷窗throw自护(每集<1s不烧配额),
+                        // 官网水闸是另一片海(今晚实测存活)该继续吃饭; 只有水闸自己连败2次才收工
+                        if HGCurrent.softBlocked {
+                            hgWaterFailRun += 1
+                            if hgWaterFailRun >= 2 {
+                                HGTrail.note("hgrun 熔断期水闸连败2 熄火收工")
+                                break
+                            }
+                        }
                         continue
                     }
                     let baseFrac = Double(i) / Double(n)

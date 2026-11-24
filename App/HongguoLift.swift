@@ -598,6 +598,9 @@ enum HongguoLift {
             throw GError.failed("红果网关刚回了个软钉子，等一分钟再投就放行（急着要就在设置里点「红果线路急救包」）")
         }
         var lastErr = "空响应"
+        // v1.10.137 App 闸门塌方期快道: round0 打完(代理线 V5+新方言+五头全灭)判据——
+        // 同设备直连再扫一遍 V5 性价比已极低(塌方是协议级非线路级, PC 双出口同步全空实锤),
+        // 提前让位网页水闸(720 合体/360 单文件今晚实测存活), 每集少烧 ~8 秒无效轮询
         for round in 0..<2 {
             // v1.10.101 顺序重整: V5(带11-20新门)先行 — 它是当下活口; 新方言(免注册mint号)第二把交椅
             HongguoLift.shot = (round == 0) ? viaProxy : direct
@@ -674,6 +677,12 @@ enum HongguoLift {
                 }
             }
             if empties < tabHosts.count { break }   // 非全空 = 轮换也没用，直接认输
+            // v1.10.137 塌方快道: round0 三线(代理/直连同构)全空 = 协议级塌方而非线路问题
+            // (今晚 PC 双出口同步全空+官网闸门存活实锤) — round1 边际价值归零, 弃枪转水闸, 每集省 ~25s
+            if round == 0 {
+                HGTrail.note("lift 塌方快道 弃权转水闸")
+                break
+            }
         }
         HGTrail.note("lift fail " + lastErr)
         // v1.10.101: 三车道(V5双门+新方言+五头)全空才算"网关不理咱", 这时才拉熔断
