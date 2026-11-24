@@ -79,7 +79,7 @@ enum HGWater {
     // 节流闸: 官网两条口都是给真人播放器用的, 机器连发必讨 403, 每枪之间垫 1.5s
     private static var lastShot = Date.distantPast
     static func throttle() async {
-        let wait = 1.5 - Date().timeIntervalSince(lastShot)
+        let wait = 2.2 - Date().timeIntervalSince(lastShot)
         if wait > 0 { try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000)) }
         lastShot = Date()
     }
@@ -103,6 +103,11 @@ enum HGWater {
             // 官网分轨是 DASH 分段 fMP4: 不给这张通行证 AVFoundation 装看不见时长 → insert 必炸(127 真机遗嘱"合体失败"案)
             let opts = ["AVURLAssetMovieFragmentIntervalKey": CMTime.invalid]
             let av = AVURLAsset(url: v, options: opts), aa = AVURLAsset(url: a, options: opts)
+            // 新系统同步读 duration/tracks 会拿到空壳导出即"操作已停止"(status4): 先异步预热再组装
+            let _ = try? await av.load(.duration)
+            let _ = try? await av.load(.tracks)
+            let _ = try? await aa.load(.duration)
+            let _ = try? await aa.load(.tracks)
             let comp = AVMutableComposition()
             guard let vt = av.tracks(withMediaType: .video).first,
                   let at = aa.tracks(withMediaType: .audio).first,
@@ -161,9 +166,25 @@ enum HGWater {
         return f
     }
 
+    static func resetP720Fail() { p720Fail.removeAll() }
+
+    // 本剧 720 连败计数: 两次即当剧跳过 720 直奔 360, 省下双倍门票防 403
+    private static var p720Fail: [String: Int] = [:]
+
     /// 主入口: 720P 优先(两轨合体), 失败退 360P 单文件; 成功=已按 rel 落库
     static func save(sid: String, vid: String, rel: String) async -> (Bool, String) {
         var why = ""
+        if (p720Fail[sid] ?? 0) >= 2 {
+            do {
+                let tmp = try await play360(vid: vid)
+                if SavePaths.write(tmp, rel: rel) {
+                    HGTrail.note("hgwater 360 fast sid=\(sid) vid=\(vid)")
+                    try? FileManager.default.removeItem(at: tmp)
+                    return (true, "720跳过")
+                }
+                return (false, "360存盘败")
+            } catch let e { return (false, "360:" + e_short(e)) }
+        }
         do {
             let tmp = try await play720(sid: sid, vid: vid)
             if SavePaths.write(tmp, rel: rel) {
@@ -173,7 +194,7 @@ enum HGWater {
             }
             why = "720存盘败;"
             try? FileManager.default.removeItem(at: tmp)
-        } catch let e { why = "720:" + e_short(e) + ";" }
+        } catch let e { p720Fail[sid, default: 0] += 1; why = "720:" + e_short(e) + ";" }
         do {
             let tmp = try await play360(vid: vid)
             if SavePaths.write(tmp, rel: rel) {

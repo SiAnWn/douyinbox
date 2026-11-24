@@ -92,7 +92,17 @@ struct SettingsView: View {
                         Label("补齐旧剧档案（演员·评分·分类）", systemImage: "person.2.badge.plus")
                     }
                     .disabled(metaBusy)
-                    if !metaMsg.isEmpty { Text(metaMsg).font(.caption).foregroundStyle(.secondary) }
+
+                    Button {
+                        HGCurrent.clearSoftBlock()
+                        UserDefaults.standard.removeObject(forKey: "hgLiftDevice")
+                        UserDefaults.standard.removeObject(forKey: "hgTtwid")
+                        HGWater.resetP720Fail()
+                        metaMsg = "熔断已解除 · 设备与门票已丢弃 · 换个海外节点再投"
+                    } label: {
+                        Label("红果线路急救包（解除熔断+丢设备+换门票）", systemImage: "cross.case.fill")
+                    }
+                    .disabled(metaBusy)                    if !metaMsg.isEmpty { Text(metaMsg).font(.caption).foregroundStyle(.secondary) }
                     Button {
                         metaBusy = true
                         Task {

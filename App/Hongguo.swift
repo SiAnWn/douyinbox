@@ -65,7 +65,7 @@ enum Hongguo {
     static func friendly(_ e: Error) -> String {
         let m = e.localizedDescription
         if m.contains("anonymous response was empty") {
-            return "红果风控：当前网络出口被回了空结果。请在 Clash 换个节点（大陆/港优）重试；反复不行就在设置里重置红果设备"
+            return "红果按出口 IP 分桶放行：国内直连/大陆节点多半在拒绝桶。请在 Clash 删掉红果域名走直连的规则、改走一个海外节点再投；反复不行就去设置里点「红果线路急救包」"
         }
         if m.contains("rate limited") { return "红果限流：歇一两分钟再试" }
         if m.contains("guest identity") || m.contains("registration") { return "红果注册口暂时不发号（常为晚高峰收紧）：已自动退避重试仍不行，过十分钟再试或换个出口" }
