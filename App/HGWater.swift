@@ -99,15 +99,16 @@ enum HGWater {
     }
 
     static func mux(_ v: URL, _ a: URL, _ out: URL) async -> Bool {
-        await withCheckedContinuation { (k: CheckedContinuation<Bool, Never>) in
-            // 官网分轨是 DASH 分段 fMP4: 不给这张通行证 AVFoundation 装看不见时长 → insert 必炸(127 真机遗嘱"合体失败"案)
-            let opts = ["AVURLAssetMovieFragmentIntervalKey": CMTime.invalid]
-            let av = AVURLAsset(url: v, options: opts), aa = AVURLAsset(url: a, options: opts)
-            // 新系统同步读 duration/tracks 会拿到空壳导出即"操作已停止"(status4): 先异步预热再组装
-            let _ = try? await av.load(.duration)
-            let _ = try? await av.load(.tracks)
-            let _ = try? await aa.load(.duration)
-            let _ = try? await aa.load(.tracks)
+        // 官网分轨是 DASH 分段 fMP4: 不给这张通行证 AVFoundation 装看不见时长 → insert 必炸(127 真机遗嘱"合体失败"案)
+        let opts = ["AVURLAssetMovieFragmentIntervalKey": CMTime.invalid]
+        let av = AVURLAsset(url: v, options: opts), aa = AVURLAsset(url: a, options: opts)
+        // 新系统同步读 duration/tracks 会拿到空壳导出即"操作已停止"(status4): 先异步预热再组装
+        // (预热必须留在 async 函数层 — continuation 闭包是同步体, 在里面 await=编译炸, 131首撞实证)
+        let _ = try? await av.load(.duration)
+        let _ = try? await av.load(.tracks)
+        let _ = try? await aa.load(.duration)
+        let _ = try? await aa.load(.tracks)
+        return await withCheckedContinuation { (k: CheckedContinuation<Bool, Never>) in
             let comp = AVMutableComposition()
             guard let vt = av.tracks(withMediaType: .video).first,
                   let at = aa.tracks(withMediaType: .audio).first,
