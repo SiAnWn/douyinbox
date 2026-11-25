@@ -496,8 +496,9 @@ enum HongguoLift {
             .map { String(format: "%02x", $0) }.joined()
     }
 
-    private static func argus(query: String, khronos: UInt32, deviceId: String, nonce: Data) -> String {
-        let bodyHash = HGBase.sm3Data(Data(repeating: 0, count: 16))
+    private static func argus(query: String, khronos: UInt32, deviceId: String, nonce: Data, body: Data? = nil) -> String {
+        // v138: GET 空body=sm3(16零); POST 有body=sm3(md5(body)16B) — 6.30 参考 bodyHash(stubHex) 语义
+        let bodyHash = HGBase.sm3Data(body.map { HGBase.md5($0) } ?? Data(repeating: 0, count: 16))
         let queryHash = HGBase.sm3Data(Data(query.utf8))
         var counters = protoVar(1, 1) + protoVar(2, 1) + protoVar(3, 1) + protoVar(7, 3_348_294_860)
         var env = protoBytes(1, Data("NX551J".utf8)) + protoVar(2, 8_196)
@@ -586,6 +587,71 @@ enum HongguoLift {
         return (prefix + data).base64EncodedString()
     }
 
+
+    // v1.10.138 单集枪 (TV/hongguoTV 0.16.16 安卓一哥实弹图纸): POST /novel/player/video_model/v1/ + 五头签名(body 参与版)
+    // 图纸要点: 版本退 73532(证明服务器也认旧号, 桶与签名才是关键) / body 明文不 gzip / 字典序 query /
+    // 强制匿名 / 响应 data.video_model 三形态(dict·JSON串·base64)
+    static func singleModel(vid: String, dev: Device) async -> Lift? {
+        let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
+        let khronos = UInt32(truncatingIfNeeded: nowMs / 1000)
+        let allow: Set<String> = ["ac", "channel", "aid", "app_name", "version_code", "version_name",
+            "device_platform", "os", "ssmix", "device_type", "device_brand", "language", "os_api",
+            "os_version", "manifest_version_code", "resolution", "dpi", "update_version_code"]
+        var q: [String: String] = [:]
+        for (k, v) in deviceParams where allow.contains(k) {
+            if k == "version_name" { q[k] = "7.3.5.32" }
+            else if k.contains("version_code") || k == "pv_player" { q[k] = "73532" }
+            else { q[k] = v }
+        }
+        q["device_id"] = dev.deviceId
+        q["iid"] = dev.iid
+        q["video_id"] = vid
+        let query = q.sorted { $0.key < $1.key }
+            .map { HGBase.pct($0.key) + "=" + HGBase.pct($0.value) }.joined(separator: "&")
+        let bodyStr = "{\"biz_param\":{\"need_all_video_definition\":true,\"video_platform\":3},\"content_type\":1,\"video_id\":\"\(vid)\"}"
+        let body = Data(bodyStr.utf8)
+        let nonce = Data((0..<11).map { _ in UInt8.random(in: 0...255) })
+        for host in HGV5.v5Hosts {
+            guard let u = URL(string: host + "/novel/player/video_model/v1/?" + query) else { continue }
+            var req = URLRequest(url: u)
+            req.httpMethod = "POST"
+            req.httpBody = body
+            req.setValue(tabUA, forHTTPHeaderField: "User-Agent")
+            req.setValue("application/json", forHTTPHeaderField: "Accept")
+            req.setValue("2", forHTTPHeaderField: "Sdk-Version")
+            req.setValue("0", forHTTPHeaderField: "X-XS-From-Web")
+            req.setValue(HGBase.hexU(HGBase.md5(body)), forHTTPHeaderField: "x-ss-stub")
+            req.setValue(String(khronos), forHTTPHeaderField: "x-khronos")
+            req.setValue(gorgon(query: query, khronos: khronos), forHTTPHeaderField: "x-gorgon")
+            req.setValue(argus(query: query, khronos: khronos, deviceId: dev.deviceId, nonce: nonce, body: body),
+                         forHTTPHeaderField: "x-argus")
+            req.setValue(ladon(aid: "8662", khronos: khronos, prefix: nonce.subdata(in: 2..<6)),
+                         forHTTPHeaderField: "x-ladon")
+            do {
+                let (data, resp) = try await shot.data(for: req)
+                let hr = resp as? HTTPURLResponse
+                let code = hr?.statusCode ?? -1
+                HGTrail.note("svideo \(hr?.url?.host ?? "?") http=\(code) len=\(data.count)")
+                guard code == 200, data.count > 20,
+                      let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      var inner = (j["data"] as? [String: Any]) else { continue }
+                if let vm = inner["video_model"] {
+                    var model: [String: Any]? = vm as? [String: Any]
+                    if model == nil, let s = vm as? String {
+                        model = (try? JSONSerialization.jsonObject(with: Data(s.utf8)) as? [String: Any])
+                            ?? (Data(base64Encoded: s).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] })
+                    }
+                    if let m = model { inner = m }
+                }
+                if let lift = parseTab(["code": j["code"] ?? 0 as Any, "data": inner], vid: vid) {
+                    HGTrail.note("svideo hit \(hr?.url?.host ?? host) \(lift.width)x\(lift.height) def=\(lift.definition)")
+                    return lift
+                }
+            } catch { }
+        }
+        return nil
+    }
+
     // MARK: tab 请求 + 解析（设备池内部自管；两口全回空 = 参考同款轮换一次）
     static func resolve(vid: String) async throws -> Lift {
         HGTrail.note("lift start vid=\(vid)")
@@ -608,6 +674,10 @@ enum HongguoLift {
             let dev = try await device(renew: round > 0)
             if let lift = await HGV5.attempt(vid: vid, dev: dev) {
                 HGTrail.note("lift ok v5 def=\(lift.definition) \(lift.width)x\(lift.height) key=\(lift.keyHex.isEmpty ? "none" : String(lift.keyHex.prefix(8))) url=" + String(lift.url.absoluteString.prefix(90)))
+                return lift
+            }
+            if let lift = await singleModel(vid: vid, dev: dev) {
+                HGTrail.note("lift ok svideo def=\(lift.definition) \(lift.width)x\(lift.height) key=\(lift.keyHex.isEmpty ? "none" : String(lift.keyHex.prefix(8))) url=" + String(lift.url.absoluteString.prefix(90)))
                 return lift
             }
             if let lift = await HGCurrent.attempt(vid: vid) {

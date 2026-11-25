@@ -502,6 +502,9 @@ enum HGV5 {
         "https://reading.snssdk.com",
         "https://api5-normal-sinfonlineb.fqnovel.com",
         "https://api5-normal-sinfonlinea.fqnovel.com",
+        // v1.10.138 军火版: jackotom 8.3 策略包 + TV 0.16.16 图纸新增两域 (桶旋转时多俩抽奖口)
+        "https://api5-normal-sinfonlinec.fqnovel.com",
+        "https://api3-normal-sinfonlinea.fqnovel.com",
     ]
 
     static func attempt(vid: String, dev: HongguoLift.Device) async -> HongguoLift.Lift? {
