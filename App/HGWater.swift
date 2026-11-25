@@ -128,11 +128,23 @@ enum HGWater {
             try? FileManager.default.removeItem(at: out)
             exp.outputURL = out
             exp.outputFileType = .mp4
-            exp.exportAsynchronously {
-                let why = exp.status == .completed ? "" : (String(reflecting: exp.status) + " " + (exp.error?.localizedDescription ?? "-"))
-                if !why.isEmpty { HGTrail.note("hgwater mux exp " + String(why.prefix(70))) }
-                k.resume(returning: exp.status == .completed)
+            // v142: fMP4分段源用passthrough导出, 收尾写moov常被打断=status4"操作已停止"(02:35遗嘱案)
+            // 根治=网络优化序列化(moov单遍顺序写), 另对cancelled自愈重试一次
+            exp.shouldOptimizeForNetworkUse = true
+            func go(_ attempt: Int) {
+                exp.exportAsynchronously {
+                    if exp.status == .cancelled, attempt < 2 {
+                        HGTrail.note("hgwater mux exp cancelled 重试\(attempt)")
+                        try? FileManager.default.removeItem(at: out)
+                        go(attempt + 1)
+                        return
+                    }
+                    let why = exp.status == .completed ? "" : (String(reflecting: exp.status) + " " + (exp.error?.localizedDescription ?? "-"))
+                    if !why.isEmpty { HGTrail.note("hgwater mux exp " + String(why.prefix(70))) }
+                    k.resume(returning: exp.status == .completed)
+                }
             }
+            go(1)
         }
     }
 
