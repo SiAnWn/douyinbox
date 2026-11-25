@@ -692,7 +692,7 @@ enum HongguoLift {
             pairs.append(("cdid", dev.cdid))
             pairs.append(("video_id", vid))
             pairs.append(("video_id_type", "0"))
-            pairs.append(("device_level", "1"))
+            pairs.append(("device_level", "4"))   // v139: TV 0.16.17 实测解药 档次2→4通关(附灾民vid验收) 咱旧报1更低 一并升舱旗舰档
             pairs.append(("need_all_video_definition", "1"))
             pairs.append(("need_mp4_align", "0"))
             pairs.append(("use_os_player", "0"))
