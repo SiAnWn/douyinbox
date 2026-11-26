@@ -507,8 +507,67 @@ enum HGV5 {
         "https://api3-normal-sinfonlinea.fqnovel.com",
     ]
 
+    // ==== v1.10.145 换心主炮: web 1.3.5 正门三件套 (73932族 + 单集接口 + 明文JSON + thl签名) ====
+    static let thlSinglePath = "/novel/player/video_model/v1/"
+    static let thlUA = "com.phoenix.read/73932 (Linux; U; Android 12; zh_CN_#Hans; PGT-AN10; Build/V417IR;tt-ok/3.12.13.20)"
+
+    static func thlFam(vid: String, dev: HongguoLift.Device) -> [(String, String)] {
+        [("aid", "8662"), ("app_name", "novelread"), ("version_code", "73932"), ("version_name", "7.3.9.32"),
+         ("channel", "update_64"), ("device_platform", "android"), ("device_type", "NX551J"), ("device_brand", "nubia"),
+         ("os", "android"), ("ssmix", "a"), ("language", "zh"), ("os_api", "35"), ("os_version", "15"),
+         ("resolution", "1080"), ("dpi", "480"), ("manifest_version_code", "73932"), ("update_version_code", "73932"),
+         ("ac", "wifi"), ("device_id", dev.deviceId), ("iid", dev.iid),
+         ("video_id", vid), ("video_platform", "3")]
+    }
+
+    static func thlAttempt(vid: String, dev: HongguoLift.Device) async -> HongguoLift.Lift? {
+        let body = "{\"biz_param\":{\"device_level\":3,\"need_all_video_definition\":true,\"video_platform\":3},\"content_type\":1,\"video_id\":\"" + vid + "\"}"
+        var empty = 0
+        for host in v5Hosts {
+            guard let s5 = THLSign.signV5(base: host + thlSinglePath, values: thlFam(vid: vid, dev: dev), body: body),
+                  let u = URL(string: s5.url) else { continue }
+            var req = URLRequest(url: u)
+            req.httpMethod = "POST"
+            req.httpBody = Data(body.utf8)
+            req.setValue(thlUA, forHTTPHeaderField: "User-Agent")
+            req.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
+            for (k, v) in s5.headers where !v.isEmpty && k != "url" { req.setValue(v, forHTTPHeaderField: k) }
+            do {
+                let (data, resp) = try await HongguoLift.shot.data(for: req)
+                let hr = resp as? HTTPURLResponse
+                let code = hr?.statusCode ?? -1
+                HGTrail.note("thlv5 \(hr?.url?.host ?? "?") http=\(code) len=\(data.count)")
+                guard code == 200, data.count > 20,
+                      let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { empty += 1; continue }
+                var inner = (j["data"] as? [String: Any]) ?? [:]
+                // 单集形态三兼容解包(承 138 singleModel 图纸): video_model = dict / JSON串 / base64
+                if let vm = inner["video_model"] as? String {
+                    var payload = Data(vm.utf8)
+                    if vm.count >= 24, payload.base64Encoded == nil, let dec = Data(base64Encoded: vm) { payload = dec }
+                    if let m = try? JSONSerialization.jsonObject(with: payload) as? [String: Any] { inner["video_model"] = m }
+                } else if inner["video_model"] == nil, let g = inner["1004"] as? [String: Any] {
+                    inner = (g[vid] as? [String: Any]) ?? g
+                }
+                if let lift = HongguoLift.parseTab(["code": j["code"] ?? 0 as NSNumber, "data": inner], vid: vid) {
+                    HGTrail.note("thlv5 换心命中 \(hr?.url?.host ?? host) \(lift.width)x\(lift.height)")
+                    return lift
+                }
+                empty += 1
+            } catch {
+                HGTrail.note("thlv5 哑 \(String(describing: error).prefix(60))")
+            }
+        }
+        if empty > 0 { HGTrail.note("thlv5 全线空\(empty)口 落旧炮") }
+        return nil
+    }
+
+
+
     static func attempt(vid: String, dev: HongguoLift.Device) async -> HongguoLift.Lift? {
         ensureSigner()
+        // v1.10.145 换心版: thl 官方新封装 medusa 首炮(PC 11:15 铁证 24KB), 五口轮完落旧炮
+        if UserDefaults.standard.object(forKey: "hgThlOff") == nil,
+           let lift = await thlAttempt(vid: vid, dev: dev) { return lift }
         guard let body = v5Body(vid: vid), let signed = sign(pairs: v5Pairs(dev), nowMs: Int64(Date().timeIntervalSince1970 * 1000), body: body) else {
             HGTrail.note("v5 sign fail")
             return nil
