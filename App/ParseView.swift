@@ -575,8 +575,13 @@ struct ParseView: View {
             HGTrail.note("hgrun early sid=\(sid) n=\(n)")
             let earlyDir = SavePaths.docs.appendingPathComponent("短剧/\(seriesName)", isDirectory: true)
             let earlyPairs = all.filter { $0.playable && $0.number > 0 }.map { (num: $0.number, id: $0.id) }
-            Task { await SeriesMetaStore.harvest(c, sid: sid, title: seriesName, dir: earlyDir) }
-            Task { await DanmakuStore.harvest(c, sid: sid, eps: earlyPairs, dir: earlyDir) }
+            // v1.10.154: 冲刺礼让位下载(14:35判每集慢的共犯之一=开局6s并发冲刺抢道),
+            // 下载先滚9秒再起弹幕/档案, 那时首集已入库, 抢道也抢不过几毫秒
+            Task {
+                try? await Task.sleep(nanoseconds: 9_000_000_000)
+                await SeriesMetaStore.harvest(c, sid: sid, title: seriesName, dir: earlyDir)
+                await DanmakuStore.harvest(c, sid: sid, eps: earlyPairs, dir: earlyDir)
+            }
             for (i, ep) in list.enumerated() {
                 if Task.isCancelled { break }
                 let num = ep.number > 0 ? ep.number : i + 1
@@ -620,10 +625,10 @@ struct ParseView: View {
                         do { prbOpt = try await Hongguo.attempt(c) { try await c.resolvePlayback(ep.id) } }
                         catch let e {
                             prbOpt = nil; resolveErr = e.localizedDescription
-                            if resolveErr.localizedCaseInsensitiveContains("empty") {
-                                ParseView.sdkResolveDead = true
-                                HGTrail.note("hgrun SDK resolve 判死, 本批后续集直飞注册设备")
-                            }
+                            // v154: resolvePlayback 只服务播放口 —— attempt 内部已含三连+退避,
+                            // 抛出来即判死全批(旧版只认含empty文案, 最终throw漏判 → 14:35遗嘱每集仍白烧10s)
+                            ParseView.sdkResolveDead = true
+                            HGTrail.note("hgrun SDK resolve 判死, 本批后续集直飞注册设备")
                         }
                     }
                     guard resolveErr.isEmpty, let prb = prbOpt,
@@ -654,7 +659,7 @@ struct ParseView: View {
                         lastWhy = (resolveErr.isEmpty ? "no stream" : resolveErr) + " | " + liftWhy
                         if liftWhy.contains("HTTP200 len=0") || liftWhy.contains("软钉子") || liftWhy.contains("空响应") || liftWhy.contains("弃权") {
                             liftFailRun += 1
-                            if liftFailRun >= 5 {
+                            if liftFailRun >= 4 {   // v154: 判死生效后每连败只~1s, 4集足够定性门塌
                                 HGTrail.note("hgrun 连败5集收工(门全塌, 缺集下次投集自动重试)")
                                 break
                             }
