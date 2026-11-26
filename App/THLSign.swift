@@ -155,7 +155,7 @@ enum THLSign {
         let vjson = "{" + values.map { "\"\(esc($0.0))\":\"\(esc($0.1))\"" }.joined(separator: ",") + "}"
         let nowMs = NSNumber(value: Int64(Date().timeIntervalSince1970 * 1000))
         guard let f = c.objectForKeyedSubscript("__signCall"),
-              let r = f.callWithArguments([esc(base) as NSString as Any, vjson as Any,
+              let r = f.call(withArguments: [esc(base) as NSString as Any, vjson as Any,
                                            (body.map { $0 as Any } ?? NSNull()) as Any, nowMs as Any]),
               let dict = r.toDictionary() as? [String: String],
               let url = dict["url"], !url.isEmpty
