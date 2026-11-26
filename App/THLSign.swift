@@ -76,6 +76,7 @@ enum THLSign {
         function __modEnd(key) { if (key) { __mods[key] = module.exports; } return module.exports; }
         function __srdArr(n) { var a = __srd(n); var u = new Uint8Array(n); for (var i = 0; i < n; i++) { u[i] = a[i] & 255; } return u; }
         __mods['crypto'] = {
+            getHashes: function () { return ['sm3', 'md5', 'sha512', 'sha256']; },
             randomBytes: function (n) { return Buffer.from(__srdArr(n)); },
             createHash: function (algo) {
                 var acc = '';
@@ -107,25 +108,41 @@ enum THLSign {
             return out;
         };
         """)
-        // ③ 六件套按序装载
-        c.evaluateScript("__modBegin();")
-        c.evaluateScript(b64)
-        c.evaluateScript("__modEnd('base64-js');")
-        c.evaluateScript("__modBegin();")
-        c.evaluateScript(ieee)
-        c.evaluateScript("__modEnd('ieee754');")
-        c.evaluateScript("__modBegin();")
-        c.evaluateScript(buf)
-        c.evaluateScript("__modEnd(null); this.Buffer = module.exports.Buffer; this.SlowBuffer = module.exports.SlowBuffer; globalThis.Buffer = this.Buffer;")
-        c.evaluateScript("__modBegin();")
-        c.evaluateScript(thl)
-        c.evaluateScript("__modEnd('./thl-sign');")
-        c.evaluateScript("__modBegin();")
-        c.evaluateScript(ucryp)
-        c.evaluateScript("__modEnd('../util/crypto');")
-        c.evaluateScript("__modBegin();")
-        c.evaluateScript(psig)
-        c.evaluateScript("__modEnd('./pure-sign'); var __signV5 = module.exports.signPlaybackV5;")
+        // ③ 六件套按序装载 (v148 拆雷: JSC 全局作用域对跨脚本 const 重复声明必炸
+        //    (12:00遗嘱: SyntaxError duplicate 'crypto' = util/crypto 与 pure-sign 顶层 const 相撞)
+        //    每个文件裹一层 IIFE, 文件内 const/let/var 全锁进函数作用域, 只留 __mods 副作用外溢)
+        let chain: [(String, String?)] = [
+            (b64, "base64-js"), (ieee, "ieee754"), (buf, nil),
+            (thl, "./thl-sign"), (ucryp, "../util/crypto"), (psig, "./pure-sign"),
+        ]
+        for (src, key) in chain {
+            c.evaluateScript("__modBegin();")
+            c.evaluateScript("(function(){\n" + src + "\n})();")
+            c.evaluateScript("__modEnd(\(key.map { "\"\($0)\"" } ?? "null"));")
+            if key == nil {
+                // buffer 包: 挂全局给后面三家使 + 补 base64url 双向(buffer@6 不识, 官方 node 15.7+ 才有,
+                // 12:0x预验三连揭雷: pure-sign medusa 打包用 'base64url' 编码)
+                c.evaluateScript("""
+                this.Buffer = module.exports.Buffer;
+                globalThis.Buffer = this.Buffer;
+                Buffer.prototype.__ts = Buffer.prototype.toString;
+                Buffer.prototype.toString = function (enc) {
+                    if (enc === 'base64url') { return this.__ts('base64').replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, ''); }
+                    return this.__ts.apply(this, arguments);
+                };
+                Buffer.__from = Buffer.from;
+                Buffer.from = function (d, e) {
+                    if (e === 'base64url') {
+                        var s = String(d).replace(/-/g, '+').replace(/_/g, '/');
+                        while (s.length % 4) { s += '='; }
+                        return Buffer.__from(s, 'base64');
+                    }
+                    return Buffer.__from.apply(Buffer, arguments);
+                };
+                """)
+            }
+        }
+        c.evaluateScript("var __signV5 = module.exports.signPlaybackV5;")
         let aliveV = c.evaluateScript("(typeof __signV5 === 'function') ? 'ok' : 'dead'")
         let alive = aliveV?.toString()
         guard alive == "ok" else {
