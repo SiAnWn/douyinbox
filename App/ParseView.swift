@@ -241,7 +241,6 @@ struct ParseView: View {
     // attempt() 内部本就三连炮+退避后才抛, 一次抛「empty」即判死全批跳过; 进程级=重启自动复活, 不误伤
     static var sdkResolveDead = false
 
-@State private var hgWaterFailRun = 0   // v1.10.137 水闸连败计数(App端塌方期间水闸是唯一海, 连败2次才熄灯)   // v135d: View 里裸 var 赋值=self is immutable 真凶(135b/c 三连红的本尊), @State 盒与 status 同款免死
 
     @MainActor
     private func doParse(link: String) async {
@@ -567,21 +566,10 @@ struct ParseView: View {
             }
             let n = list.count
             let seriesName = Naming.sanitize(res.title)
-            var okN = 0, failN = 0
+            var okN = 0, failN = 0, liftFailRun = 0   // v150: lift连拍空计数(水闸已除名, 连败5=门全塌收工)
             // v1.10.98 批发取址: 逐集连枪吃网关软拒(真机13:24第24集案), batch 口一单30集
             // v1.10.101: V5 方言预订单(打11-20新门, PC实测出货)优先, 新方言 batch 第二腿
-            var reservations: [String: HongguoLift.Lift] = [:]
-            if n > 1, !HGCurrent.softBlocked, UserDefaults.standard.object(forKey: "hgThlOff") != nil {
-                // v1.10.149: thl 换心主炮每集首枪即中(12:42遗嘱76/76), 旧预订单(preload手搓medusa)
-                // 已 0/6 全灭 = 白烧3秒27发; 只在 hgThlOff 回滚旧炮时才恢复预订单流程
-                status = "红果批量取址（一单打包全剧）…"
-                let vids = list.map { $0.id }
-                if let dev = try? await HongguoLift.device() {
-                    reservations = await HGV5.reserve(vids: vids, dev: dev)
-                }
-                if reservations.isEmpty { reservations = await HGCurrent.reserve(vids: vids) }
-                HGTrail.note("hgrun reserve \(reservations.count)/\(n)")
-            }
+            var reservations: [String: HongguoLift.Lift] = [:]   // v150 预订单焚化(preload旧medusa 0/75全灭), 表永空=逐集直飞lift
             // v1.10.123 下载与弹幕/档案并行(用户金点子): 下载吃 CDN 带宽、取址吃接口、弹幕吃列表口,
             // 三线互不抢道 → 收割提前发车, 下载多少分钟弹幕就白飘多少分钟, 收尾不再干等
             HGTrail.note("hgrun early sid=\(sid) n=\(n)")
@@ -616,9 +604,6 @@ struct ParseView: View {
                 var savedOK = false
                 var tried = 0
                 var lastWhy = ""
-                // v1.10.144 守门犬: App门塌了转水闸巡航, 每10集放一枪脉冲试探, 命中立即恢复App正道
-                var hgAppCruise = false
-                var hgTries = 0
                 while !savedOK && tried < 3 {
                     tried += 1
                     if tried > 1 {
@@ -644,13 +629,9 @@ struct ParseView: View {
                     guard resolveErr.isEmpty, let prb = prbOpt,
                           let st = Hongguo.chooseStream(prb.playback, def: def),
                           let su = Hongguo.streamURL(st) else {
-                        // SDK 路被闸死 → lift 注册设备通道（直连=中国蜂窝出口）
+                        // SDK 路被闸死 → lift 注册设备通道 (thl换心主炮+五头备炮; 软熔断90s自带装死)
                         var liftOK = false
                         var liftWhy = ""
-                        hgTries += 1
-                        if hgAppCruise && hgTries % 10 != 0 {
-                            liftWhy = "lift 巡航避让(门已塌, 下轮脉冲再赌)"
-                        } else {
                         do {
                             if !HongguoLift.didSelfCheck {
                                 HongguoLift.didSelfCheck = true
@@ -661,40 +642,20 @@ struct ParseView: View {
                             let t1 = Date()
                             (liftOK, liftWhy) = await saveLift(lf, rel: rel)
                             if liftOK { epSpeed(rel, t1) }   // v1.10.118 同补事后感速
-                        } catch let e { liftWhy = "lift " + e.localizedDescription } }
-                        if liftOK && hgAppCruise {
-                            HGTrail.note("hgrun 脉冲命中! 门 reopened ep\(num)")
-                            hgAppCruise = false
-                        } else if !liftOK, liftWhy.contains("HTTP200 len=0") || liftWhy.contains("软钉子") || liftWhy.contains("空响应") || liftWhy.contains("弃权") {
-                            if !hgAppCruise { HGTrail.note("hgrun 转巡航 ep\(num) 门塌") }
-                            hgAppCruise = true
-                        }
+                        } catch let e { liftWhy = "lift " + e.localizedDescription }
                         if liftOK {
                             lastWhy = ""
+                            liftFailRun = 0
                             savedOK = true
                             continue
                         }
-                        // v1.10.127 网页水闸: SDK/lift 三层皆空 → 官网 720P 两轨合体, 再退 360P 单文件
-                        do {
-                            status = "网页水闸取 \(i + 1) 集(720P)…"
-                            let t2 = Date()
-                            let (wOK, wWhy) = await HGWater.save(sid: sid, vid: ep.id, rel: rel)
-                            if wOK {
-                                HGTrail.note("hgrun water ep\(num) \(wWhy.prefix(40))")
-                                hgWaterFailRun = 0
-                                lastWhy = ""
-                                savedOK = true
-                                epSpeed(rel, t2)
-                                continue
-                            }
-                            lastWhy = (resolveErr.isEmpty ? "no stream" : resolveErr) + " | " + liftWhy + " | " + wWhy
-                        }
-                        // v1.10.137 熔断不再熄火整串: App端有60s冷窗throw自护(每集<1s不烧配额),
-                        // 官网水闸是另一片海(今晚实测存活)该继续吃饭; 只有水闸自己连败2次才收工
-                        if HGCurrent.softBlocked {
-                            hgWaterFailRun += 1
-                            if hgWaterFailRun >= 2 {
-                                HGTrail.note("hgrun 熔断期水闸连败2 熄火收工")
+                        // v1.10.150 御旨: 720 水闸退餐 —— App 各炮全空=本集记失败缺集,
+                        // 连败5集=本批门塌收工(缺集下次投集自动重试), 不再无限装死开枪
+                        lastWhy = (resolveErr.isEmpty ? "no stream" : resolveErr) + " | " + liftWhy
+                        if liftWhy.contains("HTTP200 len=0") || liftWhy.contains("软钉子") || liftWhy.contains("空响应") || liftWhy.contains("弃权") {
+                            liftFailRun += 1
+                            if liftFailRun >= 5 {
+                                HGTrail.note("hgrun 连败5集收工(门全塌, 缺集下次投集自动重试)")
                                 break
                             }
                         }

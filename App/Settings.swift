@@ -97,7 +97,6 @@ struct SettingsView: View {
                         HGCurrent.clearSoftBlock()
                         UserDefaults.standard.removeObject(forKey: "hgLiftDevice")
                         UserDefaults.standard.removeObject(forKey: "hgTtwid")
-                        HGWater.resetP720Fail()
                         metaMsg = "熔断已解除 · 设备与门票已丢弃 · 换个海外节点再投"
                     } label: {
                         Label("红果线路急救包（解除熔断+丢设备+换门票）", systemImage: "cross.case.fill")

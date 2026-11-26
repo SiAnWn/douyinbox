@@ -750,7 +750,7 @@ enum HongguoLift {
             // v1.10.137 塌方快道: round0 三线(代理/直连同构)全空 = 协议级塌方而非线路问题
             // (今晚 PC 双出口同步全空+官网闸门存活实锤) — round1 边际价值归零, 弃枪转水闸, 每集省 ~25s
             if round == 0 {
-                HGTrail.note("lift 塌方快道 弃权转水闸")
+                HGTrail.note("lift 塌方快道 弃权")
                 break
             }
         }
