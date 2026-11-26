@@ -730,10 +730,18 @@ struct ParseView: View {
     //  lift/预订单 通用落盘: 下载 → (有 key 则 CENC 解密) → 写库, 返回 (成功?, 失败原因)
     private func saveLift(_ lf: HongguoLift.Lift, rel: String) async -> (Bool, String) {
         do {
-            let tmpL = try await HongguoLift.download(lf.url) { got, sps in
-                // v152 实时网速(用户点名: 旧版只在开切瞬间报一次, 下集才刷新)
-                status = String(format: "下载中 %.1f MB/s · 已收 %.0f MB", sps / 1_048_576, Double(got) / 1_048_576)
-            }
+            let tmpL = try await HongguoLift.download(
+                lf.url,
+                onProgress: { got, exp, sps in
+                    // v152/v153 实时网速(用户点名): 0.35s 一刷, 带总大小分母看得懂进度
+                    let tot = exp > 0 ? String(format: " / %.0f MB", Double(exp) / 1_048_576) : ""
+                    status = String(format: "⬇ %.1f MB/s · 已收 %.0f MB%@", sps / 1_048_576, Double(got) / 1_048_576, tot)
+                },
+                onRace: { h, sps in
+                    status = String(format: "🏎️ 抢池得胜 %@ %.1f MB/s，全速下载中…",
+                                    h.replacingOccurrences(of: "-reading-video.qznovelvod.com", with: ""),
+                                    sps / 1_048_576)
+                })
             defer { try? FileManager.default.removeItem(at: tmpL) }
             if lf.keyHex.isEmpty {
                 if SavePaths.write(tmpL, rel: rel) { return (true, "") }

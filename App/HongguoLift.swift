@@ -935,20 +935,22 @@ enum HongguoLift {
         comp.host = host
         guard let u = comp.url else { return (host, 0) }
         var req = URLRequest(url: u)
-        req.timeoutInterval = 7
+        req.timeoutInterval = 6
         req.setValue(tabUA, forHTTPHeaderField: "User-Agent")
-        req.setValue("bytes=0-1048575", forHTTPHeaderField: "Range")
+        req.setValue("bytes=0-4194303", forHTTPHeaderField: "Range")   // v153: 1MB撞天花板(全员4096满分), 4MB见真速
         let t0 = Date()
         do {
             let (data, resp) = try await direct.data(for: req)
             let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
             guard code == 200 || code == 206 else { return (host, 0) }
-            let dt = max(0.25, Date().timeIntervalSince(t0))
+            let dt = max(0.08, Date().timeIntervalSince(t0))
             return (host, Double(data.count) / dt)
         } catch { return (host, 0) }
     }
 
-    static func download(_ url: URL, onProgress: ((Int64, Double) -> Void)? = nil) async throws -> URL {
+    static func download(_ url: URL,
+                         onProgress: ((Int64, Int64, Double) -> Void)? = nil,
+                         onRace: ((String, Double) -> Void)? = nil) async throws -> URL {
         var finalURL = url
         let hosts = poolHosts(url)
         if hosts.count > 1 {
@@ -958,7 +960,8 @@ enum HongguoLift {
                 for await r in grp where r.1 > best.1 { best = r }
                 return best
             }
-            HGTrail.note("race 冠军 \(champ.0.isEmpty ? "?" : String(champ.0.prefix(26))) \(Int(champ.1 / 1024))KB/s")
+            HGTrail.note("race 冠军 \(champ.0.isEmpty ? "?" : String(champ.0.prefix(26))) \(String(format: "%.1f", champ.1 / 1_048_576))MB/s")
+            if let onRace = onRace, !champ.0.isEmpty { onRace(champ.0, champ.1) }
             if !champ.0.isEmpty, champ.0 != url.host, var comp = URLComponents(url: url, resolvingAgainstBaseURL: false) {
                 comp.host = champ.0
                 if let u2 = comp.url { finalURL = u2 }
@@ -980,12 +983,12 @@ enum HongguoLift {
     final class DownBox: NSObject, URLSessionDownloadDelegate {
         static let shared = DownBox()
         private var conts: [Int: CheckedContinuation<(URL, Int64), Never>] = [:]
-        private var progs: [Int: (Int64, Double) -> Void] = [:]
+        private var progs: [Int: (Int64, Int64, Double) -> Void] = [:]
         private var lastUpd: [Int: TimeInterval] = [:]
         private let lk = NSLock()
 
         // 返回 (临时文件, HTTP 码); 失败=码非 2xx / 空文件
-        func run(_ req: URLRequest, onProgress: ((Int64, Double) -> Void)?) async -> (URL, Int64) {
+        func run(_ req: URLRequest, onProgress: ((Int64, Int64, Double) -> Void)?) async -> (URL, Int64) {
             let cfg = URLSessionConfiguration.default
             cfg.timeoutIntervalForRequest = 120
             cfg.timeoutIntervalForResource = 900
@@ -1037,11 +1040,11 @@ enum HongguoLift {
             lk.lock()
             let last = lastUpd[tid] ?? 0
             let p = progs[tid]
-            let fresh = now - last >= 0.5
+            let fresh = now - last >= 0.35
             if fresh { lastUpd[tid] = now }
             lk.unlock()
             guard fresh, let p = p, last > 0 else { return }
-            p(totalBytesWritten, Double(bytesWritten) / max(0.05, now - last))
+            p(totalBytesWritten, totalBytesExpectedToWrite, Double(bytesWritten) / max(0.05, now - last))
         }
     }
 
