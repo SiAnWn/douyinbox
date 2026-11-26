@@ -237,7 +237,11 @@ struct ParseView: View {
     // v1.10.135b: pick() 作用域看不见 doParse 的 link 参数, 裸 link 会撞 Darwin.link(2) C 函数=编译炸
     // 属性缓存当次解析链接, 供完工跳回判断 (须居 @MainActor 之前, 抢插演员席会拆台)
     @State private var parsedLink = ""
-    @State private var hgWaterFailRun = 0   // v1.10.137 水闸连败计数(App端塌方期间水闸是唯一海, 连败2次才熄灯)   // v135d: View 里裸 var 赋值=self is immutable 真凶(135b/c 三连红的本尊), @State 盒与 status 同款免死
+        // v1.10.149 SDK resolve 僵尸印(12:42遗嘱: 每集 try1/2/3 空炮白烧~10s, openhongguo resolve 在 thl 时代全死)
+    // attempt() 内部本就三连炮+退避后才抛, 一次抛「empty」即判死全批跳过; 进程级=重启自动复活, 不误伤
+    static var sdkResolveDead = false
+
+@State private var hgWaterFailRun = 0   // v1.10.137 水闸连败计数(App端塌方期间水闸是唯一海, 连败2次才熄灯)   // v135d: View 里裸 var 赋值=self is immutable 真凶(135b/c 三连红的本尊), @State 盒与 status 同款免死
 
     @MainActor
     private func doParse(link: String) async {
@@ -567,7 +571,9 @@ struct ParseView: View {
             // v1.10.98 批发取址: 逐集连枪吃网关软拒(真机13:24第24集案), batch 口一单30集
             // v1.10.101: V5 方言预订单(打11-20新门, PC实测出货)优先, 新方言 batch 第二腿
             var reservations: [String: HongguoLift.Lift] = [:]
-            if n > 1, !HGCurrent.softBlocked {
+            if n > 1, !HGCurrent.softBlocked, UserDefaults.standard.object(forKey: "hgThlOff") != nil {
+                // v1.10.149: thl 换心主炮每集首枪即中(12:42遗嘱76/76), 旧预订单(preload手搓medusa)
+                // 已 0/6 全灭 = 白烧3秒27发; 只在 hgThlOff 回滚旧炮时才恢复预订单流程
                 status = "红果批量取址（一单打包全剧）…"
                 let vids = list.map { $0.id }
                 if let dev = try? await HongguoLift.device() {
@@ -622,8 +628,19 @@ struct ParseView: View {
                     }
                     let prbOpt: PlaybackResult?
                     var resolveErr = ""
-                    do { prbOpt = try await Hongguo.attempt(c) { try await c.resolvePlayback(ep.id) } }
-                    catch let e { prbOpt = nil; resolveErr = e.localizedDescription }
+                    if ParseView.sdkResolveDead {
+                        prbOpt = nil
+                        resolveErr = "SDK resolve 已判死(本批跳过每集三连仪式)"
+                    } else {
+                        do { prbOpt = try await Hongguo.attempt(c) { try await c.resolvePlayback(ep.id) } }
+                        catch let e {
+                            prbOpt = nil; resolveErr = e.localizedDescription
+                            if resolveErr.localizedCaseInsensitiveContains("empty") {
+                                ParseView.sdkResolveDead = true
+                                HGTrail.note("hgrun SDK resolve 判死, 本批后续集直飞注册设备")
+                            }
+                        }
+                    }
                     guard resolveErr.isEmpty, let prb = prbOpt,
                           let st = Hongguo.chooseStream(prb.playback, def: def),
                           let su = Hongguo.streamURL(st) else {
