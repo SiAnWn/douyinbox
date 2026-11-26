@@ -79,6 +79,17 @@ enum HGV5 {
         return nil
     }
 
+    // 五头备炮(argus bean 环境料)还活着的取数helper —— 150瘦身时误删致 HongguoLift:513 编译炸, 151 回收原版
+    static func queryValue(_ query: String, _ name: String) -> String {
+        for part in query.split(separator: "&") {
+            let kv = part.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+            guard kv.count == 2, String(kv[0]) == name else { continue }
+            let v = String(kv[1])
+            return v.removingPercentEncoding ?? v
+        }
+        return ""
+    }
+
     // 对外入口名不动 (HongguoLift.resolve 调用面零改动); 内部只剩换心主炮
     static func attempt(vid: String, dev: HongguoLift.Device) async -> HongguoLift.Lift? {
         await thlAttempt(vid: vid, dev: dev)
