@@ -128,23 +128,32 @@ enum HGWater {
             try? FileManager.default.removeItem(at: out)
             exp.outputURL = out
             exp.outputFileType = .mp4
-            // v142: fMP4分段源用passthrough导出, 收尾写moov常被打断=status4"操作已停止"(02:35遗嘱案)
-            // 根治=网络优化序列化(moov单遍顺序写), 另对cancelled自愈重试一次
+            // v142: fMP4分段源用passthrough导出, 收尾写moov常被打断(08:06遗嘱: status4=failed非cancelled, 上刀押错enum)
+            // v143 真补刀: failed 也自愈——换 HighestQuality 转码档重跑一遍(转码器能吞分段源, 慢但成品)
             exp.shouldOptimizeForNetworkUse = true
-            func go(_ attempt: Int) {
-                exp.exportAsynchronously {
-                    if exp.status == .cancelled, attempt < 2 {
-                        HGTrail.note("hgwater mux exp cancelled 重试\(attempt)")
-                        try? FileManager.default.removeItem(at: out)
-                        go(attempt + 1)
-                        return
-                    }
-                    let why = exp.status == .completed ? "" : (String(reflecting: exp.status) + " " + (exp.error?.localizedDescription ?? "-"))
-                    if !why.isEmpty { HGTrail.note("hgwater mux exp " + String(why.prefix(70))) }
-                    k.resume(returning: exp.status == .completed)
-                }
+            func bail(_ s: AVAssetExportSession, _ note: String) {
+                let why = s.status == .completed ? "" : (String(reflecting: s.status) + " " + (s.error?.localizedDescription ?? "-"))
+                if !why.isEmpty { HGTrail.note("hgwater mux exp " + note + String(why.prefix(70))) }
+                k.resume(returning: s.status == .completed)
             }
-            go(1)
+            func transcodedFallback() {
+                guard let exp2 = AVAssetExportSession(asset: comp, presetName: AVAssetExportPresetHighestQuality)
+                else { bail(exp, "转码档也无从建 "); return }
+                try? FileManager.default.removeItem(at: out)
+                exp2.outputURL = out
+                exp2.outputFileType = .mp4
+                exp2.shouldOptimizeForNetworkUse = true
+                exp2.exportAsynchronously { bail(exp2, "转码成品 ") }
+            }
+            exp.exportAsynchronously {
+                if exp.status == .failed || exp.status == .cancelled {
+                    HGTrail.note("hgwater mux exp 首败转码逃生")
+                    try? FileManager.default.removeItem(at: out)
+                    transcodedFallback()
+                    return
+                }
+                bail(exp, "")
+            }
         }
     }
 
