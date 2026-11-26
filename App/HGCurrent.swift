@@ -505,7 +505,7 @@ enum HGCurrent {
     static let softBlockKey = "hgSoftBlockUntil"
     static var softBlocked: Bool { Date().timeIntervalSince1970 < UserDefaults.standard.double(forKey: softBlockKey) }
     static var softBlockLeft: Int { max(0, Int(UserDefaults.standard.double(forKey: softBlockKey) - Date().timeIntervalSince1970)) }
-    static func softBlock(secs: Int = 300, reason: String) {
+    static func softBlock(secs: Int = 90, reason: String) {   // v144: 旋转门时代5分钟太久, 90秒足够防连珠炮又不闷死开门窗口
         // 只有本来就通/刚过期的口全空才值得熔断: 600s 封顶防叠罗汉
         let until = Date().timeIntervalSince1970 + Double(secs)
         if until > UserDefaults.standard.double(forKey: softBlockKey) {

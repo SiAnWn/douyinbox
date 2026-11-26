@@ -610,6 +610,9 @@ struct ParseView: View {
                 var savedOK = false
                 var tried = 0
                 var lastWhy = ""
+                // v1.10.144 守门犬: App门塌了转水闸巡航, 每10集放一枪脉冲试探, 命中立即恢复App正道
+                var hgAppCruise = false
+                var hgTries = 0
                 while !savedOK && tried < 3 {
                     tried += 1
                     if tried > 1 {
@@ -627,6 +630,10 @@ struct ParseView: View {
                         // SDK 路被闸死 → lift 注册设备通道（直连=中国蜂窝出口）
                         var liftOK = false
                         var liftWhy = ""
+                        hgTries += 1
+                        if hgAppCruise && hgTries % 10 != 0 {
+                            liftWhy = "lift 巡航避让(门已塌, 下轮脉冲再赌)"
+                        } else {
                         do {
                             if !HongguoLift.didSelfCheck {
                                 HongguoLift.didSelfCheck = true
@@ -637,7 +644,14 @@ struct ParseView: View {
                             let t1 = Date()
                             (liftOK, liftWhy) = await saveLift(lf, rel: rel)
                             if liftOK { epSpeed(rel, t1) }   // v1.10.118 同补事后感速
-                        } catch let e { liftWhy = "lift " + e.localizedDescription }
+                        } catch let e { liftWhy = "lift " + e.localizedDescription } }
+                        if liftOK && hgAppCruise {
+                            HGTrail.note("hgrun 脉冲命中! 门 reopened ep\(num)")
+                            hgAppCruise = false
+                        } else if !liftOK, liftWhy.contains("HTTP200 len=0") || liftWhy.contains("软钉子") || liftWhy.contains("空响应") || liftWhy.contains("弃权") {
+                            if !hgAppCruise { HGTrail.note("hgrun 转巡航 ep\(num) 门塌") }
+                            hgAppCruise = true
+                        }
                         if liftOK {
                             lastWhy = ""
                             savedOK = true
