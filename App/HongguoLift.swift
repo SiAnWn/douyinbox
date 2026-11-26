@@ -908,16 +908,141 @@ enum HongguoLift {
     }
 
     // MARK: 直连下载（无进度细粒度，回报字节数即可）
-    static func download(_ url: URL) async throws -> URL {
-        var req = URLRequest(url: url)
+    // ==== v1.10.152 抢池竞速 + 实时网速 ====
+    // 红果 CDN 集群排班制(11-17 定案 + 11-26 14:11 PC 复测): 同一文件不同池速差 25 倍
+    // (v5-se2-yz 快 15MB/s, bjtc/gddgtc 慢 300~700KB/s)。旧法单 url 赌池; 新法 1MB Range
+    // 探针并行测各池, 冠军池全量下载 —— 探针烧 ~4MB, 换回整集不蹲慢池。
+    // 流式下载走 DownBox(delegate), didWriteData 半秒一档回 (已收, 瞬时速度) 给上层刷 UI。
+    static func poolHosts(_ url: URL) -> [String] {
+        guard let h = url.host else { return [] }
+        for suf in ["-reading-video.qznovelvod.com", "-video-tos.qznovelvod.com", "-video.qznovelvod.com"] {
+            if let r = h.range(of: suf) {
+                guard h.hasPrefix("v5-se2-") else { return [h] }   // 只对这个池族有把握
+                let tail = String(h[r.lowerBound...])
+                var out = [h]
+                for c in ["yz", "zjnbtc", "gddgtc", "bjtc"] {
+                    let p = "v5-se2-" + c + tail
+                    if p != h { out.append(p) }
+                }
+                return out
+            }
+        }
+        return [h]
+    }
+
+    private static func probePool(_ host: String, ref: URL) async -> (String, Double) {
+        guard var comp = URLComponents(url: ref, resolvingAgainstBaseURL: false) else { return (host, 0) }
+        comp.host = host
+        guard let u = comp.url else { return (host, 0) }
+        var req = URLRequest(url: u)
+        req.timeoutInterval = 7
         req.setValue(tabUA, forHTTPHeaderField: "User-Agent")
-        let (tmp, resp) = try await direct.download(for: req)
-        let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
-        guard code == 200 else {
+        req.setValue("bytes=0-1048575", forHTTPHeaderField: "Range")
+        let t0 = Date()
+        do {
+            let (data, resp) = try await direct.data(for: req)
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
+            guard code == 200 || code == 206 else { return (host, 0) }
+            let dt = max(0.25, Date().timeIntervalSince(t0))
+            return (host, Double(data.count) / dt)
+        } catch { return (host, 0) }
+    }
+
+    static func download(_ url: URL, onProgress: ((Int64, Double) -> Void)? = nil) async throws -> URL {
+        var finalURL = url
+        let hosts = poolHosts(url)
+        if hosts.count > 1 {
+            let champ = await withTaskGroup(of: (String, Double).self) { grp -> (String, Double) in
+                for hh in hosts { grp.addTask { await probePool(hh, ref: url) } }
+                var best = ("", 0.0)
+                for await r in grp where r.1 > best.1 { best = r }
+                return best
+            }
+            HGTrail.note("race 冠军 \(champ.0.isEmpty ? "?" : String(champ.0.prefix(26))) \(Int(champ.1 / 1024))KB/s")
+            if !champ.0.isEmpty, champ.0 != url.host, var comp = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+                comp.host = champ.0
+                if let u2 = comp.url { finalURL = u2 }
+            }
+        }
+        var req = URLRequest(url: finalURL)
+        req.setValue(tabUA, forHTTPHeaderField: "User-Agent")
+        req.timeoutInterval = 120
+        let (tmp, code) = await DownBox.shared.run(req, onProgress: onProgress)
+        let sz = (try? tmp.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
+        guard (code == 200 || code == 206), sz > 0 else {
             try? FileManager.default.removeItem(at: tmp)
             throw GError.failed("lift 下载 HTTP \(code)")
         }
         return tmp
+    }
+
+    // MARK: v152 流式下载箱 (URLSessionDownloadDelegate: didWriteData 半秒档回实时速度)
+    final class DownBox: NSObject, URLSessionDownloadDelegate {
+        static let shared = DownBox()
+        private var conts: [Int: CheckedContinuation<(URL, Int64), Never>] = [:]
+        private var progs: [Int: (Int64, Double) -> Void] = [:]
+        private var lastUpd: [Int: TimeInterval] = [:]
+        private let lk = NSLock()
+
+        // 返回 (临时文件, HTTP 码); 失败=码非 2xx / 空文件
+        func run(_ req: URLRequest, onProgress: ((Int64, Double) -> Void)?) async -> (URL, Int64) {
+            let cfg = URLSessionConfiguration.default
+            cfg.timeoutIntervalForRequest = 120
+            cfg.timeoutIntervalForResource = 900
+            cfg.requestCachePolicy = .reloadIgnoringLocalCacheData
+            cfg.connectionProxyDictionary = [:]   // 与 direct 同策: 红果吃中国直连出口, 绕系统代理
+            let sess = URLSession(configuration: cfg, delegate: self, delegateQueue: nil)
+            let task = sess.downloadTask(with: req)
+            let got: (URL, Int64) = await withCheckedContinuation { c in
+                lk.lock()
+                conts[task.taskIdentifier] = c
+                if let p = onProgress { progs[task.taskIdentifier] = p }
+                lk.unlock()
+                task.resume()
+            }
+            sess.finishTasksAndInvalidate()
+            return got
+        }
+
+        func urlSession(_ s: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo loc: URL) {
+            var dest = FileManager.default.temporaryDirectory.appendingPathComponent("dl-" + UUID().uuidString + ".mp4")
+            try? FileManager.default.removeItem(at: dest)
+            let ok = (try? FileManager.default.copyItem(at: loc, to: dest)) != nil
+            if !ok { dest = URL(fileURLWithPath: "/nonexistent-copyfail") }
+            let tid = downloadTask.taskIdentifier
+            let code = ok ? Int64((downloadTask.response as? HTTPURLResponse)?.statusCode ?? -1) : -1
+            lk.lock()
+            let c = conts.removeValue(forKey: tid)
+            progs.removeValue(forKey: tid); lastUpd.removeValue(forKey: tid)
+            lk.unlock()
+            c?.resume(returning: (dest, code))
+        }
+
+        func urlSession(_ s: URLSession, task: URLSessionTask, didCompleteWithError e: Error?) {
+            guard e != nil else { return }   // 成功收尾走 didFinish, 这里只兜错误(超时/中断)
+            let tid = task.taskIdentifier
+            lk.lock()
+            let c = conts.removeValue(forKey: tid)
+            progs.removeValue(forKey: tid); lastUpd.removeValue(forKey: tid)
+            lk.unlock()
+            let code = Int64((task.response as? HTTPURLResponse)?.statusCode ?? -1)
+            c?.resume(returning: (URL(fileURLWithPath: "/nonexistent-err"), code))
+        }
+
+        func urlSession(_ s: URLSession, downloadTask: URLSessionDownloadTask,
+                        didWriteData bytesWritten: Int64, totalBytesWritten: Int64,
+                        totalBytesExpectedToWrite: Int64) {
+            let now = ProcessInfo.processInfo.systemUptime
+            let tid = downloadTask.taskIdentifier
+            lk.lock()
+            let last = lastUpd[tid] ?? 0
+            let p = progs[tid]
+            let fresh = now - last >= 0.5
+            if fresh { lastUpd[tid] = now }
+            lk.unlock()
+            guard fresh, let p = p, last > 0 else { return }
+            p(totalBytesWritten, Double(bytesWritten) / max(0.05, now - last))
+        }
     }
 
     // MARK: 首跑自检（日志核对移植正确性：sm3+三签名定点向量，哪个坏当场见光）
