@@ -126,7 +126,8 @@ enum THLSign {
         c.evaluateScript("__modBegin();")
         c.evaluateScript(psig)
         c.evaluateScript("__modEnd('./pure-sign'); var __signV5 = module.exports.signPlaybackV5;")
-        let alive = c.evaluateScript("(typeof __signV5 === 'function') ? 'ok' : 'dead'").toString()
+        let aliveV = c.evaluateScript("(typeof __signV5 === 'function') ? 'ok' : 'dead'")
+        let alive = aliveV?.toString()
         guard alive == "ok" else {
             broken = true
             HGTrail.note("thl 换心装载失败: 签名入口未起")

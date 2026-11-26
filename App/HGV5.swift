@@ -543,7 +543,7 @@ enum HGV5 {
                 // 单集形态三兼容解包(承 138 singleModel 图纸): video_model = dict / JSON串 / base64
                 if let vm = inner["video_model"] as? String {
                     var payload = Data(vm.utf8)
-                    if vm.count >= 24, payload.base64Encoded == nil, let dec = Data(base64Encoded: vm) { payload = dec }
+                    if !vm.hasPrefix("{"), let dec = Data(base64Encoded: vm) { payload = dec }
                     if let m = try? JSONSerialization.jsonObject(with: payload) as? [String: Any] { inner["video_model"] = m }
                 } else if inner["video_model"] == nil, let g = inner["1004"] as? [String: Any] {
                     inner = (g[vid] as? [String: Any]) ?? g
