@@ -1690,6 +1690,8 @@ private struct RankTab: View {
                 }
             }
             .refreshable { vm.load() }
+            // v1.10.155 悬浮玻璃 TabBar 压在滚动内容上: 补 90pt 滚动底垫, 末排海报完整露出
+            .contentMargins(.bottom, 90, for: .scrollContent)
             }
         }
     }

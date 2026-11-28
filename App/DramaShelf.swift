@@ -243,8 +243,10 @@ struct ShelfGrid<Destination: View>: View {
                     }
                 }
             }
-            .padding(10)
+            .padding(.horizontal, 10).padding(.top, 10)
         }
+        // v1.10.155 iOS26 悬浮玻璃 TabBar 会压在滚动内容上: 补 90pt 滚动安全垫, 末行完整露出
+        .contentMargins(.bottom, 90, for: .scrollContent)
         .sheet(item: $openPack) { g in
             NavigationStack {
                 List {
@@ -322,24 +324,30 @@ struct ShelfGrid<Destination: View>: View {
         VStack(alignment: .leading, spacing: 4) {
             Color.clear
                 .frame(maxWidth: .infinity)
-                .aspectRatio(0.667, contentMode: .fit)
+                .aspectRatio(0.7, contentMode: .fit)
                 .overlay {
                     Group {
                         if let c = cover { Thumb(url: c) } else { Color(white: 0.15) }
                     }
                     .clipped()
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.06), lineWidth: 0.5)
+                }
                 .overlay(alignment: .bottomTrailing) {
                     Text(badge)
-                        .font(.caption2.weight(pack ? .bold : .regular))
+                        .font(.system(size: 10, weight: pack ? .bold : .medium, design: .rounded))
+                        .monospacedDigit()
                         .foregroundStyle(.white)
-                        .padding(.horizontal, 5).padding(.vertical, 2)
-                        .background(Capsule().fill(pack ? Color.orange.opacity(0.9) : .black.opacity(0.55)))
-                        .padding(4)
+                        .padding(.horizontal, 6).padding(.vertical, 2.5)
+                        .background(Capsule().fill(pack ? Color.orange.opacity(0.92) : Color.black.opacity(0.38)))
+                        .overlay(Capsule().strokeBorder(.white.opacity(pack ? 0.0 : 0.18), lineWidth: 0.5))
+                        .padding(5)
                 }
             Text(name)
-                .font(.caption)
+                .font(.system(size: 11, weight: .semibold))
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
         }

@@ -186,7 +186,7 @@ struct LibraryView: View {
                                         }
                                     }
                                     .clipShape(RoundedRectangle(cornerRadius: 8))
-                                Text(v.title).font(.caption).lineLimit(1).foregroundStyle(.primary)
+                                Text(v.title).font(.system(size: 11, weight: .semibold)).lineLimit(1).foregroundStyle(.primary)
                                 SizeLine(v: v)
                             }
                         }
@@ -230,6 +230,8 @@ struct LibraryView: View {
                     }
                 }
             }
+            // v1.10.155 悬浮 TabBar 安全垫
+            .contentMargins(.bottom, 90, for: .scrollContent)
         }
     }
 
